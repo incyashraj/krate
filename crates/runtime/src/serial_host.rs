@@ -572,7 +572,8 @@ fn is_serial_device(path: &str) -> bool {
 }
 
 /// Linux needs a display for a dialog; macOS and Windows always have one.
-fn display_present() -> bool {
+/// The USB pick (IC-988) asks the same question.
+pub(crate) fn display_present() -> bool {
     if cfg!(target_os = "linux") {
         ["DISPLAY", "WAYLAND_DISPLAY"]
             .iter()

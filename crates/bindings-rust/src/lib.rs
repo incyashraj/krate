@@ -1880,6 +1880,226 @@ pub mod serial {
     }
 }
 
+/// USB devices the person picks (IC-988): a radio dongle, an instrument with
+/// its own protocol, a label printer or a board that talks raw USB.
+///
+/// Declare each device model the app is for by its vendor and product ids
+/// in hex, `device.usb:1915:7777`, with a rationale (one `[[capabilities]]`
+/// entry a model). The app never lists devices: [`pick`] shows the person
+/// only the connected devices of those models and returns the one they
+/// chose, or `None` when they cancelled. That pick is the grant, for that one
+/// device, until the [`Device`] is dropped or the app ends. Claim one
+/// interface, then move bytes on its endpoints. Keyboards, mice, storage,
+/// audio, video and hubs answer `UsbError::NotForApps`: the computer's own
+/// drivers serve them.
+///
+/// ```ignore
+/// use krate::usb;
+/// if let Some(radio) = usb::pick("Choose the radio dongle")? {
+///     radio.claim(0)?;
+///     // A Crazyradio is set up with vendor requests to the whole device.
+///     radio.control_out(usb::vendor_device_request(0x01, 80, 0), &[], 1_000)?; // channel 80
+///     radio.control_out(usb::vendor_device_request(0x03, 2, 0), &[], 1_000)?; // 2 Mbit/s
+///     radio.bulk_out(0x01, &[0xff], 1_000)?;
+///     let ack = radio.bulk_in(0x81, 64, 1_000)?; // empty if the wait ran out
+/// }
+/// ```
+///
+/// A control request goes to the claimed interface ([`vendor_request`],
+/// [`class_request`]), one of its endpoints, or, a class or vendor request,
+/// to the whole device ([`vendor_device_request`], [`class_device_request`]);
+/// an interface is claimed first either way. Of the standard requests only
+/// GET_STATUS and GET_DESCRIPTOR are sent. A computer only: in a browser tab
+/// and on a phone every call answers `UsbError::Unavailable` with words
+/// saying so.
+pub mod usb {
+    use crate::bindings::krate::usb::devices as host;
+    pub use crate::bindings::krate::usb::devices::{
+        ControlSetup, Recipient, RequestType, UsbError,
+    };
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &UsbError) -> &str {
+        match err {
+            UsbError::NotAllowed(w)
+            | UsbError::Unavailable(w)
+            | UsbError::NotForApps(w)
+            | UsbError::BadRequest(w)
+            | UsbError::Busy(w)
+            | UsbError::Disconnected(w)
+            | UsbError::Stalled(w)
+            | UsbError::TimedOut(w)
+            | UsbError::TooMany(w)
+            | UsbError::Failed(w) => w,
+            UsbError::UnknownHandle => "that USB device is not open in this app",
+            UsbError::NotClaimed => "claim an interface of the USB device before using it",
+        }
+    }
+
+    /// A vendor request to the claimed interface: `request` with `value`, the
+    /// interface's own number in the low byte of the index.
+    pub fn vendor_request(request: u8, value: u16, interface: u8) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Interface,
+            request,
+            value,
+            index: u16::from(interface),
+        }
+    }
+
+    /// A class request to the claimed interface, the same way.
+    pub fn class_request(request: u8, value: u16, interface: u8) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Class,
+            ..vendor_request(request, value, interface)
+        }
+    }
+
+    /// A vendor request to the whole device the person picked: `request`
+    /// with `value` and `index`, both the request's own. Many vendor
+    /// devices are set up this way (a Crazyradio's channel is
+    /// `vendor_device_request(0x01, channel, 0)`). Claim an interface first.
+    pub fn vendor_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Device,
+            request,
+            value,
+            index,
+        }
+    }
+
+    /// A class request to the whole device, the same way.
+    pub fn class_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Class,
+            ..vendor_device_request(request, value, index)
+        }
+    }
+
+    /// A USB device the person picked. Dropped, its interface is released,
+    /// it is closed and the pick is spent.
+    #[derive(Debug)]
+    pub struct Device {
+        handle: u64,
+        name: String,
+        vendor_id: u16,
+        product_id: u16,
+    }
+
+    /// Ask the person to choose one connected device of a model the manifest
+    /// names. `title` is a short line for the list ("Choose the radio
+    /// dongle"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Device>, UsbError> {
+        Ok(host::pick(title)?.map(|device| Device {
+            handle: device.handle,
+            name: device.name,
+            vendor_id: device.vendor_id,
+            product_id: device.product_id,
+        }))
+    }
+
+    impl Device {
+        /// The device's name, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// Its vendor id: one the manifest named.
+        pub fn vendor_id(&self) -> u16 {
+            self.vendor_id
+        }
+
+        /// Its product id: one the manifest named.
+        pub fn product_id(&self) -> u16 {
+            self.product_id
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Claim interface `number`: one a pick.
+        pub fn claim(&self, number: u8) -> Result<(), UsbError> {
+            host::claim(self.handle, number)
+        }
+
+        /// Read up to `max` bytes (rounded up to whole packets, at most
+        /// 65536) from bulk IN endpoint `endpoint` (0x81 and up), waiting up
+        /// to `timeout_ms` (1 to 60000). Empty when the wait ran out.
+        pub fn bulk_in(
+            &self,
+            endpoint: u8,
+            max: u32,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::bulk_in(self.handle, endpoint, max, timeout_ms)
+        }
+
+        /// Write `bytes` (at most 65536) to bulk OUT endpoint `endpoint`.
+        pub fn bulk_out(
+            &self,
+            endpoint: u8,
+            bytes: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::bulk_out(self.handle, endpoint, bytes, timeout_ms)
+        }
+
+        /// As [`Device::bulk_in`], from an interrupt endpoint.
+        pub fn interrupt_in(
+            &self,
+            endpoint: u8,
+            max: u32,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::interrupt_in(self.handle, endpoint, max, timeout_ms)
+        }
+
+        /// As [`Device::bulk_out`], to an interrupt endpoint.
+        pub fn interrupt_out(
+            &self,
+            endpoint: u8,
+            bytes: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::interrupt_out(self.handle, endpoint, bytes, timeout_ms)
+        }
+
+        /// A control request that reads up to `length` bytes (at most 4096)
+        /// from the claimed interface, one of its endpoints or the device.
+        pub fn control_in(
+            &self,
+            setup: ControlSetup,
+            length: u16,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::control_in(self.handle, setup, length, timeout_ms)
+        }
+
+        /// A control request that writes `data` (at most 4096 bytes) to the
+        /// claimed interface, one of its endpoints or the device.
+        pub fn control_out(
+            &self,
+            setup: ControlSetup,
+            data: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::control_out(self.handle, setup, data, timeout_ms)
+        }
+    }
+
+    impl Drop for Device {
+        fn drop(&mut self) {
+            host::close(self.handle);
+        }
+    }
+}
+
 /// Printers the person picks (IC-986): documents and labels, without a
 /// dialog every time.
 ///

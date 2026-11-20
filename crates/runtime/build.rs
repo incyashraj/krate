@@ -144,6 +144,7 @@ fn home(iface: &str) -> (&'static str, &'static str) {
             | "process"
             | "serial"
             | "print"
+            | "usb"
     );
     if phase2 {
         ("crate::phase2_bindings", "phase2")

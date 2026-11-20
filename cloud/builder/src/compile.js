@@ -465,6 +465,7 @@ world = "gui"
 "krate:process" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/process" }
 "krate:serial" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/serial" }
 "krate:print" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/print" }
+"krate:usb" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/usb" }
 "krate:ui" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "{KRATE_SDK}/wit/krate/phase4/deps/gpu" }

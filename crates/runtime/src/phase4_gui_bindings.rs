@@ -60,6 +60,9 @@ wasmtime::component::bindgen!({
         // Printers the person picks (IC-986): Phase 2's, the same host for
         // both worlds.
         "krate:print/printers@0.1.0": crate::phase2_bindings::krate::print::printers,
+        // USB devices the person picks (IC-988): Phase 2's, the same host for
+        // both worlds.
+        "krate:usb/devices@0.1.0": crate::phase2_bindings::krate::usb::devices,
 
         // The ui interfaces that do NOT mention widget-kind, reused whole.
         "krate:ui/window@0.1.0": crate::phase3_gui_bindings::krate::ui::window,

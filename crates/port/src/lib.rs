@@ -1782,14 +1782,31 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     );
     detect_pattern(
         analysis,
-        "hardware",
+        "usb",
         &[
+            "rusb",
+            "nusb",
             "libusb",
-            "hidapi",
-            "videocapturedevice",
-            "avcapturevideo",
-            "camera",
+            "pyusb",
+            "import usb",
+            "usb.core",
+            "navigator.usb",
+            "webusb",
+            "usb4java",
+            "libusbdotnet",
+            "node-usb",
         ],
+        path,
+        text,
+        Severity::Change,
+        "USB devices",
+        "Reach a USB device through Krate device.usb: declare each model the app is for by its vendor and product ids in hex (device.usb:1915:7777, one entry a model, no wildcard). The app never lists devices -- krate::usb::pick(title) shows the person the connected devices of those models and answers the one they choose (None if they cancel). Claim one interface, then bulk_in/bulk_out and interrupt_in/interrupt_out on its endpoints with a wait, and control requests to that interface or its endpoints only (never device-level requests: set the configuration and alternate setting the device starts in). Keyboards, mice, storage, audio, video and hubs are refused. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.usb:<vendor-id>:<product-id>"),
+    );
+    detect_pattern(
+        analysis,
+        "hardware",
+        &["hidapi", "videocapturedevice", "avcapturevideo", "camera"],
         path,
         text,
         Severity::Blocker,
@@ -2991,6 +3008,46 @@ dependencies = [
             .contains(&"device.serial".to_string()));
         assert!(plan.findings.iter().any(|finding| finding.id == "serial"));
         assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// USB code maps to device.usb (IC-988) -- rusb, libusb, pyusb and
+    /// WebUSB alike -- not to the hardware blocker it was before Krate had
+    /// one.
+    #[test]
+    fn usb_use_maps_to_device_usb_instead_of_a_hardware_blocker() {
+        for (file, source) in [
+            (
+                "radio.rs",
+                "let handle = rusb::open_device_with_vid_pid(0x1915, 0x7777).unwrap();\n",
+            ),
+            (
+                "radio.c",
+                "#include <libusb-1.0/libusb.h>\nlibusb_bulk_transfer(h, 0x01, buf, n, &sent, 1000);\n",
+            ),
+            (
+                "radio.py",
+                "import usb.core\ndev = usb.core.find(idVendor=0x1915, idProduct=0x7777)\n",
+            ),
+            (
+                "radio.js",
+                "const device = await navigator.usb.requestDevice({ filters: [] });\n",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join(file), source).unwrap();
+            let plan = analyze(dir.path()).unwrap();
+            assert!(
+                plan.suggested_capabilities
+                    .contains(&"device.usb:<vendor-id>:<product-id>".to_string()),
+                "{file}: {:?}",
+                plan.suggested_capabilities
+            );
+            assert!(plan.findings.iter().any(|finding| finding.id == "usb"), "{file}");
+            assert!(
+                !plan.findings.iter().any(|finding| finding.id == "hardware"),
+                "{file}"
+            );
+        }
     }
 
     /// Printing code maps to device.printer (IC-986).

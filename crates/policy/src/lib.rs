@@ -607,6 +607,9 @@ pub fn reaches_outside_the_run(cap: &Capability) -> bool {
         // A printer (IC-986): paper and labels out in the world, and a pick
         // nobody in an automated run can make.
         "device.printer",
+        // A USB device (IC-988): a radio, an instrument or a machine on a
+        // wire, and a pick nobody in an automated run can make.
+        "device.usb",
         // The person's attention, data, and machine outside the sandbox.
         "ui.notify",
         "ui.open-url",
@@ -824,6 +827,11 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
             // A listening port is named exactly (IC-987): `net.listen:8080`
             // opens 8080 and no other port, never a pattern of them.
             if grant.module() == "net" && grant.action() == "listen" {
+                return grant_resource == required_resource;
+            }
+            // A USB device model is named exactly (IC-988):
+            // `device.usb:1915:7777` reaches that model and no other.
+            if grant.module() == "device" && grant.action() == "usb" {
                 return grant_resource == required_resource;
             }
             // `fs.list:images/**` must cover listing `images` itself. The glob
@@ -1120,6 +1128,43 @@ mod tests {
                 .refusal(),
             Some(&Refusal::Denied)
         );
+    }
+
+    /// A USB device model is granted exactly (IC-988): a grant for
+    /// `device.usb:1915:7777` reaches that model and no other, an id the
+    /// manifest never named is undeclared even with a grant for it, and a
+    /// named one the person did not allow is a denial.
+    #[test]
+    fn a_usb_device_model_is_granted_exactly_by_its_ids() {
+        let declared: BTreeSet<Capability> =
+            [cap("device.usb:1915:7777"), cap("device.usb:1915:0101")]
+                .into_iter()
+                .collect();
+        let granted = SessionPolicy::from_grants([cap("device.usb:1915:7777")]);
+        assert!(granted
+            .decide(&cap("device.usb:1915:7777"), Some(&declared))
+            .is_granted());
+        // Named, not allowed: denied.
+        assert_eq!(
+            granted
+                .decide(&cap("device.usb:1915:0101"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Denied)
+        );
+        // Never named: undeclared, whatever was granted.
+        let stray = SessionPolicy::from_grants([cap("device.usb:1915:7778")]);
+        assert_eq!(
+            stray
+                .decide(&cap("device.usb:1915:7778"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Undeclared)
+        );
+        assert!(!granted.allows(&cap("device.usb:1915:7778")));
+        assert!(!granted.allows(&cap("device.usb:1916:7777")));
+        // Written in capitals, the same device.
+        assert!(granted.allows(&cap("device.usb:1915:7777")));
+        assert!(SessionPolicy::from_grants([cap("device.usb:1A86:7523")])
+            .allows(&cap("device.usb:1a86:7523")));
     }
 
     #[test]
@@ -1805,6 +1850,7 @@ mod tests {
             "process.terminal",
             "device.serial",
             "device.printer",
+            "device.usb:1915:7777",
             "net.listen:8080",
         ] {
             let cap = outside.parse().expect("parse capability");
@@ -1859,6 +1905,7 @@ mod tests {
             "process.terminal",
             "device.serial",
             "device.printer",
+            "device.usb",
             "net.listen",
         ] {
             assert!(

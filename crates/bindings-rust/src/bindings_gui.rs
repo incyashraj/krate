@@ -49450,6 +49450,2253 @@ pub mod krate {
             }
         }
     }
+    pub mod usb {
+        /// USB devices the person picks (IC-988): a radio dongle, an instrument
+        /// with its own protocol, a label printer or a board that talks raw USB.
+        ///
+        /// The manifest names the devices the app is for by their vendor and
+        /// product ids, each as `device.usb:<vendor>:<product>` in hex
+        /// (`device.usb:1915:7777`), exact ids and no wildcard; it may name more
+        /// than one. The app never lists the computer's devices. It asks to `pick`;
+        /// Krate shows the person only the connected devices whose ids the manifest
+        /// names, and the one they choose is the app's for this run, and nothing
+        /// else is. The pick is the grant: one handle, one device, until the app
+        /// closes it or the run ends. A second device needs a second pick.
+        ///
+        /// A device the computer's own drivers serve is never handed to an app,
+        /// even when the manifest names its ids: a keyboard or mouse (any HID
+        /// interface), storage, audio, video, or a hub. Those answer
+        /// `not-for-apps`.
+        ///
+        /// After the pick the app claims one interface of the device, and every
+        /// transfer goes through that interface: bulk and interrupt transfers on its
+        /// own endpoints, and control requests addressed to it, to one of its
+        /// endpoints, or, for a class or vendor request, to the whole device the
+        /// person picked (many vendor devices are set up that way). Of the standard
+        /// requests only the reads are sent. Every transfer has a wait and a
+        /// size limit: at most 65536 bytes a bulk or interrupt transfer, 4096 a
+        /// control transfer, and a wait from 1 to 60000 milliseconds.
+        ///
+        /// Every interface is released and every device closed when the run ends:
+        /// when the app returns, stops with an error, or its window closes.
+        ///
+        /// Desktop only (macOS, Windows, Linux). In a browser tab and on a phone
+        /// every call answers `unavailable` with words that say so.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod devices {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// A device the person picked. Numbers are never reused within a run and
+            /// mean nothing to another run.
+            pub type DeviceHandle = u64;
+            /// A device the person picked.
+            #[derive(Clone)]
+            pub struct Device {
+                /// The handle the app uses for this device from now on.
+                pub handle: DeviceHandle,
+                /// The device's name as it gives it, to show the person: "Crazyradio
+                /// PA USB dongle", or its ids when it gives none.
+                pub name: _rt::String,
+                /// The vendor id the device reports: one the manifest named.
+                pub vendor_id: u16,
+                /// The product id the device reports: one the manifest named.
+                pub product_id: u16,
+            }
+            impl ::core::fmt::Debug for Device {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Device")
+                        .field("handle", &self.handle)
+                        .field("name", &self.name)
+                        .field("vendor-id", &self.vendor_id)
+                        .field("product-id", &self.product_id)
+                        .finish()
+                }
+            }
+            /// What kind of control request it is (bits 5-6 of bmRequestType).
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum RequestType {
+                /// A request the USB standard defines. Only reading the status
+                /// (GET_STATUS) and reading a descriptor (GET_DESCRIPTOR) are allowed:
+                /// the requests that would change the device's address, configuration,
+                /// interface setting or features are the computer's.
+                Standard,
+                /// A request the interface's class defines.
+                Class,
+                /// A request the device's maker defines.
+                Vendor,
+            }
+            impl ::core::fmt::Debug for RequestType {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        RequestType::Standard => f.debug_tuple("RequestType::Standard").finish(),
+                        RequestType::Class => f.debug_tuple("RequestType::Class").finish(),
+                        RequestType::Vendor => f.debug_tuple("RequestType::Vendor").finish(),
+                    }
+                }
+            }
+
+            impl RequestType {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> RequestType {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => RequestType::Standard,
+                        1 => RequestType::Class,
+                        2 => RequestType::Vendor,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+
+            /// Who a control request is for (bits 0-4 of bmRequestType): the
+            /// claimed interface, one of its endpoints, or the whole device for a
+            /// class or vendor request.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum Recipient {
+                /// The claimed interface: the low byte of `index` is its number.
+                Interface,
+                /// An endpoint of the claimed interface: the low byte of `index` is its
+                /// address.
+                Endpoint,
+                /// The whole device the person picked, for a class or vendor request:
+                /// a Crazyradio's channel and data rate are set this way. `index` is
+                /// the request's own. A standard request to the device is refused, except
+                /// the reads GET_STATUS and GET_DESCRIPTOR. An interface must still be
+                /// claimed first.
+                Device,
+            }
+            impl ::core::fmt::Debug for Recipient {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        Recipient::Interface => f.debug_tuple("Recipient::Interface").finish(),
+                        Recipient::Endpoint => f.debug_tuple("Recipient::Endpoint").finish(),
+                        Recipient::Device => f.debug_tuple("Recipient::Device").finish(),
+                    }
+                }
+            }
+
+            impl Recipient {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> Recipient {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => Recipient::Interface,
+                        1 => Recipient::Endpoint,
+                        2 => Recipient::Device,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+
+            /// The setup of a control request. The direction comes from the call:
+            /// `control-in` reads, `control-out` writes.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct ControlSetup {
+                /// The kind of request.
+                pub request_type: RequestType,
+                /// Who it is for: the claimed interface, one of its endpoints, or the
+                /// device.
+                pub recipient: Recipient,
+                /// The request number (bRequest).
+                pub request: u8,
+                /// The request's value (wValue).
+                pub value: u16,
+                /// The request's index (wIndex). For the interface or an endpoint its
+                /// low byte names the claimed interface or one of its endpoints, as
+                /// `recipient` says; for the device it is the request's own.
+                pub index: u16,
+            }
+            impl ::core::fmt::Debug for ControlSetup {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("ControlSetup")
+                        .field("request-type", &self.request_type)
+                        .field("recipient", &self.recipient)
+                        .field("request", &self.request)
+                        .field("value", &self.value)
+                        .field("index", &self.index)
+                        .finish()
+                }
+            }
+            /// Why a call was refused or failed. Each case carries words to show a
+            /// person, except `unknown-handle` and `not-claimed`, which are the app's
+            /// own mistakes.
+            #[derive(Clone)]
+            pub enum UsbError {
+                /// The app did not declare these ids as `device.usb:<vendor>:<product>`,
+                /// or the person did not allow it. The words say which and name the
+                /// capability.
+                NotAllowed(_rt::String),
+                /// No device the app named is connected, or this place has no USB: a
+                /// browser tab, a phone.
+                Unavailable(_rt::String),
+                /// No device has this handle in this run: never picked, or closed.
+                UnknownHandle,
+                /// No interface is claimed on this device yet: `claim` one first.
+                NotClaimed,
+                /// A device or interface the computer's own drivers serve: a keyboard
+                /// or mouse (any HID interface), storage, audio, video, or a hub. Krate
+                /// does not hand these to an app even when the manifest names its ids.
+                NotForApps(_rt::String),
+                /// A request Krate does not send, with words: an endpoint that is not
+                /// the claimed interface's or not of this kind or direction, a control
+                /// request for another interface, a standard request other than
+                /// GET_STATUS or GET_DESCRIPTOR, a size or a wait out of range.
+                BadRequest(_rt::String),
+                /// Another program or the computer's own driver has the device or the
+                /// interface.
+                Busy(_rt::String),
+                /// The device went away: unplugged, or switched off.
+                Disconnected(_rt::String),
+                /// The device refused the transfer (the endpoint stalled).
+                Stalled(_rt::String),
+                /// A transfer out did not finish within its wait. Some of the bytes may
+                /// have reached the device.
+                TimedOut(_rt::String),
+                /// The app already holds 8 devices; close one first.
+                TooMany(_rt::String),
+                /// The computer refused, with its words. On Linux this is often a
+                /// device the person's account may not open yet: the words say how to
+                /// allow it.
+                Failed(_rt::String),
+            }
+            impl ::core::fmt::Debug for UsbError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        UsbError::NotAllowed(e) => {
+                            f.debug_tuple("UsbError::NotAllowed").field(e).finish()
+                        }
+                        UsbError::Unavailable(e) => {
+                            f.debug_tuple("UsbError::Unavailable").field(e).finish()
+                        }
+                        UsbError::UnknownHandle => {
+                            f.debug_tuple("UsbError::UnknownHandle").finish()
+                        }
+                        UsbError::NotClaimed => f.debug_tuple("UsbError::NotClaimed").finish(),
+                        UsbError::NotForApps(e) => {
+                            f.debug_tuple("UsbError::NotForApps").field(e).finish()
+                        }
+                        UsbError::BadRequest(e) => {
+                            f.debug_tuple("UsbError::BadRequest").field(e).finish()
+                        }
+                        UsbError::Busy(e) => f.debug_tuple("UsbError::Busy").field(e).finish(),
+                        UsbError::Disconnected(e) => {
+                            f.debug_tuple("UsbError::Disconnected").field(e).finish()
+                        }
+                        UsbError::Stalled(e) => {
+                            f.debug_tuple("UsbError::Stalled").field(e).finish()
+                        }
+                        UsbError::TimedOut(e) => {
+                            f.debug_tuple("UsbError::TimedOut").field(e).finish()
+                        }
+                        UsbError::TooMany(e) => {
+                            f.debug_tuple("UsbError::TooMany").field(e).finish()
+                        }
+                        UsbError::Failed(e) => f.debug_tuple("UsbError::Failed").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for UsbError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for UsbError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask the person to choose one connected device whose ids the manifest
+            /// names. `title` is a short line for the list ("Choose the radio
+            /// dongle"), at most 200 characters.
+            ///
+            /// Some(device) when they chose one, none when they cancelled or no
+            /// person is there to choose (a run with no window and no display).
+            /// Picking opens the device; `claim` an interface before any transfer.
+            pub fn pick(title: &str) -> Result<Option<Device>, UsbError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "pick"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result43 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(*ptr1.add(8).cast::<u8>());
+
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1.add(16).cast::<i64>();
+                                            let l6 = *ptr1.add(24).cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+                                            let l9 = i32::from(
+                                                *ptr1
+                                                    .add(
+                                                        24 + 2 * ::core::mem::size_of::<*const u8>(
+                                                        ),
+                                                    )
+                                                    .cast::<u16>(),
+                                            );
+                                            let l10 = i32::from(
+                                                *ptr1
+                                                    .add(
+                                                        26 + 2 * ::core::mem::size_of::<*const u8>(
+                                                        ),
+                                                    )
+                                                    .cast::<u16>(),
+                                            );
+
+                                            Device {
+                                                handle: l5 as u64,
+                                                name: _rt::string_lift(bytes8),
+                                                vendor_id: l9 as u16,
+                                                product_id: l10 as u16,
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l11 = i32::from(*ptr1.add(8).cast::<u8>());
+                                let v42 = match l11 {
+                                    0 => {
+                                        let e42 = {
+                                            let l12 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 =
+                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        UsbError::NotAllowed(e42)
+                                    }
+                                    1 => {
+                                        let e42 = {
+                                            let l15 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 =
+                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
+
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        UsbError::Unavailable(e42)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e42 = {
+                                            let l18 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 =
+                                                _rt::Vec::from_raw_parts(l18.cast(), len20, len20);
+
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        UsbError::NotForApps(e42)
+                                    }
+                                    5 => {
+                                        let e42 = {
+                                            let l21 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l22 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len23 = l22;
+                                            let bytes23 =
+                                                _rt::Vec::from_raw_parts(l21.cast(), len23, len23);
+
+                                            _rt::string_lift(bytes23)
+                                        };
+                                        UsbError::BadRequest(e42)
+                                    }
+                                    6 => {
+                                        let e42 = {
+                                            let l24 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l25 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len26 = l25;
+                                            let bytes26 =
+                                                _rt::Vec::from_raw_parts(l24.cast(), len26, len26);
+
+                                            _rt::string_lift(bytes26)
+                                        };
+                                        UsbError::Busy(e42)
+                                    }
+                                    7 => {
+                                        let e42 = {
+                                            let l27 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l28 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len29 = l28;
+                                            let bytes29 =
+                                                _rt::Vec::from_raw_parts(l27.cast(), len29, len29);
+
+                                            _rt::string_lift(bytes29)
+                                        };
+                                        UsbError::Disconnected(e42)
+                                    }
+                                    8 => {
+                                        let e42 = {
+                                            let l30 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l31 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len32 = l31;
+                                            let bytes32 =
+                                                _rt::Vec::from_raw_parts(l30.cast(), len32, len32);
+
+                                            _rt::string_lift(bytes32)
+                                        };
+                                        UsbError::Stalled(e42)
+                                    }
+                                    9 => {
+                                        let e42 = {
+                                            let l33 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l34 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len35 = l34;
+                                            let bytes35 =
+                                                _rt::Vec::from_raw_parts(l33.cast(), len35, len35);
+
+                                            _rt::string_lift(bytes35)
+                                        };
+                                        UsbError::TimedOut(e42)
+                                    }
+                                    10 => {
+                                        let e42 = {
+                                            let l36 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l37 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len38 = l37;
+                                            let bytes38 =
+                                                _rt::Vec::from_raw_parts(l36.cast(), len38, len38);
+
+                                            _rt::string_lift(bytes38)
+                                        };
+                                        UsbError::TooMany(e42)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e42 = {
+                                            let l39 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l40 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len41 = l40;
+                                            let bytes41 =
+                                                _rt::Vec::from_raw_parts(l39.cast(), len41, len41);
+
+                                            _rt::string_lift(bytes41)
+                                        };
+                                        UsbError::Failed(e42)
+                                    }
+                                };
+
+                                v42
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result43
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Claim interface `number` of a picked device, so transfers can use it.
+            /// One interface a pick: claiming the same one again does nothing, and
+            /// another one is refused (pick again to reach it).
+            pub fn claim(device: DeviceHandle, number: u8) -> Result<(), UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "claim"]
+                        fn wit_import1(_: i64, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(device), _rt::as_i32(&number), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result35 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v34 = match l3 {
+                                    0 => {
+                                        let e34 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 =
+                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        UsbError::NotAllowed(e34)
+                                    }
+                                    1 => {
+                                        let e34 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        UsbError::Unavailable(e34)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e34 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        UsbError::NotForApps(e34)
+                                    }
+                                    5 => {
+                                        let e34 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 =
+                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
+
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        UsbError::BadRequest(e34)
+                                    }
+                                    6 => {
+                                        let e34 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        UsbError::Busy(e34)
+                                    }
+                                    7 => {
+                                        let e34 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        UsbError::Disconnected(e34)
+                                    }
+                                    8 => {
+                                        let e34 = {
+                                            let l22 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 =
+                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
+
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        UsbError::Stalled(e34)
+                                    }
+                                    9 => {
+                                        let e34 = {
+                                            let l25 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        UsbError::TimedOut(e34)
+                                    }
+                                    10 => {
+                                        let e34 = {
+                                            let l28 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 =
+                                                _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
+
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        UsbError::TooMany(e34)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e34 = {
+                                            let l31 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l32 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len33 = l32;
+                                            let bytes33 =
+                                                _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
+
+                                            _rt::string_lift(bytes33)
+                                        };
+                                        UsbError::Failed(e34)
+                                    }
+                                };
+
+                                v34
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result35
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read from bulk endpoint `endpoint` (an IN address, 0x81 and up) of the
+            /// claimed interface: wait up to `timeout-ms` (1 to 60000) and answer what
+            /// arrived. At most `max` bytes (at most 65536), rounded up to whole
+            /// packets of the endpoint, since USB moves whole packets. Empty when the
+            /// wait ran out with nothing.
+            pub fn bulk_in(
+                device: DeviceHandle,
+                endpoint: u8,
+                max: u32,
+                timeout_ms: u32,
+            ) -> Result<_rt::Vec<u8>, UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "bulk-in"]
+                        fn wit_import1(_: i64, _: i32, _: i32, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: i32, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import1(
+                            _rt::as_i64(device),
+                            _rt::as_i32(&endpoint),
+                            _rt::as_i32(&max),
+                            _rt::as_i32(&timeout_ms),
+                            ptr0,
+                        )
+                    };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result38 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+
+                                _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v37 = match l6 {
+                                    0 => {
+                                        let e37 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        UsbError::NotAllowed(e37)
+                                    }
+                                    1 => {
+                                        let e37 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        UsbError::Unavailable(e37)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e37 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 =
+                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
+
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        UsbError::NotForApps(e37)
+                                    }
+                                    5 => {
+                                        let e37 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        UsbError::BadRequest(e37)
+                                    }
+                                    6 => {
+                                        let e37 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        UsbError::Busy(e37)
+                                    }
+                                    7 => {
+                                        let e37 = {
+                                            let l22 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 =
+                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
+
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        UsbError::Disconnected(e37)
+                                    }
+                                    8 => {
+                                        let e37 = {
+                                            let l25 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        UsbError::Stalled(e37)
+                                    }
+                                    9 => {
+                                        let e37 = {
+                                            let l28 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 =
+                                                _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
+
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        UsbError::TimedOut(e37)
+                                    }
+                                    10 => {
+                                        let e37 = {
+                                            let l31 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l32 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len33 = l32;
+                                            let bytes33 =
+                                                _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
+
+                                            _rt::string_lift(bytes33)
+                                        };
+                                        UsbError::TooMany(e37)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e37 = {
+                                            let l34 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l35 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len36 = l35;
+                                            let bytes36 =
+                                                _rt::Vec::from_raw_parts(l34.cast(), len36, len36);
+
+                                            _rt::string_lift(bytes36)
+                                        };
+                                        UsbError::Failed(e37)
+                                    }
+                                };
+
+                                v37
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result38
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write `bytes` (at most 65536) to bulk endpoint `endpoint` (an OUT
+            /// address, 0x01 to 0x0f) of the claimed interface, waiting up to
+            /// `timeout-ms` (1 to 60000) for the device to take them; past that,
+            /// `timed-out`.
+            pub fn bulk_out(
+                device: DeviceHandle,
+                endpoint: u8,
+                bytes: &[u8],
+                timeout_ms: u32,
+            ) -> Result<(), UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "bulk-out"]
+                        fn wit_import2(_: i64, _: i32, _: *mut u8, _: usize, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(device),
+                            _rt::as_i32(&endpoint),
+                            ptr0.cast_mut(),
+                            len0,
+                            _rt::as_i32(&timeout_ms),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result36 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v35 = match l4 {
+                                    0 => {
+                                        let e35 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        UsbError::NotAllowed(e35)
+                                    }
+                                    1 => {
+                                        let e35 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        UsbError::Unavailable(e35)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e35 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        UsbError::NotForApps(e35)
+                                    }
+                                    5 => {
+                                        let e35 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 =
+                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        UsbError::BadRequest(e35)
+                                    }
+                                    6 => {
+                                        let e35 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        UsbError::Busy(e35)
+                                    }
+                                    7 => {
+                                        let e35 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        UsbError::Disconnected(e35)
+                                    }
+                                    8 => {
+                                        let e35 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 =
+                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
+
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        UsbError::Stalled(e35)
+                                    }
+                                    9 => {
+                                        let e35 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 =
+                                                _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
+
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        UsbError::TimedOut(e35)
+                                    }
+                                    10 => {
+                                        let e35 = {
+                                            let l29 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 =
+                                                _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
+
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        UsbError::TooMany(e35)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e35 = {
+                                            let l32 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l33 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len34 = l33;
+                                            let bytes34 =
+                                                _rt::Vec::from_raw_parts(l32.cast(), len34, len34);
+
+                                            _rt::string_lift(bytes34)
+                                        };
+                                        UsbError::Failed(e35)
+                                    }
+                                };
+
+                                v35
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result36
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// As `bulk-in`, from an interrupt endpoint of the claimed interface.
+            pub fn interrupt_in(
+                device: DeviceHandle,
+                endpoint: u8,
+                max: u32,
+                timeout_ms: u32,
+            ) -> Result<_rt::Vec<u8>, UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "interrupt-in"]
+                        fn wit_import1(_: i64, _: i32, _: i32, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: i32, _: i32, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import1(
+                            _rt::as_i64(device),
+                            _rt::as_i32(&endpoint),
+                            _rt::as_i32(&max),
+                            _rt::as_i32(&timeout_ms),
+                            ptr0,
+                        )
+                    };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result38 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+
+                                _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v37 = match l6 {
+                                    0 => {
+                                        let e37 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        UsbError::NotAllowed(e37)
+                                    }
+                                    1 => {
+                                        let e37 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        UsbError::Unavailable(e37)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e37 = {
+                                            let l13 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 =
+                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
+
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        UsbError::NotForApps(e37)
+                                    }
+                                    5 => {
+                                        let e37 = {
+                                            let l16 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        UsbError::BadRequest(e37)
+                                    }
+                                    6 => {
+                                        let e37 = {
+                                            let l19 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        UsbError::Busy(e37)
+                                    }
+                                    7 => {
+                                        let e37 = {
+                                            let l22 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 =
+                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
+
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        UsbError::Disconnected(e37)
+                                    }
+                                    8 => {
+                                        let e37 = {
+                                            let l25 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        UsbError::Stalled(e37)
+                                    }
+                                    9 => {
+                                        let e37 = {
+                                            let l28 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 =
+                                                _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
+
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        UsbError::TimedOut(e37)
+                                    }
+                                    10 => {
+                                        let e37 = {
+                                            let l31 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l32 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len33 = l32;
+                                            let bytes33 =
+                                                _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
+
+                                            _rt::string_lift(bytes33)
+                                        };
+                                        UsbError::TooMany(e37)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e37 = {
+                                            let l34 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l35 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len36 = l35;
+                                            let bytes36 =
+                                                _rt::Vec::from_raw_parts(l34.cast(), len36, len36);
+
+                                            _rt::string_lift(bytes36)
+                                        };
+                                        UsbError::Failed(e37)
+                                    }
+                                };
+
+                                v37
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result38
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// As `bulk-out`, to an interrupt endpoint of the claimed interface.
+            pub fn interrupt_out(
+                device: DeviceHandle,
+                endpoint: u8,
+                bytes: &[u8],
+                timeout_ms: u32,
+            ) -> Result<(), UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "interrupt-out"]
+                        fn wit_import2(_: i64, _: i32, _: *mut u8, _: usize, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(device),
+                            _rt::as_i32(&endpoint),
+                            ptr0.cast_mut(),
+                            len0,
+                            _rt::as_i32(&timeout_ms),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result36 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v35 = match l4 {
+                                    0 => {
+                                        let e35 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        UsbError::NotAllowed(e35)
+                                    }
+                                    1 => {
+                                        let e35 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        UsbError::Unavailable(e35)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e35 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        UsbError::NotForApps(e35)
+                                    }
+                                    5 => {
+                                        let e35 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 =
+                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        UsbError::BadRequest(e35)
+                                    }
+                                    6 => {
+                                        let e35 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        UsbError::Busy(e35)
+                                    }
+                                    7 => {
+                                        let e35 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        UsbError::Disconnected(e35)
+                                    }
+                                    8 => {
+                                        let e35 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 =
+                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
+
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        UsbError::Stalled(e35)
+                                    }
+                                    9 => {
+                                        let e35 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 =
+                                                _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
+
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        UsbError::TimedOut(e35)
+                                    }
+                                    10 => {
+                                        let e35 = {
+                                            let l29 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 =
+                                                _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
+
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        UsbError::TooMany(e35)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e35 = {
+                                            let l32 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l33 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len34 = l33;
+                                            let bytes34 =
+                                                _rt::Vec::from_raw_parts(l32.cast(), len34, len34);
+
+                                            _rt::string_lift(bytes34)
+                                        };
+                                        UsbError::Failed(e35)
+                                    }
+                                };
+
+                                v35
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result36
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A control request that reads up to `length` bytes (at most 4096) from
+            /// the claimed interface, one of its endpoints or the device, waiting up
+            /// to `timeout-ms` (1 to 60000).
+            pub fn control_in(
+                device: DeviceHandle,
+                setup: ControlSetup,
+                length: u16,
+                timeout_ms: u32,
+            ) -> Result<_rt::Vec<u8>, UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ControlSetup {
+                        request_type: request_type0,
+                        recipient: recipient0,
+                        request: request0,
+                        value: value0,
+                        index: index0,
+                    } = setup;
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "control-in"]
+                        fn wit_import2(
+                            _: i64,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(device),
+                            request_type0.clone() as i32,
+                            recipient0.clone() as i32,
+                            _rt::as_i32(request0),
+                            _rt::as_i32(value0),
+                            _rt::as_i32(index0),
+                            _rt::as_i32(&length),
+                            _rt::as_i32(&timeout_ms),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result39 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+
+                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v38 = match l7 {
+                                    0 => {
+                                        let e38 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        UsbError::NotAllowed(e38)
+                                    }
+                                    1 => {
+                                        let e38 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        UsbError::Unavailable(e38)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e38 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 =
+                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        UsbError::NotForApps(e38)
+                                    }
+                                    5 => {
+                                        let e38 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        UsbError::BadRequest(e38)
+                                    }
+                                    6 => {
+                                        let e38 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        UsbError::Busy(e38)
+                                    }
+                                    7 => {
+                                        let e38 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 =
+                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
+
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        UsbError::Disconnected(e38)
+                                    }
+                                    8 => {
+                                        let e38 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 =
+                                                _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
+
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        UsbError::Stalled(e38)
+                                    }
+                                    9 => {
+                                        let e38 = {
+                                            let l29 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 =
+                                                _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
+
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        UsbError::TimedOut(e38)
+                                    }
+                                    10 => {
+                                        let e38 = {
+                                            let l32 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l33 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len34 = l33;
+                                            let bytes34 =
+                                                _rt::Vec::from_raw_parts(l32.cast(), len34, len34);
+
+                                            _rt::string_lift(bytes34)
+                                        };
+                                        UsbError::TooMany(e38)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e38 = {
+                                            let l35 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l36 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len37 = l36;
+                                            let bytes37 =
+                                                _rt::Vec::from_raw_parts(l35.cast(), len37, len37);
+
+                                            _rt::string_lift(bytes37)
+                                        };
+                                        UsbError::Failed(e38)
+                                    }
+                                };
+
+                                v38
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result39
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A control request that writes `data` (at most 4096 bytes) to the
+            /// claimed interface, one of its endpoints or the device, waiting up to
+            /// `timeout-ms` (1 to 60000).
+            pub fn control_out(
+                device: DeviceHandle,
+                setup: ControlSetup,
+                data: &[u8],
+                timeout_ms: u32,
+            ) -> Result<(), UsbError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ControlSetup {
+                        request_type: request_type0,
+                        recipient: recipient0,
+                        request: request0,
+                        value: value0,
+                        index: index0,
+                    } = setup;
+                    let vec1 = data;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "control-out"]
+                        fn wit_import3(
+                            _: i64,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import3(
+                            _rt::as_i64(device),
+                            request_type0.clone() as i32,
+                            recipient0.clone() as i32,
+                            _rt::as_i32(request0),
+                            _rt::as_i32(value0),
+                            _rt::as_i32(index0),
+                            ptr1.cast_mut(),
+                            len1,
+                            _rt::as_i32(&timeout_ms),
+                            ptr2,
+                        )
+                    };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result37 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v36 = match l5 {
+                                    0 => {
+                                        let e36 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        UsbError::NotAllowed(e36)
+                                    }
+                                    1 => {
+                                        let e36 = {
+                                            let l9 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        UsbError::Unavailable(e36)
+                                    }
+                                    2 => UsbError::UnknownHandle,
+                                    3 => UsbError::NotClaimed,
+                                    4 => {
+                                        let e36 = {
+                                            let l12 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 =
+                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        UsbError::NotForApps(e36)
+                                    }
+                                    5 => {
+                                        let e36 = {
+                                            let l15 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 =
+                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
+
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        UsbError::BadRequest(e36)
+                                    }
+                                    6 => {
+                                        let e36 = {
+                                            let l18 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 =
+                                                _rt::Vec::from_raw_parts(l18.cast(), len20, len20);
+
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        UsbError::Busy(e36)
+                                    }
+                                    7 => {
+                                        let e36 = {
+                                            let l21 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l22 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len23 = l22;
+                                            let bytes23 =
+                                                _rt::Vec::from_raw_parts(l21.cast(), len23, len23);
+
+                                            _rt::string_lift(bytes23)
+                                        };
+                                        UsbError::Disconnected(e36)
+                                    }
+                                    8 => {
+                                        let e36 = {
+                                            let l24 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l25 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len26 = l25;
+                                            let bytes26 =
+                                                _rt::Vec::from_raw_parts(l24.cast(), len26, len26);
+
+                                            _rt::string_lift(bytes26)
+                                        };
+                                        UsbError::Stalled(e36)
+                                    }
+                                    9 => {
+                                        let e36 = {
+                                            let l27 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l28 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len29 = l28;
+                                            let bytes29 =
+                                                _rt::Vec::from_raw_parts(l27.cast(), len29, len29);
+
+                                            _rt::string_lift(bytes29)
+                                        };
+                                        UsbError::TimedOut(e36)
+                                    }
+                                    10 => {
+                                        let e36 = {
+                                            let l30 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l31 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len32 = l31;
+                                            let bytes32 =
+                                                _rt::Vec::from_raw_parts(l30.cast(), len32, len32);
+
+                                            _rt::string_lift(bytes32)
+                                        };
+                                        UsbError::TooMany(e36)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 11, "invalid enum discriminant");
+                                        let e36 = {
+                                            let l33 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l34 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len35 = l34;
+                                            let bytes35 =
+                                                _rt::Vec::from_raw_parts(l33.cast(), len35, len35);
+
+                                            _rt::string_lift(bytes35)
+                                        };
+                                        UsbError::Failed(e36)
+                                    }
+                                };
+
+                                v36
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result37
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Release the claimed interface, close the device and give up the pick:
+            /// the handle is spent, and reaching the device again needs a new pick.
+            /// Closing an unknown handle does nothing.
+            pub fn close(device: DeviceHandle) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:usb/devices@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close"]
+                        fn wit_import0(_: i64);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(device)) };
+                }
+            }
+        }
+    }
 }
 mod _rt {
     #![allow(dead_code, clippy::all)]
@@ -49763,9 +52010,9 @@ pub(crate) use __export_gui_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.2.0:gui:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 34162] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf7\x89\x02\x01A\x02\
-\x01A\xd9\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 34953] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8e\x90\x02\x01A\x02\
+\x01A\xdb\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\
 \x09log-level\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eo\
 f\0\0\x0cinvalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14k\
 rate:io/types@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\
@@ -49967,7 +52214,24 @@ ad-job\x01s\0\x04\0\x0bprint-error\x03\0\x0f\x01k\x03\x01j\x01\x11\x01\x10\x01@\
 \0\x12\x04\0\x0aremembered\x01\x13\x01@\x01\x05titles\0\x12\x04\0\x04pick\x01\x14\
 \x01j\x01\x0e\x01\x10\x01@\x02\x07printer\x01\x08document\x0c\0\x15\x04\0\x0epri\
 nt-document\x01\x16\x01@\x04\x07printer\x01\x05bytes\x0a\x06copiesy\x05titles\0\x15\
-\x04\0\x09print-raw\x01\x17\x03\0\x1akrate:print/printers@0.1.0\x05)\x01B7\x01m\x04\
+\x04\0\x09print-raw\x01\x17\x03\0\x1akrate:print/printers@0.1.0\x05)\x01B!\x01w\x04\
+\0\x0ddevice-handle\x03\0\0\x01r\x04\x06handle\x01\x04names\x09vendor-id{\x0apro\
+duct-id{\x04\0\x06device\x03\0\x02\x01m\x03\x08standard\x05class\x06vendor\x04\0\
+\x0crequest-type\x03\0\x04\x01m\x03\x09interface\x08endpoint\x06device\x04\0\x09\
+recipient\x03\0\x06\x01r\x05\x0crequest-type\x05\x09recipient\x07\x07request}\x05\
+value{\x05index{\x04\0\x0dcontrol-setup\x03\0\x08\x01q\x0c\x0bnot-allowed\x01s\0\
+\x0bunavailable\x01s\0\x0eunknown-handle\0\0\x0bnot-claimed\0\0\x0cnot-for-apps\x01\
+s\0\x0bbad-request\x01s\0\x04busy\x01s\0\x0cdisconnected\x01s\0\x07stalled\x01s\0\
+\x09timed-out\x01s\0\x08too-many\x01s\0\x06failed\x01s\0\x04\0\x09usb-error\x03\0\
+\x0a\x01k\x03\x01j\x01\x0c\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\
+\x01j\0\x01\x0b\x01@\x02\x06device\x01\x06number}\0\x0f\x04\0\x05claim\x01\x10\x01\
+p}\x01j\x01\x11\x01\x0b\x01@\x04\x06device\x01\x08endpoint}\x03maxy\x0atimeout-m\
+sy\0\x12\x04\0\x07bulk-in\x01\x13\x01@\x04\x06device\x01\x08endpoint}\x05bytes\x11\
+\x0atimeout-msy\0\x0f\x04\0\x08bulk-out\x01\x14\x04\0\x0cinterrupt-in\x01\x13\x04\
+\0\x0dinterrupt-out\x01\x14\x01@\x04\x06device\x01\x05setup\x09\x06length{\x0ati\
+meout-msy\0\x12\x04\0\x0acontrol-in\x01\x15\x01@\x04\x06device\x01\x05setup\x09\x04\
+data\x11\x0atimeout-msy\0\x0f\x04\0\x0bcontrol-out\x01\x16\x01@\x01\x06device\x01\
+\x01\0\x04\0\x05close\x01\x17\x03\0\x17krate:usb/devices@0.1.0\x05*\x01B7\x01m\x04\
 \x06normal\x09minimized\x09maximized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\
 \x01r\x02\x05widthy\x06heighty\x04\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01\
 yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x04\x01m\x03\x05light\x04dark\x07unk\
@@ -49999,86 +52263,86 @@ chosen-file\x03\03\x01q\x0d\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10re
 draw-requested\x01w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0a\
 text-input\x01s\0\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\
 \x0c\0\x0dtheme-changed\x01\x07\0\x0cfile-dropped\x014\0\x0dfile-hovering\x01\x7f\
-\0\x04\0\x05event\x03\05\x03\0\x14krate:ui/types@0.1.0\x05*\x02\x03\0\x1c\x08ui-\
-error\x02\x03\0\x1c\x0bwindow-size\x02\x03\0\x1c\x0cwindow-state\x01B\x16\x02\x03\
-\x02\x01+\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01,\x04\0\x0bwindow-size\x03\0\x02\
-\x02\x03\x02\x01-\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05\
+\0\x04\0\x05event\x03\05\x03\0\x14krate:ui/types@0.1.0\x05+\x02\x03\0\x1d\x08ui-\
+error\x02\x03\0\x1d\x0bwindow-size\x02\x03\0\x1d\x0cwindow-state\x01B\x16\x02\x03\
+\x02\x01,\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01-\x04\0\x0bwindow-size\x03\0\x02\
+\x02\x03\x02\x01.\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05\
 titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\x06wind\
 oww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06windoww\x05ti\
 tles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\
 \x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09set-state\x01\
 \x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\x7f\0\x08\x04\
-\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05.\x02\x03\0\x1c\x0b\
-widget-node\x01B\x0e\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01/\
+\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05/\x02\x03\0\x1d\x0b\
+widget-node\x01B\x0e\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x010\
 \x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\
 \x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bup\
 sert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\
 \x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\
-\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x050\x01B\x0a\x02\x03\
-\x02\x01+\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\
+\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x051\x01B\x0a\x02\x03\
+\x02\x01,\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\
 \x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06widgetw\x06\
 pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x05\
-\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x051\x02\x03\0\x1c\x05even\
-t\x01B\x10\x02\x03\x02\x012\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04\
+\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x052\x02\x03\0\x1d\x05even\
+t\x01B\x10\x02\x03\x02\x013\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04\
 poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x01\
 @\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-conn\
 ected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04\
-axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x053\x02\x03\
-\0\x1c\x0epointer-button\x01B\x13\x02\x03\x02\x014\x04\0\x0epointer-button\x03\0\
-\0\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\x02\x01o\x02vv\x01k\x04\x01@\x01\x06\
+axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x054\x02\x03\
+\0\x1d\x0epointer-button\x01B\x13\x02\x03\x02\x015\x04\0\x0epointer-button\x03\0\
+\0\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\x02\x01o\x02vv\x01k\x04\x01@\x01\x06\
 windoww\0\x05\x04\0\x08position\x01\x06\x01@\x01\x06button\x01\0\x7f\x04\0\x0bbu\
 tton-held\x01\x07\x01@\x01\x06windoww\0\x04\x04\0\x0btake-motion\x01\x08\x01j\0\x01\
 \x03\x01@\x01\x06windoww\0\x09\x04\0\x07capture\x01\x0a\x01@\x01\x06windoww\x01\0\
 \x04\0\x07release\x01\x0b\x01@\x01\x06windoww\0\x7f\x04\0\x08captured\x01\x0c\x03\
-\0\x16krate:ui/pointer@0.1.0\x055\x01B\x05\x01r\x03\x02idw\x01xv\x01yv\x04\0\x0b\
+\0\x16krate:ui/pointer@0.1.0\x056\x01B\x05\x01r\x03\x02idw\x01xv\x01yv\x04\0\x0b\
 touch-point\x03\0\0\x01p\x01\x01@\x01\x06windoww\0\x02\x04\0\x07touches\x01\x03\x03\
-\0\x14krate:ui/touch@0.1.0\x056\x01B\x04\x01@\x01\x06windoww\0\x7f\x04\0\x05star\
+\0\x14krate:ui/touch@0.1.0\x057\x01B\x04\x01@\x01\x06windoww\0\x7f\x04\0\x05star\
 t\x01\0\x01@\x01\x06windoww\x01\0\x04\0\x04stop\x01\x01\x03\0\x19krate:ui/text-e\
-ntry@0.1.0\x057\x01B\x0a\x01m\x03\x07compact\x06medium\x05large\x04\0\x0asize-cl\
+ntry@0.1.0\x058\x01B\x0a\x01m\x03\x07compact\x06medium\x05large\x04\0\x0asize-cl\
 ass\x03\0\0\x01m\x02\x05touch\x07pointer\x04\0\x0ainput-kind\x03\0\x02\x01r\x04\x03\
 topv\x05rightv\x06bottomv\x04leftv\x04\0\x06insets\x03\0\x04\x01r\x06\x05widthv\x06\
 heightv\x0bwidth-class\x01\x0cheight-class\x01\x05input\x03\x04safe\x05\x04\0\x0c\
 screen-facts\x03\0\x06\x01@\x01\x06windoww\0\x07\x04\0\x05facts\x01\x08\x03\0\x15\
-krate:ui/screen@0.1.0\x058\x02\x03\0\x1c\x0bchosen-file\x01B\x16\x02\x03\x02\x01\
-9\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\x02\x01r\
+krate:ui/screen@0.1.0\x059\x02\x03\0\x1d\x0bchosen-file\x01B\x16\x02\x03\x02\x01\
+:\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\x02\x01r\
 \x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x03\x01@\x03\
 \x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x03\
 \x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x01\x01\
 j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-f\
 ile\x01\x0c\x01@\x04\x06windoww\x05titles\x09suggesteds\x06filters\0\x0b\x04\0\x09\
 save-file\x01\x0d\x01k\x05\x01j\x01\x0e\x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\
-\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x05:\x01B\x0b\x02\x03\
-\x02\x01+\x04\0\x08ui-error\x03\0\0\x01m\x03\x07printed\x09cancelled\x10opened-i\
+\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x05;\x01B\x0b\x02\x03\
+\x02\x01,\x04\0\x08ui-error\x03\0\0\x01m\x03\x07printed\x09cancelled\x10opened-i\
 n-viewer\x04\0\x0dprint-outcome\x03\0\x02\x01j\x01\x03\x01\x01\x01@\x02\x06windo\
 ww\x05titles\0\x04\x04\0\x06window\x01\x05\x01j\x01y\x01\x01\x01@\x01\x06windoww\
 \0\x06\x04\0\x08add-page\x01\x07\x04\0\x06finish\x01\x05\x03\0\x14krate:ui/print\
-@0.1.0\x05;\x01B\x08\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\
+@0.1.0\x05<\x01B\x08\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\
 \x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\
-\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05<\x02\x03\0\x1c\x09\
-menu-item\x01B\x08\x02\x03\x02\x01=\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01+\x04\
+\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05=\x02\x03\0\x1d\x09\
+menu-item\x01B\x08\x02\x03\x02\x01>\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01,\x04\
 \0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\
-\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x05>\x01B\x05\x01\
+\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x05?\x01B\x05\x01\
 q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0claunch-\
 error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\x03\
-\0\x17krate:ui/launcher@0.1.0\x05?\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-co\
+\0\x17krate:ui/launcher@0.1.0\x05@\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-co\
 ntent\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01\
 @\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notify@0.\
-1.0\x05@\x02\x03\0*\x0cnotify-error\x01B\x07\x02\x03\x02\x01A\x04\0\x0cnotify-er\
+1.0\x05A\x02\x03\0+\x0cnotify-error\x01B\x07\x02\x03\x02\x01B\x04\0\x0cnotify-er\
 ror\x03\0\0\x01j\0\x01\x01\x01@\x03\x02ids\x05titles\x04bodys\0\x02\x04\0\x04pos\
 t\x01\x03\x01@\x01\x02ids\x01\0\x04\0\x08withdraw\x01\x04\x03\0\x1ckrate:ui/noti\
-fications@0.1.0\x05B\x01B\x08\x01m\x07\x05light\x06medium\x05heavy\x09selection\x07\
+fications@0.1.0\x05C\x01B\x08\x01m\x07\x05light\x06medium\x05heavy\x09selection\x07\
 success\x07warning\x05error\x04\0\x04feel\x03\0\0\x01@\0\0\x7f\x04\0\x09availabl\
 e\x01\x02\x01@\x01\x04feel\x01\x01\0\x04\0\x04play\x01\x03\x01@\x01\x08strengthv\
-\x01\0\x04\0\x06impact\x01\x04\x03\0\x16krate:ui/haptics@0.1.0\x05C\x01B\x0a\x01\
+\x01\0\x04\0\x06impact\x01\x04\x03\0\x16krate:ui/haptics@0.1.0\x05D\x01B\x0a\x01\
 r\x03\x01xv\x01yv\x01zv\x04\0\x06vector\x03\0\0\x01kv\x01r\x04\x07gravity\x01\x0c\
 acceleration\x01\x08rotation\x01\x07heading\x02\x04\0\x07reading\x03\0\x03\x01@\0\
 \0\x7f\x04\0\x09available\x01\x05\x01k\x04\x01@\0\0\x06\x04\0\x04read\x01\x07\x03\
-\0\x15krate:ui/motion@0.1.0\x05D\x01B\x0a\x01kv\x01r\x07\x08latitudeu\x09longitu\
+\0\x15krate:ui/motion@0.1.0\x05E\x01B\x0a\x01kv\x01r\x07\x08latitudeu\x09longitu\
 deu\x08accuracyv\x08altitude\0\x05speed\0\x06course\0\x06age-msw\x04\0\x08positi\
 on\x03\0\x01\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\0\0\x07finding\0\0\x04\0\
 \x0elocation-error\x03\0\x03\x01@\0\0\x7f\x04\0\x09available\x01\x05\x01j\x01\x02\
 \x01\x04\x01@\0\0\x06\x04\0\x07current\x01\x07\x03\0\x17krate:ui/location@0.1.0\x05\
-E\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01p}\x01r\x03\x07se\
+F\x01B\x1c\x01r\x02\x02idw\x04names\x04\0\x06device\x03\0\0\x01p}\x01r\x03\x07se\
 rvices\x0echaracteristics\x04data\x02\x04\0\x0cnotification\x03\0\x03\x01q\x05\x0b\
 not-allowed\0\0\x0bunavailable\0\0\x09not-found\0\0\x0cdisconnected\0\0\x06faile\
 d\x01s\0\x04\0\x0fbluetooth-error\x03\0\x05\x01@\0\0\x7f\x04\0\x09available\x01\x07\
@@ -50089,41 +52353,41 @@ ervices\x0echaracteristics\x04data\x02\x0dwith-response\x7f\0\x0d\x04\0\x05write
 \x01\x0e\x01@\x03\x06devicew\x07services\x0echaracteristics\0\x0d\x04\0\x09subsc\
 ribe\x01\x0f\x01p\x04\x01@\x01\x06devicew\0\x10\x04\0\x0dnotifications\x01\x11\x01\
 @\x01\x06devicew\0\x7f\x04\0\x09connected\x01\x12\x01@\x01\x06devicew\x01\0\x04\0\
-\x0adisconnect\x01\x13\x03\0\x18krate:ui/bluetooth@0.1.0\x05F\x01B\x0a\x01p}\x01\
+\x0adisconnect\x01\x13\x03\0\x18krate:ui/bluetooth@0.1.0\x05G\x01B\x0a\x01p}\x01\
 r\x02\x04names\x04data\0\x04\0\x0bshared-file\x03\0\x01\x01q\x02\x0bunavailable\x01\
 s\0\x07invalid\x01s\0\x04\0\x0bshare-error\x03\0\x03\x01ks\x01p\x02\x01j\x01\x7f\
 \x01\x04\x01@\x04\x06windoww\x04text\x05\x03url\x05\x05files\x06\0\x07\x04\0\x05\
-share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05G\x01B\x0c\x02\x03\x02\x019\x04\0\
+share\x01\x08\x03\0\x14krate:ui/share@0.1.0\x05H\x01B\x0c\x02\x03\x02\x01:\x04\0\
 \x0bchosen-file\x03\0\0\x01q\x03\x0bnot-allowed\0\0\x0bunavailable\x01s\0\x07inv\
 alid\x01s\0\x04\0\x0cphotos-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\x02\
 \x06windoww\x05limity\0\x05\x04\0\x04pick\x01\x06\x01p}\x01j\0\x01\x03\x01@\x02\x06\
 windoww\x04data\x07\0\x08\x04\0\x04save\x01\x09\x03\0\x15krate:ui/photos@0.1.0\x05\
-H\x01B\x0a\x02\x03\x02\x01A\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\
+I\x01B\x0a\x02\x03\x02\x01B\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x05\
 \x02ids\x05titles\x04bodys\x0dafter-secondsw\x05daily\x7f\0\x02\x04\0\x08schedul\
 e\x01\x03\x01@\x01\x02ids\x01\0\x04\0\x06cancel\x01\x04\x01ps\x01@\0\0\x05\x04\0\
-\x07pending\x01\x06\x03\0\x18krate:ui/reminders@0.1.0\x05I\x01B\x08\x01q\x03\x09\
+\x07pending\x01\x06\x03\0\x18krate:ui/reminders@0.1.0\x05J\x01B\x08\x01q\x03\x09\
 cancelled\0\0\x0bunavailable\x01s\0\x07invalid\x01s\0\x04\0\x0dsign-in-error\x03\
 \0\0\x01o\x02ss\x01@\0\0\x02\x04\0\x04pkce\x01\x03\x01j\x01s\x01\x01\x01@\x03\x06\
 windoww\x0dauthorize-urls\x0fcallback-schemes\0\x04\x04\0\x05start\x01\x05\x03\0\
-\x16krate:ui/sign-in@0.1.0\x05J\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavai\
+\x16krate:ui/sign-in@0.1.0\x05K\x01B\x06\x01q\x03\x03yes\0\0\x02no\0\0\x0bunavai\
 lable\x01s\0\x04\0\x0dunlock-answer\x03\0\0\x01@\0\0\x7f\x04\0\x09available\x01\x02\
 \x01@\x01\x06reasons\0\x01\x04\0\x05check\x01\x03\x03\0\x15krate:ui/unlock@0.1.0\
-\x05K\x01B\x04\x01r\x03\x04dark\x7f\x0dhigh-contrast\x7f\x0atext-scalev\x04\0\x04\
+\x05L\x01B\x04\x01r\x03\x04dark\x7f\x0dhigh-contrast\x7f\x0atext-scalev\x04\0\x04\
 look\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x03\0\x19krate:ui/appearance@\
-0.1.0\x05L\x01B\x0d\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\0\x01m\x08\x06butto\
+0.1.0\x05M\x01B\x0d\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\0\x01m\x08\x06butto\
 n\x04link\x07heading\x04text\x05image\x06toggle\x0aadjustable\x05field\x04\0\x04\
 role\x03\0\x02\x01k\x7f\x01r\x09\x01xv\x01yv\x05widthv\x06heightv\x04role\x03\x05\
 labels\x05values\x07checked\x04\x07enabled\x7f\x04\0\x07element\x03\0\x05\x01p\x06\
 \x01j\0\x01\x01\x01@\x02\x06windoww\x08elements\x07\0\x08\x04\0\x08describe\x01\x09\
 \x01@\0\0\x7f\x04\0\x10screen-reader-on\x01\x0a\x03\0\x1ckrate:ui/accessibility@\
-0.1.0\x05M\x01B\x12\x02\x03\x02\x01+\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addre\
+0.1.0\x05N\x01B\x12\x02\x03\x02\x01,\x04\0\x08ui-error\x03\0\0\x01r\x04\x07addre\
 sss\x05titles\x07loading\x7f\x07problems\x04\0\x0apage-state\x03\0\x02\x01j\x01w\
 \x01\x01\x01@\x06\x06windoww\x07addresss\x01xv\x01yv\x05widthv\x06heightv\0\x04\x04\
 \0\x04open\x01\x05\x01j\0\x01\x01\x01@\x05\x04pagew\x01xv\x01yv\x05widthv\x06hei\
 ghtv\0\x06\x04\0\x05place\x01\x07\x01@\x02\x04pagew\x07addresss\0\x06\x04\0\x02g\
 o\x01\x08\x01@\x01\x04pagew\x01\0\x04\0\x04back\x01\x09\x01j\x01\x03\x01\x01\x01\
 @\x01\x04pagew\0\x0a\x04\0\x05state\x01\x0b\x04\0\x05close\x01\x09\x03\0\x17krat\
-e:ui/web-page@0.1.0\x05N\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05colo\
+e:ui/web-page@0.1.0\x05O\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05colo\
 r\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06he\
 ightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07descen\
 tv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\
@@ -50133,15 +52397,15 @@ tv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04
 \0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\
 \x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\
 \0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15\
-krate:gfx/types@0.1.0\x05O\x02\x03\08\x05color\x02\x03\08\x05point\x02\x03\08\x04\
-rect\x02\x03\08\x04size\x02\x03\08\x0ctext-metrics\x02\x03\08\x09gfx-error\x02\x03\
-\08\x0dgradient-stop\x02\x03\08\x0ccorner-radii\x02\x03\08\x0atext-style\x02\x03\
-\08\x0bfont-family\x01BK\x02\x03\x02\x01P\x04\0\x05color\x03\0\0\x02\x03\x02\x01\
-Q\x04\0\x05point\x03\0\x02\x02\x03\x02\x01R\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01\
-S\x04\0\x04size\x03\0\x06\x02\x03\x02\x01T\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\
-\x02\x01U\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\x01V\x04\0\x0dgradient-stop\x03\
-\0\x0c\x02\x03\x02\x01W\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01X\x04\0\x0a\
-text-style\x03\0\x10\x02\x03\x02\x01Y\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\
+krate:gfx/types@0.1.0\x05P\x02\x03\09\x05color\x02\x03\09\x05point\x02\x03\09\x04\
+rect\x02\x03\09\x04size\x02\x03\09\x0ctext-metrics\x02\x03\09\x09gfx-error\x02\x03\
+\09\x0dgradient-stop\x02\x03\09\x0ccorner-radii\x02\x03\09\x0atext-style\x02\x03\
+\09\x0bfont-family\x01BK\x02\x03\x02\x01Q\x04\0\x05color\x03\0\0\x02\x03\x02\x01\
+R\x04\0\x05point\x03\0\x02\x02\x03\x02\x01S\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01\
+T\x04\0\x04size\x03\0\x06\x02\x03\x02\x01U\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\
+\x02\x01V\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\x01W\x04\0\x0dgradient-stop\x03\
+\0\x0c\x02\x03\x02\x01X\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01Y\x04\0\x0a\
+text-style\x03\0\x10\x02\x03\x02\x01Z\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\
 \x0b\x01@\x02\x06windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\
 \x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\
 \x06canvasw\x04size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canva\
@@ -50170,8 +52434,8 @@ t-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\x0
 font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widt\
 hy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06ce\
 nter\x03\x03dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-\
-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05Z\x01B\
-%\x02\x03\x02\x01P\x04\0\x05color\x03\0\0\x02\x03\x02\x01U\x04\0\x09gfx-error\x03\
+sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05[\x01B\
+%\x02\x03\x02\x01Q\x04\0\x05color\x03\0\0\x02\x03\x02\x01V\x04\0\x09gfx-error\x03\
 \0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
 fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshado\
 w-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06\
@@ -50189,51 +52453,51 @@ enew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x08\x05scenew\x08v
 ertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07texturew\x0enormal-text\
 urew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01\
 @\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05\
-scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05[\x01B\
-\xf6\x01\x01w\x04\0\x06handle\x03\0\0\x01q\x06\x0einvalid-handle\x01s\0\x0avalid\
-ation\x01s\0\x0dout-of-memory\0\0\x04lost\x01s\0\x0bunsupported\x01s\0\x08intern\
-al\x01s\0\x04\0\x09gpu-error\x03\0\x02\x01r\x05\x07messages\x04liney\x06columny\x06\
-offsety\x06lengthy\x04\0\x0cshader-error\x03\0\x04\x01r\x06\x07messages\x04kinds\
-\x04liney\x06columny\x06offsety\x06lengthy\x04\0\x13compilation-message\x03\0\x06\
-\x01r\x02\x04names\x05valuew\x04\0\x05limit\x03\0\x08\x01m\x03\x04none\x09low-po\
-wer\x10high-performance\x04\0\x10power-preference\x03\0\x0a\x01k\x01\x01r\x03\x10\
-power-preference\x0b\x16force-fallback-adapter\x7f\x12compatible-surface\x0c\x04\
-\0\x0fadapter-options\x03\0\x0d\x01m\x05\x05other\x0eintegrated-gpu\x0cdiscrete-\
-gpu\x0bvirtual-gpu\x03cpu\x04\0\x0bdevice-type\x03\0\x0f\x01r\x07\x04names\x06ve\
-ndory\x06devicey\x0bdevice-type\x10\x07backends\x06drivers\x0bdriver-infos\x04\0\
-\x0cadapter-info\x03\0\x11\x01ks\x01ps\x01p\x09\x01r\x03\x05label\x13\x11require\
-d-features\x14\x0frequired-limits\x15\x04\0\x11device-descriptor\x03\0\x16\x01n\x0a\
-\x08map-read\x09map-write\x08copy-src\x08copy-dst\x05index\x06vertex\x07uniform\x07\
-storage\x08indirect\x0dquery-resolve\x04\0\x0dbuffer-usages\x03\0\x18\x01r\x04\x05\
-label\x13\x04sizew\x05usage\x19\x12mapped-at-creation\x7f\x04\0\x11buffer-descri\
-ptor\x03\0\x1a\x01n\x05\x08copy-src\x08copy-dst\x0ftexture-binding\x0fstorage-bi\
-nding\x11render-attachment\x04\0\x0etexture-usages\x03\0\x1c\x01r\x03\x05widthy\x06\
-heighty\x15depth-or-array-layersy\x04\0\x08extent3d\x03\0\x1e\x01r\x03\x01xy\x01\
-yy\x01zy\x04\0\x08origin3d\x03\0\x20\x01m\x03\x02d1\x02d2\x02d3\x04\0\x11texture\
--dimension\x03\0\"\x01r\x08\x05label\x13\x04size\x1f\x0fmip-level-county\x0csamp\
-le-county\x09dimension#\x06formats\x05usage\x1d\x0cview-formats\x14\x04\0\x12tex\
-ture-descriptor\x03\0$\x01m\x06\x02d1\x02d2\x08d2-array\x04cube\x0acube-array\x02\
-d3\x04\0\x16texture-view-dimension\x03\0&\x01m\x03\x03all\x0cstencil-only\x0adep\
-th-only\x04\0\x0etexture-aspect\x03\0(\x01k'\x01k\x1d\x01ky\x01r\x09\x05label\x13\
-\x06format\x13\x09dimension*\x05usage+\x06aspect)\x0ebase-mip-levely\x0fmip-leve\
-l-count,\x10base-array-layery\x11array-layer-count,\x04\0\x17texture-view-descri\
-ptor\x03\0-\x01m\x04\x0dclamp-to-edge\x06repeat\x0dmirror-repeat\x0fclamp-to-bor\
-der\x04\0\x0caddress-mode\x03\0/\x01m\x02\x07nearest\x06linear\x04\0\x0bfilter-m\
-ode\x03\01\x01m\x08\x05never\x04less\x05equal\x0aless-equal\x07greater\x09not-eq\
-ual\x0dgreater-equal\x06always\x04\0\x10compare-function\x03\03\x01m\x04\x11tran\
-sparent-black\x0copaque-black\x0copaque-white\x04zero\x04\0\x0cborder-color\x03\0\
-5\x01k4\x01k6\x01r\x0c\x05label\x13\x0eaddress-mode-u0\x0eaddress-mode-v0\x0eadd\
-ress-mode-w0\x0amag-filter2\x0amin-filter2\x0dmipmap-filter2\x0dlod-min-clampv\x0d\
-lod-max-clampv\x07compare7\x10anisotropy-clamp{\x0cborder-color8\x04\0\x12sample\
-r-descriptor\x03\09\x01n\x03\x06vertex\x08fragment\x07compute\x04\0\x0dshader-st\
-ages\x03\0;\x01q\x02\x07uniform\0\0\x07storage\x01\x7f\0\x04\0\x13buffer-binding\
--type\x03\0=\x01r\x03\x04kind>\x12has-dynamic-offset\x7f\x10min-binding-sizew\x04\
-\0\x15buffer-binding-layout\x03\0?\x01m\x03\x09filtering\x0dnon-filtering\x0acom\
-parison\x04\0\x14sampler-binding-type\x03\0A\x01q\x04\x05float\x01\x7f\0\x05dept\
-h\0\0\x04sint\0\0\x04uint\0\0\x04\0\x13texture-sample-type\x03\0C\x01r\x03\x0bsa\
-mple-type\xc4\0\x0eview-dimension'\x0cmultisampled\x7f\x04\0\x16texture-binding-\
-layout\x03\0E\x01m\x03\x0awrite-only\x09read-only\x0aread-write\x04\0\x16storage\
--texture-access\x03\0G\x01r\x03\x06access\xc8\0\x06formats\x0eview-dimension'\x04\
+scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05\\\x01\
+B\xf6\x01\x01w\x04\0\x06handle\x03\0\0\x01q\x06\x0einvalid-handle\x01s\0\x0avali\
+dation\x01s\0\x0dout-of-memory\0\0\x04lost\x01s\0\x0bunsupported\x01s\0\x08inter\
+nal\x01s\0\x04\0\x09gpu-error\x03\0\x02\x01r\x05\x07messages\x04liney\x06columny\
+\x06offsety\x06lengthy\x04\0\x0cshader-error\x03\0\x04\x01r\x06\x07messages\x04k\
+inds\x04liney\x06columny\x06offsety\x06lengthy\x04\0\x13compilation-message\x03\0\
+\x06\x01r\x02\x04names\x05valuew\x04\0\x05limit\x03\0\x08\x01m\x03\x04none\x09lo\
+w-power\x10high-performance\x04\0\x10power-preference\x03\0\x0a\x01k\x01\x01r\x03\
+\x10power-preference\x0b\x16force-fallback-adapter\x7f\x12compatible-surface\x0c\
+\x04\0\x0fadapter-options\x03\0\x0d\x01m\x05\x05other\x0eintegrated-gpu\x0cdiscr\
+ete-gpu\x0bvirtual-gpu\x03cpu\x04\0\x0bdevice-type\x03\0\x0f\x01r\x07\x04names\x06\
+vendory\x06devicey\x0bdevice-type\x10\x07backends\x06drivers\x0bdriver-infos\x04\
+\0\x0cadapter-info\x03\0\x11\x01ks\x01ps\x01p\x09\x01r\x03\x05label\x13\x11requi\
+red-features\x14\x0frequired-limits\x15\x04\0\x11device-descriptor\x03\0\x16\x01\
+n\x0a\x08map-read\x09map-write\x08copy-src\x08copy-dst\x05index\x06vertex\x07uni\
+form\x07storage\x08indirect\x0dquery-resolve\x04\0\x0dbuffer-usages\x03\0\x18\x01\
+r\x04\x05label\x13\x04sizew\x05usage\x19\x12mapped-at-creation\x7f\x04\0\x11buff\
+er-descriptor\x03\0\x1a\x01n\x05\x08copy-src\x08copy-dst\x0ftexture-binding\x0fs\
+torage-binding\x11render-attachment\x04\0\x0etexture-usages\x03\0\x1c\x01r\x03\x05\
+widthy\x06heighty\x15depth-or-array-layersy\x04\0\x08extent3d\x03\0\x1e\x01r\x03\
+\x01xy\x01yy\x01zy\x04\0\x08origin3d\x03\0\x20\x01m\x03\x02d1\x02d2\x02d3\x04\0\x11\
+texture-dimension\x03\0\"\x01r\x08\x05label\x13\x04size\x1f\x0fmip-level-county\x0c\
+sample-county\x09dimension#\x06formats\x05usage\x1d\x0cview-formats\x14\x04\0\x12\
+texture-descriptor\x03\0$\x01m\x06\x02d1\x02d2\x08d2-array\x04cube\x0acube-array\
+\x02d3\x04\0\x16texture-view-dimension\x03\0&\x01m\x03\x03all\x0cstencil-only\x0a\
+depth-only\x04\0\x0etexture-aspect\x03\0(\x01k'\x01k\x1d\x01ky\x01r\x09\x05label\
+\x13\x06format\x13\x09dimension*\x05usage+\x06aspect)\x0ebase-mip-levely\x0fmip-\
+level-count,\x10base-array-layery\x11array-layer-count,\x04\0\x17texture-view-de\
+scriptor\x03\0-\x01m\x04\x0dclamp-to-edge\x06repeat\x0dmirror-repeat\x0fclamp-to\
+-border\x04\0\x0caddress-mode\x03\0/\x01m\x02\x07nearest\x06linear\x04\0\x0bfilt\
+er-mode\x03\01\x01m\x08\x05never\x04less\x05equal\x0aless-equal\x07greater\x09no\
+t-equal\x0dgreater-equal\x06always\x04\0\x10compare-function\x03\03\x01m\x04\x11\
+transparent-black\x0copaque-black\x0copaque-white\x04zero\x04\0\x0cborder-color\x03\
+\05\x01k4\x01k6\x01r\x0c\x05label\x13\x0eaddress-mode-u0\x0eaddress-mode-v0\x0ea\
+ddress-mode-w0\x0amag-filter2\x0amin-filter2\x0dmipmap-filter2\x0dlod-min-clampv\
+\x0dlod-max-clampv\x07compare7\x10anisotropy-clamp{\x0cborder-color8\x04\0\x12sa\
+mpler-descriptor\x03\09\x01n\x03\x06vertex\x08fragment\x07compute\x04\0\x0dshade\
+r-stages\x03\0;\x01q\x02\x07uniform\0\0\x07storage\x01\x7f\0\x04\0\x13buffer-bin\
+ding-type\x03\0=\x01r\x03\x04kind>\x12has-dynamic-offset\x7f\x10min-binding-size\
+w\x04\0\x15buffer-binding-layout\x03\0?\x01m\x03\x09filtering\x0dnon-filtering\x0a\
+comparison\x04\0\x14sampler-binding-type\x03\0A\x01q\x04\x05float\x01\x7f\0\x05d\
+epth\0\0\x04sint\0\0\x04uint\0\0\x04\0\x13texture-sample-type\x03\0C\x01r\x03\x0b\
+sample-type\xc4\0\x0eview-dimension'\x0cmultisampled\x7f\x04\0\x16texture-bindin\
+g-layout\x03\0E\x01m\x03\x0awrite-only\x09read-only\x0aread-write\x04\0\x16stora\
+ge-texture-access\x03\0G\x01r\x03\x06access\xc8\0\x06formats\x0eview-dimension'\x04\
 \0\x1estorage-texture-binding-layout\x03\0I\x01q\x04\x06buffer\x01\xc0\0\0\x07sa\
 mpler\x01\xc2\0\0\x07texture\x01\xc6\0\0\x0fstorage-texture\x01\xca\0\0\x04\0\x0c\
 binding-type\x03\0K\x01r\x04\x07bindingy\x0avisibility<\x04kind\xcc\0\x05count,\x04\
@@ -50345,42 +52609,42 @@ surface-configuration\x03\0\xee\x01\x01r\x02\x07texture\x01\x0asuboptimal\x7f\x0
 \x08occluded\0\0\x04lost\x01s\0\x05other\x01s\0\x04\0\x0dsurface-error\x03\0\xf2\
 \x01\x01r\x05\x0eallowed-usages\x1d\x0dsample-counts\xc6\x01\x0afilterable\x7f\x09\
 blendable\x7f\x12storage-read-write\x7f\x04\0\x0fformat-features\x03\0\xf4\x01\x03\
-\0\x15krate:gpu/types@0.1.0\x05\\\x02\x03\0;\x06handle\x02\x03\0;\x09gpu-error\x02\
-\x03\0;\x0cshader-error\x02\x03\0;\x13compilation-message\x02\x03\0;\x05limit\x02\
-\x03\0;\x0fadapter-options\x02\x03\0;\x0cadapter-info\x02\x03\0;\x11device-descr\
-iptor\x02\x03\0;\x11buffer-descriptor\x02\x03\0;\x12texture-descriptor\x02\x03\0\
-;\x17texture-view-descriptor\x02\x03\0;\x12sampler-descriptor\x02\x03\0;\x1cbind\
--group-layout-descriptor\x02\x03\0;\x15bind-group-descriptor\x02\x03\0;\x1apipel\
-ine-layout-descriptor\x02\x03\0;\x18shader-module-descriptor\x02\x03\0;\x1arende\
-r-pipeline-descriptor\x02\x03\0;\x1bcompute-pipeline-descriptor\x02\x03\0;\x14qu\
-ery-set-descriptor\x02\x03\0;\x17texel-copy-texture-info\x02\x03\0;\x18texel-cop\
-y-buffer-layout\x02\x03\0;\x16texel-copy-buffer-info\x02\x03\0;\x08extent3d\x02\x03\
-\0;\x16render-pass-descriptor\x02\x03\0;\x0erender-command\x02\x03\0;\x17compute\
--pass-descriptor\x02\x03\0;\x0fcompute-command\x02\x03\0;\x08map-mode\x02\x03\0;\
-\x14surface-capabilities\x02\x03\0;\x15surface-configuration\x02\x03\0;\x0dsurfa\
-ce-frame\x02\x03\0;\x0dsurface-error\x02\x03\0;\x0fformat-features\x01B\xc5\x01\x02\
-\x03\x02\x01]\x04\0\x06handle\x03\0\0\x02\x03\x02\x01^\x04\0\x09gpu-error\x03\0\x02\
-\x02\x03\x02\x01_\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01`\x04\0\x13comp\
-ilation-message\x03\0\x06\x02\x03\x02\x01a\x04\0\x05limit\x03\0\x08\x02\x03\x02\x01\
-b\x04\0\x0fadapter-options\x03\0\x0a\x02\x03\x02\x01c\x04\0\x0cadapter-info\x03\0\
-\x0c\x02\x03\x02\x01d\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01e\x04\0\
-\x11buffer-descriptor\x03\0\x10\x02\x03\x02\x01f\x04\0\x12texture-descriptor\x03\
-\0\x12\x02\x03\x02\x01g\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01\
-h\x04\0\x12sampler-descriptor\x03\0\x16\x02\x03\x02\x01i\x04\0\x1cbind-group-lay\
-out-descriptor\x03\0\x18\x02\x03\x02\x01j\x04\0\x15bind-group-descriptor\x03\0\x1a\
-\x02\x03\x02\x01k\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01l\
-\x04\0\x18shader-module-descriptor\x03\0\x1e\x02\x03\x02\x01m\x04\0\x1arender-pi\
-peline-descriptor\x03\0\x20\x02\x03\x02\x01n\x04\0\x1bcompute-pipeline-descripto\
-r\x03\0\"\x02\x03\x02\x01o\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01p\
-\x04\0\x17texel-copy-texture-info\x03\0&\x02\x03\x02\x01q\x04\0\x18texel-copy-bu\
-ffer-layout\x03\0(\x02\x03\x02\x01r\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\
-\x02\x01s\x04\0\x08extent3d\x03\0,\x02\x03\x02\x01t\x04\0\x16render-pass-descrip\
-tor\x03\0.\x02\x03\x02\x01u\x04\0\x0erender-command\x03\00\x02\x03\x02\x01v\x04\0\
-\x17compute-pass-descriptor\x03\02\x02\x03\x02\x01w\x04\0\x0fcompute-command\x03\
-\04\x02\x03\x02\x01x\x04\0\x08map-mode\x03\06\x02\x03\x02\x01y\x04\0\x14surface-\
-capabilities\x03\08\x02\x03\x02\x01z\x04\0\x15surface-configuration\x03\0:\x02\x03\
-\x02\x01{\x04\0\x0dsurface-frame\x03\0<\x02\x03\x02\x01|\x04\0\x0dsurface-error\x03\
-\0>\x02\x03\x02\x01}\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\
+\0\x15krate:gpu/types@0.1.0\x05]\x02\x03\0<\x06handle\x02\x03\0<\x09gpu-error\x02\
+\x03\0<\x0cshader-error\x02\x03\0<\x13compilation-message\x02\x03\0<\x05limit\x02\
+\x03\0<\x0fadapter-options\x02\x03\0<\x0cadapter-info\x02\x03\0<\x11device-descr\
+iptor\x02\x03\0<\x11buffer-descriptor\x02\x03\0<\x12texture-descriptor\x02\x03\0\
+<\x17texture-view-descriptor\x02\x03\0<\x12sampler-descriptor\x02\x03\0<\x1cbind\
+-group-layout-descriptor\x02\x03\0<\x15bind-group-descriptor\x02\x03\0<\x1apipel\
+ine-layout-descriptor\x02\x03\0<\x18shader-module-descriptor\x02\x03\0<\x1arende\
+r-pipeline-descriptor\x02\x03\0<\x1bcompute-pipeline-descriptor\x02\x03\0<\x14qu\
+ery-set-descriptor\x02\x03\0<\x17texel-copy-texture-info\x02\x03\0<\x18texel-cop\
+y-buffer-layout\x02\x03\0<\x16texel-copy-buffer-info\x02\x03\0<\x08extent3d\x02\x03\
+\0<\x16render-pass-descriptor\x02\x03\0<\x0erender-command\x02\x03\0<\x17compute\
+-pass-descriptor\x02\x03\0<\x0fcompute-command\x02\x03\0<\x08map-mode\x02\x03\0<\
+\x14surface-capabilities\x02\x03\0<\x15surface-configuration\x02\x03\0<\x0dsurfa\
+ce-frame\x02\x03\0<\x0dsurface-error\x02\x03\0<\x0fformat-features\x01B\xc5\x01\x02\
+\x03\x02\x01^\x04\0\x06handle\x03\0\0\x02\x03\x02\x01_\x04\0\x09gpu-error\x03\0\x02\
+\x02\x03\x02\x01`\x04\0\x0cshader-error\x03\0\x04\x02\x03\x02\x01a\x04\0\x13comp\
+ilation-message\x03\0\x06\x02\x03\x02\x01b\x04\0\x05limit\x03\0\x08\x02\x03\x02\x01\
+c\x04\0\x0fadapter-options\x03\0\x0a\x02\x03\x02\x01d\x04\0\x0cadapter-info\x03\0\
+\x0c\x02\x03\x02\x01e\x04\0\x11device-descriptor\x03\0\x0e\x02\x03\x02\x01f\x04\0\
+\x11buffer-descriptor\x03\0\x10\x02\x03\x02\x01g\x04\0\x12texture-descriptor\x03\
+\0\x12\x02\x03\x02\x01h\x04\0\x17texture-view-descriptor\x03\0\x14\x02\x03\x02\x01\
+i\x04\0\x12sampler-descriptor\x03\0\x16\x02\x03\x02\x01j\x04\0\x1cbind-group-lay\
+out-descriptor\x03\0\x18\x02\x03\x02\x01k\x04\0\x15bind-group-descriptor\x03\0\x1a\
+\x02\x03\x02\x01l\x04\0\x1apipeline-layout-descriptor\x03\0\x1c\x02\x03\x02\x01m\
+\x04\0\x18shader-module-descriptor\x03\0\x1e\x02\x03\x02\x01n\x04\0\x1arender-pi\
+peline-descriptor\x03\0\x20\x02\x03\x02\x01o\x04\0\x1bcompute-pipeline-descripto\
+r\x03\0\"\x02\x03\x02\x01p\x04\0\x14query-set-descriptor\x03\0$\x02\x03\x02\x01q\
+\x04\0\x17texel-copy-texture-info\x03\0&\x02\x03\x02\x01r\x04\0\x18texel-copy-bu\
+ffer-layout\x03\0(\x02\x03\x02\x01s\x04\0\x16texel-copy-buffer-info\x03\0*\x02\x03\
+\x02\x01t\x04\0\x08extent3d\x03\0,\x02\x03\x02\x01u\x04\0\x16render-pass-descrip\
+tor\x03\0.\x02\x03\x02\x01v\x04\0\x0erender-command\x03\00\x02\x03\x02\x01w\x04\0\
+\x17compute-pass-descriptor\x03\02\x02\x03\x02\x01x\x04\0\x0fcompute-command\x03\
+\04\x02\x03\x02\x01y\x04\0\x08map-mode\x03\06\x02\x03\x02\x01z\x04\0\x14surface-\
+capabilities\x03\08\x02\x03\x02\x01{\x04\0\x15surface-configuration\x03\0:\x02\x03\
+\x02\x01|\x04\0\x0dsurface-frame\x03\0<\x02\x03\x02\x01}\x04\0\x0dsurface-error\x03\
+\0>\x02\x03\x02\x01~\x04\0\x0fformat-features\x03\0@\x01j\x01\x01\x01\x03\x01@\x01\
 \x07options\x0b\0\xc2\0\x04\0\x0frequest-adapter\x01C\x01j\x01\x0d\x01\x03\x01@\x01\
 \x07adapter\x01\0\xc4\0\x04\0\x10describe-adapter\x01E\x01ps\x01j\x01\xc6\0\x01\x03\
 \x01@\x01\x07adapter\x01\0\xc7\0\x04\0\x10adapter-features\x01H\x01p\x09\x01j\x01\
@@ -50439,83 +52703,83 @@ ies\x01\x89\x01\x01@\x03\x07surface\x01\x06device\x01\x0dconfiguration;\0\xd1\0\
 \0\x11configure-surface\x01\x8a\x01\x01j\x01=\x01?\x01@\x01\x07surface\x01\0\x8b\
 \x01\x04\0\x0fcurrent-texture\x01\x8c\x01\x01@\x01\x07surface\x01\0\xd1\0\x04\0\x07\
 present\x01\x8d\x01\x01@\x01\x06object\x01\x01\0\x04\0\x07release\x01\x8e\x01\x03\
-\0\x13krate:gpu/gpu@0.1.0\x05~\x01B\x11\x02\x03\x02\x01R\x04\0\x04rect\x03\0\0\x02\
-\x03\x02\x01W\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01U\x04\0\x09gfx-erro\
-r\x03\0\x04\x01p}\x01j\x01w\x01\x05\x01@\x04\x06canvasw\x05widthy\x06heighty\x04\
-rgba\x06\0\x07\x04\0\x04keep\x01\x08\x01j\0\x01\x05\x01@\x03\x06canvasw\x05image\
-w\x04area\x01\0\x09\x04\0\x04draw\x01\x0a\x01@\x04\x06canvasw\x05imagew\x04area\x01\
-\x05radii\x03\0\x09\x04\0\x0adraw-round\x01\x0b\x01@\x02\x06canvasw\x05imagew\x01\
-\0\x04\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05\x7f\x01B\x1e\
-\x02\x03\x02\x01R\x04\0\x04rect\x03\0\0\x02\x03\x02\x01W\x04\0\x0ccorner-radii\x03\
-\0\x02\x02\x03\x02\x01U\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0fposition-millis\
-w\x0fduration-millisw\x05widthy\x06heighty\x05ready\x7f\x07playing\x7f\x05ended\x7f\
-\x07problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01@\x01\x06source\
-s\0\x08\x04\0\x04open\x01\x09\x01j\0\x01\x05\x01@\x01\x05videow\0\x0a\x04\0\x04p\
-lay\x01\x0b\x04\0\x05pause\x01\x0b\x01@\x02\x05videow\x06millisw\0\x0a\x04\0\x04\
-seek\x01\x0c\x01@\x02\x05videow\x07looping\x7f\0\x0a\x04\0\x0bset-looping\x01\x0d\
-\x01@\x02\x05videow\x05muted\x7f\0\x0a\x04\0\x09set-muted\x01\x0e\x01j\x01\x07\x01\
-\x05\x01@\x01\x05videow\0\x0f\x04\0\x05state\x01\x10\x01@\x03\x06canvasw\x05vide\
-ow\x04area\x01\0\x0a\x04\0\x04draw\x01\x11\x01@\x04\x06canvasw\x05videow\x04area\
-\x01\x05radii\x03\0\x0a\x04\0\x0adraw-round\x01\x12\x01@\x01\x05videow\x01\0\x04\
-\0\x05close\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05\x80\x01\x01B\x06\x01m\x02\
-\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08\
-channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\
-\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0buns\
-upported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate\
-:audio/types@0.1.0\x05\x81\x01\x02\x03\0?\x0baudio-error\x02\x03\0?\x0dstream-co\
-nfig\x01B\x15\x02\x03\x02\x01\x82\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\
-\x83\x01\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\
-\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05\
-start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-i\
-dw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\
-\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\
-\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0asto\
-p-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\x84\x01\x01B\x05\x02\x03\
-\x02\x01\x82\x01\x04\0\x0baudio-error\x03\0\0\x01j\x01y\x01\x01\x01@\x01\x09stre\
-am-idw\0\x02\x04\0\x06queued\x01\x03\x03\0\x20krate:audio/playback-queue@0.1.0\x05\
-\x85\x01\x01B\x0f\x02\x03\x02\x01\x82\x01\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\
-\x01\x83\x01\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06conf\
-ig\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\
-\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09\
-stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/captur\
-e@0.1.0\x05\x86\x01\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01\
-r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\
-\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\
-\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05byte\
-s\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11\
-permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsystem-\
-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\
-\x03\0\x18krate:camera/types@0.1.0\x05\x87\x01\x02\x03\0C\x0ccamera-error\x02\x03\
-\0C\x0bdevice-info\x02\x03\0C\x05frame\x02\x03\0C\x0aframe-info\x02\x03\0C\x0dst\
-ream-config\x01B\x1d\x02\x03\x02\x01\x88\x01\x04\0\x0ccamera-error\x03\0\0\x02\x03\
-\x02\x01\x89\x01\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01\x8a\x01\x04\0\x05\
-frame\x03\0\x04\x02\x03\x02\x01\x8b\x01\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\
-\x01\x8c\x01\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\
-\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06confi\
-g\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\
-\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05star\
-t\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream\
--idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/ca\
-pture@0.1.0\x05\x8d\x01\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01\
-q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0b\
-unsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0f\
-invalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\
-\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-a\
-ssets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscrib\
-e\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample\
--ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\
-\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
-anguage\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\
-\0\x20krate:speech/transcription@0.1.0\x05\x8e\x01\x01B\x12\x01r\x03\x02ids\x04n\
-ames\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11permission-denied\0\0\x0fin\
-valid-request\x01s\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09say-error\
-\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\0\x06voices\x01\x06\x01\
-ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04rate\x08\0\x09\x04\0\x03\
-say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\
-\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@0.1.0\x05\x8f\x01\x01\
-@\0\0z\x04\0\x03run\x01\x90\x01\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\
-\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.22\
-7.1\x10wit-bindgen-rust\x060.41.0";
+\0\x13krate:gpu/gpu@0.1.0\x05\x7f\x01B\x11\x02\x03\x02\x01S\x04\0\x04rect\x03\0\0\
+\x02\x03\x02\x01X\x04\0\x0ccorner-radii\x03\0\x02\x02\x03\x02\x01V\x04\0\x09gfx-\
+error\x03\0\x04\x01p}\x01j\x01w\x01\x05\x01@\x04\x06canvasw\x05widthy\x06heighty\
+\x04rgba\x06\0\x07\x04\0\x04keep\x01\x08\x01j\0\x01\x05\x01@\x03\x06canvasw\x05i\
+magew\x04area\x01\0\x09\x04\0\x04draw\x01\x0a\x01@\x04\x06canvasw\x05imagew\x04a\
+rea\x01\x05radii\x03\0\x09\x04\0\x0adraw-round\x01\x0b\x01@\x02\x06canvasw\x05im\
+agew\x01\0\x04\0\x06forget\x01\x0c\x03\0\x1dkrate:gfx/canvas-images@0.1.0\x05\x80\
+\x01\x01B\x1e\x02\x03\x02\x01S\x04\0\x04rect\x03\0\0\x02\x03\x02\x01X\x04\0\x0cc\
+orner-radii\x03\0\x02\x02\x03\x02\x01V\x04\0\x09gfx-error\x03\0\x04\x01r\x08\x0f\
+position-millisw\x0fduration-millisw\x05widthy\x06heighty\x05ready\x7f\x07playin\
+g\x7f\x05ended\x7f\x07problems\x04\0\x0bvideo-state\x03\0\x06\x01j\x01w\x01\x05\x01\
+@\x01\x06sources\0\x08\x04\0\x04open\x01\x09\x01j\0\x01\x05\x01@\x01\x05videow\0\
+\x0a\x04\0\x04play\x01\x0b\x04\0\x05pause\x01\x0b\x01@\x02\x05videow\x06millisw\0\
+\x0a\x04\0\x04seek\x01\x0c\x01@\x02\x05videow\x07looping\x7f\0\x0a\x04\0\x0bset-\
+looping\x01\x0d\x01@\x02\x05videow\x05muted\x7f\0\x0a\x04\0\x09set-muted\x01\x0e\
+\x01j\x01\x07\x01\x05\x01@\x01\x05videow\0\x0f\x04\0\x05state\x01\x10\x01@\x03\x06\
+canvasw\x05videow\x04area\x01\0\x0a\x04\0\x04draw\x01\x11\x01@\x04\x06canvasw\x05\
+videow\x04area\x01\x05radii\x03\0\x0a\x04\0\x0adraw-round\x01\x12\x01@\x01\x05vi\
+deow\x01\0\x04\0\x05close\x01\x13\x03\0\x15krate:gfx/video@0.1.0\x05\x81\x01\x01\
+B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0b\
+sample-ratey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\
+\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-una\
+vailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\
+\x04\x03\0\x17krate:audio/types@0.1.0\x05\x82\x01\x02\x03\0@\x0baudio-error\x02\x03\
+\0@\x0dstream-config\x01B\x15\x02\x03\x02\x01\x83\x01\x04\0\x0baudio-error\x03\0\
+\0\x02\x03\x02\x01\x84\x01\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01\
+@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09strea\
+m-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\
+\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09st\
+ream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05\
+soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05soun\
+dw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\x85\
+\x01\x01B\x05\x02\x03\x02\x01\x83\x01\x04\0\x0baudio-error\x03\0\0\x01j\x01y\x01\
+\x01\x01@\x01\x09stream-idw\0\x02\x04\0\x06queued\x01\x03\x03\0\x20krate:audio/p\
+layback-queue@0.1.0\x05\x86\x01\x01B\x0f\x02\x03\x02\x01\x83\x01\x04\0\x0baudio-\
+error\x03\0\0\x02\x03\x02\x01\x84\x01\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\
+\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\
+\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\
+\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\
+\0\x19krate:audio/capture@0.1.0\x05\x87\x01\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0c\
+frame-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0d\
+stream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\
+\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\
+\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05fr\
+ame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-\
+unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
+\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05\x88\x01\x02\x03\
+\0D\x0ccamera-error\x02\x03\0D\x0bdevice-info\x02\x03\0D\x05frame\x02\x03\0D\x0a\
+frame-info\x02\x03\0D\x0dstream-config\x01B\x1d\x02\x03\x02\x01\x89\x01\x04\0\x0c\
+camera-error\x03\0\0\x02\x03\x02\x01\x8a\x01\x04\0\x0bdevice-info\x03\0\x02\x02\x03\
+\x02\x01\x8b\x01\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01\x8c\x01\x04\0\x0aframe\
+-info\x03\0\x06\x02\x03\x02\x01\x8d\x01\x04\0\x0dstream-config\x03\0\x08\x01p\x03\
+\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01\
+@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01\
+@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09strea\
+m-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\
+\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\
+\0\x1akrate:camera/capture@0.1.0\x05\x8e\x01\x01B\x12\x01r\x01\x04texts\x04\0\x0a\
+transcript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0d\
+model-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-e\
+rror\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0b\
+unsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\
+\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\
+\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0a\
+pcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch\
+-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\
+\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match\
+-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05\x8f\x01\x01B\x12\
+\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11permis\
+sion-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\x01s\
+\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\0\
+\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04\
+rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\
+\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@\
+0.1.0\x05\x90\x01\x01@\0\0z\x04\0\x03run\x01\x91\x01\x04\0\x13krate:app/gui@0.2.\
+0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0d\
+wit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

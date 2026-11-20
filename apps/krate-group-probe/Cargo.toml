@@ -40,6 +40,7 @@ world = "cli"
 "krate:process" = { path = "../../wit/krate/phase2/deps/process" }
 "krate:serial" = { path = "../../wit/krate/phase2/deps/serial" }
 "krate:print" = { path = "../../wit/krate/phase2/deps/print" }
+"krate:usb" = { path = "../../wit/krate/phase2/deps/usb" }
 
 [profile.release]
 panic = "abort"

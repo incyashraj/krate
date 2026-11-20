@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     phase2_bindings::krate::{
-        fs, io, locale, net, print, process, random, resources, serial, store, time,
+        fs, io, locale, net, print, process, random, resources, serial, store, time, usb,
     },
     phase2_bridge as bridge,
     uapi::UapiGuard,
@@ -93,6 +93,10 @@ pub struct Phase2Host<'a> {
     /// is remembered for this app.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     printers: crate::printer_host::Printers,
+    /// USB devices the person picked this run (`krate:usb`, IC-988).
+    /// Dropped with the run, which releases and closes every one.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    usb: crate::usb_host::UsbDevices,
     /// The app's name, for a print job that names itself nothing.
     #[cfg_attr(
         not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
@@ -161,6 +165,8 @@ impl<'a> Phase2Host<'a> {
             serial: crate::serial_host::SerialPorts::new(),
             #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
             printers: crate::printer_host::Printers::new(crate::printer_host::system_backend()),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            usb: crate::usb_host::UsbDevices::new(crate::usb_host::system_backend()),
             app_name: String::new(),
             nobody_to_ask: std::cell::Cell::new(false),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
@@ -422,6 +428,17 @@ impl<'a> Phase2Host<'a> {
         self
     }
 
+    /// Reach USB devices through `backend` instead of the system: a test's
+    /// fake.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_usb_backend(mut self, backend: Box<dyn crate::usb_host::Backend>) -> Self {
+        self.usb = crate::usb_host::UsbDevices::new(backend);
+        self
+    }
+
     /// May this run print (`device.printer`, IC-986)? Only when the manifest
     /// declares it, the person allowed it, and the organisation that manages
     /// the computer has not said no printing for this app. The words name
@@ -563,6 +580,82 @@ impl<'a> Phase2Host<'a> {
                 "you did not allow this app to talk to a serial device (device.serial)".to_string(),
             )),
         }
+    }
+
+    /// May this run reach any USB device (`device.usb`, IC-988)? Only when
+    /// the manifest names at least one model as `device.usb:<vendor>:<product>`
+    /// and the person allowed at least one of them. Asked before any list is
+    /// shown and before any handle is looked at, so a call without the grant
+    /// learns nothing. The words name the capability.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_any(&self) -> Result<(), usb::devices::UsbError> {
+        let undeclared = || {
+            usb::devices::UsbError::NotAllowed(
+                "this app did not ask for device.usb, so it cannot talk to a USB device"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        let mut first_refusal = None;
+        for cap in declared
+            .iter()
+            .filter(|cap| (cap.module(), cap.action()) == ("device", "usb"))
+        {
+            match self.admit_usb_model(cap) {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    first_refusal.get_or_insert(err);
+                }
+            }
+        }
+        Err(first_refusal.unwrap_or_else(undeclared))
+    }
+
+    /// May this run reach the USB model `vendor`:`product` (IC-988)? Only
+    /// when the manifest names exactly those ids and the person allowed it.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb(&self, vendor: u16, product: u16) -> Result<(), usb::devices::UsbError> {
+        let ids = krate_manifest::usb_ids(vendor, product);
+        let cap = krate_manifest::Capability::new("device", "usb", Some(&ids))
+            .expect("two ids are a device.usb capability");
+        self.admit_usb_model(&cap)
+    }
+
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_model(
+        &self,
+        cap: &krate_manifest::Capability,
+    ) -> Result<(), usb::devices::UsbError> {
+        usb_model_decision(self.guard.policy(), self.declared.as_ref(), cap)
+    }
+
+    /// Every call after the pick: the grant still stands for the device the
+    /// handle names (and for some device, when the handle names none, so a
+    /// guessed handle learns nothing without the grant).
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_call(&self, handle: u64) -> Result<(), usb::devices::UsbError> {
+        self.admit_usb_any()?;
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        if let Some((vendor, product)) = self.usb.ids(handle) {
+            self.admit_usb(vendor, product)?;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        let _ = handle;
+        Ok(())
     }
 
     /// May this run listen on `port` for this scope (`net.listen`, IC-987)?
@@ -1185,6 +1278,368 @@ impl serial::ports::Host for Phase2Host<'_> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn serial_not_here() -> serial::ports::SerialError {
     serial::ports::SerialError::Unavailable(SERIAL_ON_A_COMPUTER.to_string())
+}
+
+/// May a run under `policy`, whose manifest declared `declared`, reach the
+/// USB model `cap` (`device.usb:<vendor>:<product>`, IC-988)? Only when the
+/// manifest names exactly those ids and the person allowed it. The words
+/// name the capability.
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(dead_code)
+)]
+fn usb_model_decision(
+    policy: &krate_policy::SessionPolicy,
+    declared: Option<&std::collections::BTreeSet<krate_manifest::Capability>>,
+    cap: &krate_manifest::Capability,
+) -> Result<(), usb::devices::UsbError> {
+    use krate_policy::{Decision, Refusal};
+    use usb::devices::UsbError;
+    let ids = cap.resource().unwrap_or_default();
+    let Some(declared) = declared else {
+        return Err(UsbError::NotAllowed(
+            "this app did not ask for device.usb, so it cannot talk to a USB device".to_string(),
+        ));
+    };
+    match policy.decide(cap, Some(declared)) {
+        Decision::Granted { .. } => Ok(()),
+        Decision::Refused {
+            reason: Refusal::Undeclared,
+        } => Err(UsbError::NotAllowed(format!(
+            "this app did not ask for device.usb:{ids}, so it cannot talk to that USB device"
+        ))),
+        Decision::Refused {
+            reason: Refusal::Organisation,
+        } => Err(UsbError::NotAllowed(
+            "the organisation that manages this computer does not allow apps to talk to USB \
+             devices (device.usb)"
+                .to_string(),
+        )),
+        Decision::Refused { .. } => Err(UsbError::NotAllowed(format!(
+            "you did not allow this app to talk to the {ids} USB device (device.usb:{ids})"
+        ))),
+    }
+}
+
+/// USB devices the person picks (`krate:usb`, IC-988).
+///
+/// Every call is admitted here -- the manifest names the device's ids as
+/// `device.usb:<vendor>:<product>` and the person allowed it -- before
+/// `usb_host` shows a list or touches a device. The list shows only devices
+/// that pass the same rule. The app holds handles only; no call takes a
+/// device's address.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl usb::devices::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<usb::devices::Device>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_any() {
+            return Ok(Err(err));
+        }
+        let scripted = crate::usb_host::scripted_pick();
+        // The list shows only devices whose ids the manifest names and the
+        // person allowed: the same rule every later call is held to.
+        let (policy, declared) = (self.guard.policy(), self.declared.as_ref());
+        let admit = |vendor: u16, product: u16| {
+            let ids = krate_manifest::usb_ids(vendor, product);
+            let cap = krate_manifest::Capability::new("device", "usb", Some(&ids))
+                .expect("two ids are a device.usb capability");
+            usb_model_decision(policy, declared, &cap).map_err(|err| match err {
+                usb::devices::UsbError::NotAllowed(words) => {
+                    crate::usb_host::Fault::NotAllowed(words)
+                }
+                other => crate::usb_host::Fault::Failed(format!("{other:?}")),
+            })
+        };
+        Ok(self
+            .usb
+            .pick(
+                &title,
+                self.nobody_to_ask.get(),
+                scripted.as_deref(),
+                &admit,
+            )
+            .map(|picked| {
+                picked.map(|(handle, listed)| usb::devices::Device {
+                    handle,
+                    name: listed.name,
+                    vendor_id: listed.vendor_id,
+                    product_id: listed.product_id,
+                })
+            })
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn claim(
+        &mut self,
+        device: u64,
+        number: u8,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self.usb.claim(device, number).map_err(usb_fault_to_wit))
+    }
+
+    fn bulk_in(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        max: u32,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .read(
+                device,
+                crate::usb_host::Kind::Bulk,
+                endpoint,
+                max,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn bulk_out(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        bytes: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .write(
+                device,
+                crate::usb_host::Kind::Bulk,
+                endpoint,
+                &bytes,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn interrupt_in(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        max: u32,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .read(
+                device,
+                crate::usb_host::Kind::Interrupt,
+                endpoint,
+                max,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn interrupt_out(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        bytes: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .write(
+                device,
+                crate::usb_host::Kind::Interrupt,
+                endpoint,
+                &bytes,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn control_in(
+        &mut self,
+        device: u64,
+        setup: usb::devices::ControlSetup,
+        length: u16,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .control_in(device, usb_setup(setup), length, timeout_ms)
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn control_out(
+        &mut self,
+        device: u64,
+        setup: usb::devices::ControlSetup,
+        data: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .control_out(device, usb_setup(setup), &data, timeout_ms)
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn close(&mut self, device: u64) -> wasmtime::Result<()> {
+        self.usb.close(device);
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn usb_setup(setup: usb::devices::ControlSetup) -> crate::usb_host::Setup {
+    use crate::usb_host::{Recipient, RequestType, Setup};
+    Setup {
+        request_type: match setup.request_type {
+            usb::devices::RequestType::Standard => RequestType::Standard,
+            usb::devices::RequestType::Class => RequestType::Class,
+            usb::devices::RequestType::Vendor => RequestType::Vendor,
+        },
+        recipient: match setup.recipient {
+            usb::devices::Recipient::Interface => Recipient::Interface,
+            usb::devices::Recipient::Endpoint => Recipient::Endpoint,
+            usb::devices::Recipient::Device => Recipient::Device,
+        },
+        request: setup.request,
+        value: setup.value,
+        index: setup.index,
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn usb_fault_to_wit(fault: crate::usb_host::Fault) -> usb::devices::UsbError {
+    use crate::usb_host::Fault;
+    use usb::devices::UsbError;
+    match fault {
+        Fault::NotAllowed(words) => UsbError::NotAllowed(words),
+        Fault::Unavailable(words) => UsbError::Unavailable(words),
+        Fault::UnknownHandle => UsbError::UnknownHandle,
+        Fault::NotClaimed => UsbError::NotClaimed,
+        Fault::NotForApps(words) => UsbError::NotForApps(words),
+        Fault::BadRequest(words) => UsbError::BadRequest(words),
+        Fault::Busy(words) => UsbError::Busy(words),
+        Fault::Disconnected(words) => UsbError::Disconnected(words),
+        Fault::Stalled(words) => UsbError::Stalled(words),
+        Fault::TimedOut(words) => UsbError::TimedOut(words),
+        Fault::TooMany(words) => UsbError::TooMany(words),
+        Fault::Failed(words) => UsbError::Failed(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:usb` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const USB_ON_A_COMPUTER: &str =
+    "USB devices work in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn usb_not_here<T>() -> wasmtime::Result<Result<T, usb::devices::UsbError>> {
+    Ok(Err(usb::devices::UsbError::Unavailable(
+        USB_ON_A_COMPUTER.to_string(),
+    )))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl usb::devices::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<usb::devices::Device>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn claim(
+        &mut self,
+        _device: u64,
+        _number: u8,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn bulk_in(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _max: u32,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn bulk_out(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _bytes: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn interrupt_in(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _max: u32,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn interrupt_out(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _bytes: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn control_in(
+        &mut self,
+        _device: u64,
+        _setup: usb::devices::ControlSetup,
+        _length: u16,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn control_out(
+        &mut self,
+        _device: u64,
+        _setup: usb::devices::ControlSetup,
+        _data: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn close(&mut self, _device: u64) -> wasmtime::Result<()> {
+        Ok(())
+    }
 }
 
 /// Printers the person picks (`krate:print`, IC-986).

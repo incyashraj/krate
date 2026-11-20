@@ -34,6 +34,7 @@ The current world imports these interfaces:
 - `krate:process/processes@0.1.0`
 - `krate:serial/ports@0.1.0`
 - `krate:print/printers@0.1.0`
+- `krate:usb/devices@0.1.0`
 
 The app exports:
 
@@ -2166,4 +2167,202 @@ krate::time::sleep_millis(100);
 - `sleep-millis(millis: u32)`
   - Blocks the calling component task for at least the requested milliseconds.
   - Requires `time.sleep`; hosts may wake slightly later than requested.
+
+
+## `krate:usb/devices@0.1.0`
+
+### Functions
+
+> Ask the person to choose one connected device whose ids the manifest
+> names. `title` is a short line for the list ("Choose the radio
+> dongle"), at most 200 characters.
+> 
+> Some(device) when they chose one, none when they cancelled or no
+> person is there to choose (a run with no window and no display).
+> Picking opens the device; `claim` an interface before any transfer.
+
+- `pick(title: string) -> result<option<device>, usb-error>`
+> Claim interface `number` of a picked device, so transfers can use it.
+> One interface a pick: claiming the same one again does nothing, and
+> another one is refused (pick again to reach it).
+
+- `claim(device: device-handle, number: u8) -> result<_, usb-error>`
+> Read from bulk endpoint `endpoint` (an IN address, 0x81 and up) of the
+> claimed interface: wait up to `timeout-ms` (1 to 60000) and answer what
+> arrived. At most `max` bytes (at most 65536), rounded up to whole
+> packets of the endpoint, since USB moves whole packets. Empty when the
+> wait ran out with nothing.
+
+- `bulk-in(device: device-handle, endpoint: u8, max: u32, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> Write `bytes` (at most 65536) to bulk endpoint `endpoint` (an OUT
+> address, 0x01 to 0x0f) of the claimed interface, waiting up to
+> `timeout-ms` (1 to 60000) for the device to take them; past that,
+> `timed-out`.
+
+- `bulk-out(device: device-handle, endpoint: u8, bytes: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> As `bulk-in`, from an interrupt endpoint of the claimed interface.
+
+- `interrupt-in(device: device-handle, endpoint: u8, max: u32, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> As `bulk-out`, to an interrupt endpoint of the claimed interface.
+
+- `interrupt-out(device: device-handle, endpoint: u8, bytes: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> A control request that reads up to `length` bytes (at most 4096) from
+> the claimed interface, one of its endpoints or the device, waiting up
+> to `timeout-ms` (1 to 60000).
+
+- `control-in(device: device-handle, setup: control-setup, length: u16, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> A control request that writes `data` (at most 4096 bytes) to the
+> claimed interface, one of its endpoints or the device, waiting up to
+> `timeout-ms` (1 to 60000).
+
+- `control-out(device: device-handle, setup: control-setup, data: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> Release the claimed interface, close the device and give up the pick:
+> the handle is spent, and reaching the device again needs a new pick.
+> Closing an unknown handle does nothing.
+
+- `close(device: device-handle)`
+
+### Types
+
+#### `device-handle` type
+
+> A device the person picked. Numbers are never reused within a run and
+> mean nothing to another run.
+
+`u64`
+
+#### `device` record
+
+> A device the person picked.
+
+> The handle the app uses for this device from now on.
+
+- `handle`: `device-handle`
+> The device's name as it gives it, to show the person: "Crazyradio
+> PA USB dongle", or its ids when it gives none.
+
+- `name`: `string`
+> The vendor id the device reports: one the manifest named.
+
+- `vendor-id`: `u16`
+> The product id the device reports: one the manifest named.
+
+- `product-id`: `u16`
+
+#### `request-type` enum
+
+> What kind of control request it is (bits 5-6 of bmRequestType).
+
+> A request the USB standard defines. Only reading the status
+> (GET_STATUS) and reading a descriptor (GET_DESCRIPTOR) are allowed:
+> the requests that would change the device's address, configuration,
+> interface setting or features are the computer's.
+
+- `standard`
+> A request the interface's class defines.
+
+- `class`
+> A request the device's maker defines.
+
+- `vendor`
+
+#### `recipient` enum
+
+> Who a control request is for (bits 0-4 of bmRequestType): the
+> claimed interface, one of its endpoints, or the whole device for a
+> class or vendor request.
+
+> The claimed interface: the low byte of `index` is its number.
+
+- `interface`
+> An endpoint of the claimed interface: the low byte of `index` is its
+> address.
+
+- `endpoint`
+> The whole device the person picked, for a class or vendor request:
+> a Crazyradio's channel and data rate are set this way. `index` is
+> the request's own. A standard request to the device is refused, except
+> the reads GET_STATUS and GET_DESCRIPTOR. An interface must still be
+> claimed first.
+
+- `device`
+
+#### `control-setup` record
+
+> The setup of a control request. The direction comes from the call:
+> `control-in` reads, `control-out` writes.
+
+> The kind of request.
+
+- `request-type`: `request-type`
+> Who it is for: the claimed interface, one of its endpoints, or the
+> device.
+
+- `recipient`: `recipient`
+> The request number (bRequest).
+
+- `request`: `u8`
+> The request's value (wValue).
+
+- `value`: `u16`
+> The request's index (wIndex). For the interface or an endpoint its
+> low byte names the claimed interface or one of its endpoints, as
+> `recipient` says; for the device it is the request's own.
+
+- `index`: `u16`
+
+#### `usb-error` variant
+
+> Why a call was refused or failed. Each case carries words to show a
+> person, except `unknown-handle` and `not-claimed`, which are the app's
+> own mistakes.
+
+> The app did not declare these ids as `device.usb:<vendor>:<product>`,
+> or the person did not allow it. The words say which and name the
+> capability.
+
+- `not-allowed`: `string`
+> No device the app named is connected, or this place has no USB: a
+> browser tab, a phone.
+
+- `unavailable`: `string`
+> No device has this handle in this run: never picked, or closed.
+
+- `unknown-handle`
+> No interface is claimed on this device yet: `claim` one first.
+
+- `not-claimed`
+> A device or interface the computer's own drivers serve: a keyboard
+> or mouse (any HID interface), storage, audio, video, or a hub. Krate
+> does not hand these to an app even when the manifest names its ids.
+
+- `not-for-apps`: `string`
+> A request Krate does not send, with words: an endpoint that is not
+> the claimed interface's or not of this kind or direction, a control
+> request for another interface, a standard request other than
+> GET_STATUS or GET_DESCRIPTOR, a size or a wait out of range.
+
+- `bad-request`: `string`
+> Another program or the computer's own driver has the device or the
+> interface.
+
+- `busy`: `string`
+> The device went away: unplugged, or switched off.
+
+- `disconnected`: `string`
+> The device refused the transfer (the endpoint stalled).
+
+- `stalled`: `string`
+> A transfer out did not finish within its wait. Some of the bytes may
+> have reached the device.
+
+- `timed-out`: `string`
+> The app already holds 8 devices; close one first.
+
+- `too-many`: `string`
+> The computer refused, with its words. On Linux this is often a
+> device the person's account may not open yet: the words say how to
+> allow it.
+
+- `failed`: `string`
 
