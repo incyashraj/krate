@@ -76,6 +76,11 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_PLAN_PER_HOUR` | Plans one account may ask for on our key per hour. Default 12, counted on the volume so a wake does not reset it |
 | `KRATE_PLAN_BUDGET_USD_PER_DAY` | What planning on our key may cost in one day, all accounts together. Default 10 |
 | `KRATE_PLAN_UNPRICED_USD` | What a plan is charged when the engine prints no `krate-spend:` line. Default 0.45, the old worst case |
+| `KRATE_COMPILE_PER_HOUR` / `KRATE_COMPILE_PER_DAY` | Compiles one account may start (`/compile`). Default 20 and 60, counted on the volume |
+| `KRATE_COMPILE_CONCURRENT` | Compiles running at once on the whole machine. Default 2 |
+| `KRATE_COMPILE_TIMEOUT_MS` | Wall clock for one compile, check and pack together. Default 10 minutes, for a cold dependency cache |
+| `KRATE_COMPILE_CRATES` | The crates.io crates uploaded source may depend on, comma-separated. Default `wit-bindgen-rt,libm` (K-1293) |
+| `KRATE_SDK_ROOT` | Where the SDK is, for `/compile`. Unset, the engine's own cache is used |
 | `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
 
 ## The doors
@@ -86,7 +91,24 @@ GET  /build/<id>                     -> { state, stage, line, shot, error, resul
 GET  /build/<id>/file                -> the .krate itself
 POST /build/<id>/stop                -> { ok }
 GET  /health                         -> { ok, building, authoring, agent }
+
+POST /compile          { name, files: [{ path, data }] }   -> 202 { id }  | 4xx { error }
+GET  /guide                          -> text/markdown
 ```
+
+`/compile` and `/guide` are the hub's (IC-989 phase 2, "Claude writes,
+Krate builds"): both need the builder secret in `x-krate-builder` and the
+person's session as the bearer. `/compile` takes source a chat model wrote
+-- `data` is base64; Cargo.toml, Cargo.lock, manifest.toml, krate-check.toml,
+`src/**`, `assets/**` and nothing else -- runs `krate check-app --json` and
+`krate pack`, and never a model. It answers at once with a job id; the job
+reads through `GET /build/<id>` as `state: "building" | "done" | "failed"`,
+with `check` (check-app's own verdict: `stage`, `detail`, `fix`) so the
+model can correct its code, and the bundle -- signed as the account by
+the hub, as a web build is -- comes from `/build/<id>/file`. Write the SDK
+in Cargo.toml as `{KRATE_SDK}`; the builder puts its own path there. The
+guide is `krate authoring-context` for a fresh folder plus how to send
+the source, made once per engine version.
 
 ## The two guards that matter
 
