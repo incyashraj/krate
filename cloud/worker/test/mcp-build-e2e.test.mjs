@@ -288,3 +288,49 @@ test("build_app -> build_status against the real builder: words, a fix, a publis
     assert.ok(["--version", "krate-mode", "check-app", "pack"].includes(line.split(" ")[0]), line);
   }
 });
+
+test("the paste page against the real builder: an AI's answer pasted, the check's words to copy back, then a link", async () => {
+  const env = hubEnv();
+  nextLogin = "dana";
+  const nonce = randomBytes(16).toString("hex");
+  const start = await call(env, null, "GET", `/login/start?from=build&nonce=${nonce}`);
+  const state = new URL(start.headers.get("location")).searchParams.get("state");
+  const back = await call(env, null, "GET", `/login/callback?state=${state}&code=abc`);
+  assert.match(back.headers.get("location"), /^\/build#/);
+  const session = new URLSearchParams(back.headers.get("location").split("#")[1]).get("token");
+  const auth = { authorization: `Bearer ${session}` };
+
+  // What a chat with no Krate tool answers, as the guide teaches it.
+  const answer = (lib) =>
+    "Here is the app.\n\n```text\n" +
+    files(lib).map((f) => `--- FILE: ${f.path} ---\n${f.content}`).join("") +
+    "--- END ---\n```\n";
+  const go = (lib) => call(env, null, "POST", "/build/start", { json: { text: answer(lib) }, headers: auth });
+  const settled = async (id) => {
+    for (let i = 0; i < 100; i += 1) {
+      const r = await call(env, null, "GET", `/build/status/${id}`, { headers: auth });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      if (r.body.status !== "building") return r.body;
+      await sleep(100);
+    }
+    throw new Error(`still building\n${builderLog.slice(-2000)}`);
+  };
+
+  const first = await go("fn f() { x }\n// FAIL_BUILD\n");
+  assert.equal(first.status, 202, JSON.stringify(first.body));
+  assert.equal(first.body.name, "Notes", "the name from manifest.toml");
+  const failed = await settled(first.body.build_id);
+  assert.equal(failed.status, "failed");
+  assert.match(failed.copy_back, /cannot find value x in src\/lib\.rs:2[\s\S]*Declare x before using it\.[\s\S]*--- FILE: <path> ---/);
+  assert.doesNotMatch(failed.copy_back, /krate-compile-/, "the writer's own paths, not the box's");
+
+  const second = await go("#![no_std]\nextern crate alloc;\n");
+  const done = await settled(second.body.build_id);
+  assert.equal(done.status, "published", JSON.stringify(done) + builderLog.slice(-2000));
+  const row = JSON.parse(env._kv.get(`app:${done.app_id}`));
+  assert.equal(row.unlisted, true);
+  assert.equal(row.owner, "github:dana");
+  assert.equal(row.signature.state, "valid");
+  const ledger = JSON.parse(await readFile(join(stateDir, "compiles.json"), "utf8"));
+  assert.equal(ledger.accounts["hub:github:dana"].length, 2, "the builder counted both on dana's account");
+});

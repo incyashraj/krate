@@ -159,6 +159,10 @@ test("the metadata says where to sign in and what the resource is", async () => 
   const as = await call(env, null, "GET", "/.well-known/oauth-authorization-server");
   assert.equal(as.body.issuer, BASE);
   assert.deepEqual(as.body.code_challenge_methods_supported, ["S256"]);
+  // RFC 9207: claimed only because every redirect carries iss (the sign-in
+  // test below checks a code, a refusal and an error each do).
+  assert.equal(as.body.authorization_response_iss_parameter_supported, true);
+  assert.ok(as.body.token_endpoint_auth_methods_supported.includes("none"), "ChatGPT's CIMD client authenticates with none");
   for (const k of ["authorization_endpoint", "token_endpoint", "registration_endpoint", "revocation_endpoint"]) assert.ok(as.body[k].startsWith(BASE), k);
 });
 
@@ -261,6 +265,7 @@ test("the sign-in refuses a bad verifier, a wrong redirect, a stranger's client,
   const plain = await call(env, null, "GET", authorizeUrl(client, { challenge: p.challenge, method: "plain" }));
   assert.equal(plain.status, 302);
   assert.equal(new URL(plain.headers.get("location")).searchParams.get("error"), "invalid_request");
+  assert.equal(new URL(plain.headers.get("location")).searchParams.get("iss"), BASE, "an error redirect carries iss");
   assert.equal(
     (await register(env, { redirect_uris: ["http://evil.example/cb"] }).catch(() => null)),
     null,
@@ -291,6 +296,7 @@ test("the sign-in refuses a bad verifier, a wrong redirect, a stranger's client,
   // No.
   const no = await call(env, null, "POST", "/oauth/approve", { json: { req, approve: false }, headers: { authorization: `Bearer ${session}` } });
   assert.equal(new URL(no.body.redirect).searchParams.get("error"), "access_denied");
+  assert.equal(new URL(no.body.redirect).searchParams.get("iss"), BASE, "a refusal carries iss");
   // Yes without a session.
   assert.equal((await call(env, null, "POST", "/oauth/approve", { json: { req, approve: true } })).status, 401);
 
