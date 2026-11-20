@@ -343,9 +343,12 @@ pick is the grant until the `Device` is dropped or the app ends. Then \
 rounded up to whole packets), `interrupt_in`/`interrupt_out` the same way, \
 and `device.control_out(krate::usb::vendor_request(req, value, 0), &data, \
 1_000)?` / `control_in(setup, len, wait)`. Control requests go to the claimed \
-interface or one of its endpoints only (the low byte of `index` names it), \
-never to the whole device, and of the standard requests only GET_STATUS and \
-GET_DESCRIPTOR. At most 65536 bytes a transfer, 4096 a control transfer, \
+interface or one of its endpoints (the low byte of `index` names it), or, \
+class and vendor requests, to the whole device: many vendor devices are set \
+up that way (a Crazyradio's channel is \
+`device.control_out(krate::usb::vendor_device_request(0x01, channel, 0), &[], \
+1_000)?`; `class_device_request` likewise), still after `claim`. Of the \
+standard requests only GET_STATUS and GET_DESCRIPTOR are sent. At most 65536 bytes a transfer, 4096 a control transfer, \
 waits of 1 to 60000 ms; keep waits short in a windowed app and poll from \
 the event loop. Keyboards, mice and other HID, storage, audio, video and \
 hubs answer `Err(NotForApps)` even when named. `Err(NotAllowed)` names the \
@@ -1027,7 +1030,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "process.terminal" => "the person's own shell in a terminal the app draws",
         "device.serial" => "a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable",
         "device.printer" => "print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing",
-        "device.usb" => "a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and interface control transfers, never keyboards, mice, storage, audio, video or hubs",
+        "device.usb" => "a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs",
         _ => "",
     }
 }

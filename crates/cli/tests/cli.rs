@@ -7605,6 +7605,41 @@ fn an_app_talks_only_to_the_usb_device_the_person_picks() {
             .any(|event| event.starts_with("control") || event.starts_with("in ")),
         "nothing refused reached the device: {saw:?}"
     );
+    // A Crazyradio's set-up: vendor requests to the whole device, as sent,
+    // then the null packet and its answer.
+    let (said, saw) = run(&asks, &all, "1915:7777", "radio");
+    assert_eq!(
+        said,
+        "radio: channel 80, data rate 2, null packet answered [ff]"
+    );
+    let at = |line: &str| saw.iter().position(|event| event == line);
+    let channel = at("control-out 1915:7777 Vendor Device 0x01 0x0050 0x0000 ");
+    let rate = at("control-out 1915:7777 Vendor Device 0x03 0x0002 0x0000 ");
+    let null = at("out 1915:7777 0x01 ff");
+    assert!(
+        channel.is_some() && channel < rate && rate < null,
+        "channel, then data rate, then the null packet: {saw:?}"
+    );
+    // The whole device takes class requests and the standard reads; a
+    // standard request that would change it never reaches it.
+    let (said, saw) = run(&asks, &all, "1915:7777", "device");
+    assert_eq!(
+        said,
+        "device: class=sent set-configuration=bad-request get-descriptor=2 bytes"
+    );
+    assert!(
+        saw.contains(&"control-out 1915:7777 Class Device 0x22 0x0003 0x0000 07".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        saw.contains(&"control-in 1915:7777 Standard Device 0x06 0x0100 0x0000 18".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        !saw.iter()
+            .any(|event| event.contains("Standard Device 0x09")),
+        "SET_CONFIGURATION never reached the device: {saw:?}"
+    );
     // A device that takes nothing: the write ends with its wait.
     assert_eq!(run(&asks, &all, "1915:7777", "slow").0, "slow: timed-out");
 

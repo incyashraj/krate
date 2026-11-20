@@ -2198,13 +2198,13 @@ krate::time::sleep_millis(100);
 
 - `interrupt-out(device: device-handle, endpoint: u8, bytes: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
 > A control request that reads up to `length` bytes (at most 4096) from
-> the claimed interface or one of its endpoints, waiting up to
-> `timeout-ms` (1 to 60000).
+> the claimed interface, one of its endpoints or the device, waiting up
+> to `timeout-ms` (1 to 60000).
 
 - `control-in(device: device-handle, setup: control-setup, length: u16, timeout-ms: u32) -> result<list<u8>, usb-error>`
 > A control request that writes `data` (at most 4096 bytes) to the
-> claimed interface or one of its endpoints, waiting up to `timeout-ms`
-> (1 to 60000).
+> claimed interface, one of its endpoints or the device, waiting up to
+> `timeout-ms` (1 to 60000).
 
 - `control-out(device: device-handle, setup: control-setup, data: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
 > Release the claimed interface, close the device and give up the pick:
@@ -2244,10 +2244,10 @@ krate::time::sleep_millis(100);
 
 > What kind of control request it is (bits 5-6 of bmRequestType).
 
-> A request the USB standard defines. Only reading the status, clearing
-> a feature and reading a descriptor are allowed: the requests that
-> would change the device's address, configuration or interface
-> setting are the computer's.
+> A request the USB standard defines. Only reading the status
+> (GET_STATUS) and reading a descriptor (GET_DESCRIPTOR) are allowed:
+> the requests that would change the device's address, configuration,
+> interface setting or features are the computer's.
 
 - `standard`
 > A request the interface's class defines.
@@ -2259,8 +2259,9 @@ krate::time::sleep_millis(100);
 
 #### `recipient` enum
 
-> Who a control request is for (bits 0-4 of bmRequestType). Never the
-> whole device: the claimed interface, or one of its endpoints.
+> Who a control request is for (bits 0-4 of bmRequestType): the
+> claimed interface, one of its endpoints, or the whole device for a
+> class or vendor request.
 
 > The claimed interface: the low byte of `index` is its number.
 
@@ -2269,6 +2270,13 @@ krate::time::sleep_millis(100);
 > address.
 
 - `endpoint`
+> The whole device the person picked, for a class or vendor request:
+> a Crazyradio's channel and data rate are set this way. `index` is
+> the request's own. A standard request to the device is refused, except
+> the reads GET_STATUS and GET_DESCRIPTOR. An interface must still be
+> claimed first.
+
+- `device`
 
 #### `control-setup` record
 
@@ -2278,7 +2286,8 @@ krate::time::sleep_millis(100);
 > The kind of request.
 
 - `request-type`: `request-type`
-> Who it is for: the claimed interface or one of its endpoints.
+> Who it is for: the claimed interface, one of its endpoints, or the
+> device.
 
 - `recipient`: `recipient`
 > The request number (bRequest).
@@ -2287,8 +2296,9 @@ krate::time::sleep_millis(100);
 > The request's value (wValue).
 
 - `value`: `u16`
-> The request's index (wIndex). Its low byte names the claimed
-> interface or one of its endpoints, as `recipient` says.
+> The request's index (wIndex). For the interface or an endpoint its
+> low byte names the claimed interface or one of its endpoints, as
+> `recipient` says; for the device it is the request's own.
 
 - `index`: `u16`
 
@@ -2320,8 +2330,8 @@ krate::time::sleep_millis(100);
 - `not-for-apps`: `string`
 > A request Krate does not send, with words: an endpoint that is not
 > the claimed interface's or not of this kind or direction, a control
-> request for the whole device or another interface, a size or a wait
-> out of range.
+> request for another interface, a standard request other than
+> GET_STATUS or GET_DESCRIPTOR, a size or a wait out of range.
 
 - `bad-request`: `string`
 > Another program or the computer's own driver has the device or the

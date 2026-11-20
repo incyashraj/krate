@@ -18,8 +18,9 @@
 //!   it was picked for. It claims one interface, and every transfer goes to
 //!   that interface: bulk and interrupt transfers on its own endpoints, of
 //!   the endpoint's own kind and direction, and control requests addressed
-//!   to it or one of its endpoints -- never to the whole device, and of the
-//!   standard requests only the ones that read.
+//!   to it, one of its endpoints, or -- class and vendor requests only --
+//!   the whole device it was picked for; of the standard requests only the
+//!   ones that read, whoever they are for.
 //! - **Bounded.** At most [`MAX_PICKED`] devices held, [`MAX_TRANSFER_BYTES`]
 //!   a bulk or interrupt transfer, [`MAX_CONTROL_BYTES`] a control transfer,
 //!   and every transfer waits between 1 ms and [`MAX_WAIT_MS`].
@@ -161,11 +162,19 @@ pub enum RequestType {
     Vendor,
 }
 
-/// Who a control request is for: never the whole device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Who a control request is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Recipient {
+    /// The claimed interface: the index's low byte is its number.
     Interface,
+    /// One of the claimed interface's endpoints: the index's low byte is its
+    /// address.
     Endpoint,
+    /// The whole device the handle was picked for, for a class or vendor
+    /// request (the index is the request's own). Many vendor devices -- a
+    /// Crazyradio's channel and data rate -- are set up this way. A standard
+    /// request to the device passes only as a read ([`STANDARD_READS`]).
+    Device,
 }
 
 /// A control request's setup, the direction aside.
@@ -591,8 +600,10 @@ fn own_endpoint(held: &Held, kind: Kind, address: u8, is_in: bool) -> Result<End
 }
 
 /// A control request goes to the claimed interface or one of its endpoints
-/// (the low byte of the index names which), and of the standard requests
-/// only the reads are sent.
+/// (the low byte of the index names which), or, a class or vendor request,
+/// to the device the handle was picked for. Of the standard requests only
+/// the reads are sent, whoever they are for. An interface is claimed first
+/// in every case.
 fn check_setup(held: &Held, setup: &Setup, is_in: bool) -> Result<(), Fault> {
     let claimed = held.claimed.as_ref().ok_or(Fault::NotClaimed)?;
     let target = (setup.index & 0x00ff) as u8;
@@ -616,7 +627,10 @@ fn check_setup(held: &Held, setup: &Setup, is_in: bool) -> Result<(), Fault> {
                 claimed.number
             )));
         }
-        _ => {}
+        // The device the handle was picked for: its index is the request's
+        // own. Only its kind is checked, below -- class and vendor go, a
+        // standard request only as a read.
+        Recipient::Interface | Recipient::Endpoint | Recipient::Device => {}
     }
     if setup.request_type == RequestType::Standard
         && !(is_in && STANDARD_READS.contains(&setup.request))
@@ -959,6 +973,7 @@ mod native {
         match recipient {
             Recipient::Interface => nusb::transfer::Recipient::Interface,
             Recipient::Endpoint => nusb::transfer::Recipient::Endpoint,
+            Recipient::Device => nusb::transfer::Recipient::Device,
         }
     }
 
@@ -1038,7 +1053,9 @@ mod native {
 /// under [`FAKE_ENV`].
 #[cfg(any(test, debug_assertions))]
 pub mod fake {
-    use super::{Backend, Endpoint, Fault, Interface, Kind, Link, Listed, RequestType, Setup};
+    use super::{
+        Backend, Endpoint, Fault, Interface, Kind, Link, Listed, Recipient, RequestType, Setup,
+    };
     use std::{
         collections::{BTreeMap, BTreeSet, VecDeque},
         io::Write as _,
@@ -1253,8 +1270,10 @@ pub mod fake {
         claimed: Option<u8>,
         /// Bytes waiting on each IN endpoint.
         queues: BTreeMap<u8, VecDeque<u8>>,
-        /// What vendor control requests stored, by request and value.
-        stored: BTreeMap<(u8, u16), Vec<u8>>,
+        /// What class and vendor control requests stored, by recipient,
+        /// request and value: the same request to the device and to the
+        /// interface are two different requests.
+        stored: BTreeMap<(Recipient, u8, u16), Vec<u8>>,
         log: Arc<Mutex<Log>>,
     }
 
@@ -1352,7 +1371,7 @@ pub mod fake {
                 RequestType::Standard => vec![0, 0],
                 _ => self
                     .stored
-                    .get(&(setup.request, setup.value))
+                    .get(&(setup.recipient, setup.request, setup.value))
                     .cloned()
                     .unwrap_or_default(),
             })
@@ -1370,7 +1389,7 @@ pub mod fake {
                 hex(data)
             ));
             self.stored
-                .insert((setup.request, setup.value), data.to_vec());
+                .insert((setup.recipient, setup.request, setup.value), data.to_vec());
             Ok(())
         }
     }
@@ -1728,6 +1747,112 @@ mod tests {
             ),
             Err(Fault::BadRequest(_))
         ));
+        assert_eq!(
+            log.lock().expect("log").events.len(),
+            sent,
+            "nothing refused reached the device"
+        );
+    }
+
+    /// A class or vendor request may go to the whole device the person
+    /// picked -- a Crazyradio sets its channel and data rate that way -- and
+    /// reaches it as sent. A standard request to the device is refused
+    /// unless it is one of the two reads, and the device still needs a
+    /// claimed interface first.
+    #[test]
+    fn class_and_vendor_requests_reach_the_whole_device_and_standard_ones_do_not() {
+        let (mut devices, log) = devices();
+        let h = picked(&mut devices, "1915:7777");
+        let to_device = |request_type: RequestType, request: u8, value: u16| Setup {
+            request_type,
+            recipient: Recipient::Device,
+            request,
+            value,
+            index: 0,
+        };
+        assert_eq!(
+            devices.control_out(h, to_device(RequestType::Vendor, 0x01, 80), &[], 100),
+            Err(Fault::NotClaimed),
+            "a pick claims an interface before anything reaches the device"
+        );
+        devices.claim(h, 0).expect("claim");
+        let from = log.lock().expect("log").events.len();
+
+        // The Crazyradio's set-up: SET_RADIO_CHANNEL 80, SET_DATA_RATE 2M.
+        devices
+            .control_out(h, to_device(RequestType::Vendor, 0x01, 80), &[], 100)
+            .expect("vendor request to the device");
+        devices
+            .control_out(h, to_device(RequestType::Vendor, 0x03, 2), &[], 100)
+            .expect("vendor request to the device");
+        // Bytes out to the device, and back from it, as sent; the same
+        // request to the interface is a different one.
+        devices
+            .control_out(
+                h,
+                Setup {
+                    index: 0xbeef,
+                    ..to_device(RequestType::Vendor, 0x10, 0x0102)
+                },
+                &[0x00, 0xff, 0x7f, 0x80],
+                100,
+            )
+            .expect("vendor request with data to the device");
+        devices
+            .control_out(h, vendor(0x10, Recipient::Interface, 0), &[0x55], 100)
+            .expect("the same request to the interface");
+        assert_eq!(
+            devices.control_in(h, to_device(RequestType::Vendor, 0x10, 0x0102), 64, 100),
+            Ok(vec![0x00, 0xff, 0x7f, 0x80])
+        );
+        // A class request to the device, and the two standard reads.
+        devices
+            .control_out(h, to_device(RequestType::Class, 0x22, 3), &[7], 100)
+            .expect("class request to the device");
+        devices
+            .control_in(h, to_device(RequestType::Standard, 0x06, 0x0100), 18, 100)
+            .expect("GET_DESCRIPTOR from the device");
+        devices
+            .control_in(h, to_device(RequestType::Standard, 0x00, 0), 2, 100)
+            .expect("GET_STATUS from the device");
+        let saw: Vec<String> = log.lock().expect("log").events[from..].to_vec();
+        assert_eq!(
+            saw,
+            [
+                "control-out 1915:7777 Vendor Device 0x01 0x0050 0x0000 ",
+                "control-out 1915:7777 Vendor Device 0x03 0x0002 0x0000 ",
+                "control-out 1915:7777 Vendor Device 0x10 0x0102 0xbeef 00ff7f80",
+                "control-out 1915:7777 Vendor Interface 0x10 0x0042 0x0000 55",
+                "control-in 1915:7777 Vendor Device 0x10 0x0102 0x0000 64",
+                "control-out 1915:7777 Class Device 0x22 0x0003 0x0000 07",
+                "control-in 1915:7777 Standard Device 0x06 0x0100 0x0000 18",
+                "control-in 1915:7777 Standard Device 0x00 0x0000 0x0000 2",
+            ],
+            "every request reached the device as sent"
+        );
+        let sent = log.lock().expect("log").events.len();
+
+        // Standard requests to the device that change things, written:
+        // CLEAR_FEATURE, SET_FEATURE, SET_ADDRESS, SET_DESCRIPTOR,
+        // SET_CONFIGURATION, SET_INTERFACE; a read sent as a write; and a
+        // read that is not one of the two.
+        let refused = |result: Result<(), Fault>| match result {
+            Err(Fault::BadRequest(words)) => {
+                assert!(words.contains("computer's to send"), "{words}")
+            }
+            other => panic!("refused, got {other:?}"),
+        };
+        for request in [0x01, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x00, 0x06] {
+            refused(devices.control_out(h, to_device(RequestType::Standard, request, 1), &[], 100));
+        }
+        // GET_CONFIGURATION and SYNCH_FRAME read, and are still not sent.
+        for request in [0x08, 0x0c] {
+            refused(
+                devices
+                    .control_in(h, to_device(RequestType::Standard, request, 0), 2, 100)
+                    .map(|_| ()),
+            );
+        }
         assert_eq!(
             log.lock().expect("log").events.len(),
             sent,

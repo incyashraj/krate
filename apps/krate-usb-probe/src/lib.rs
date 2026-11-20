@@ -18,6 +18,13 @@
 //   outside  pick, claim 0, then ask for what lies outside interface 0: a
 //            vendor request for interface 1, SET_CONFIGURATION, and the HID
 //            interface's endpoint 0x83
+//   radio    pick, claim 0, set it up the way a Crazyradio is, with vendor
+//            requests to the whole device (channel 80, then data rate 2),
+//            send the null packet 0xff on bulk 0x01 and read the answer on
+//            0x81
+//   device   pick, claim 0, then a class request to the whole device (sent),
+//            SET_CONFIGURATION to it (refused) and GET_DESCRIPTOR from it
+//            (a read: sent)
 //   slow     pick, claim 0, write bytes the device never takes: timed out
 //   hold     pick, claim 0, write HELD, and leave without closing, so a test
 //            can see the run ending released and closed it
@@ -61,6 +68,8 @@ impl Guest for Component {
                 Err(err) => refusal(&err),
             }),
             "outside" => with_device("outside", outside),
+            "radio" => with_device("radio", radio),
+            "device" => with_device("device", whole_device),
             "slow" => with_device("slow", |device| {
                 if let Err(err) = device.claim(0) {
                     return refusal(&err);
@@ -200,6 +209,61 @@ fn outside(device: Device) -> String {
         "interface-1={other_interface} set-configuration={reconfigure} \
          endpoint-0x83={hid_endpoint}"
     )
+}
+
+fn radio(device: Device) -> String {
+    if let Err(err) = device.claim(0) {
+        return format!("claim {}", refusal(&err));
+    }
+    // SET_RADIO_CHANNEL and SET_DATA_RATE, each a vendor request to the
+    // device with no data.
+    for (request, value) in [(0x01u8, 80u16), (0x03, 2)] {
+        if let Err(err) =
+            device.control_out(usb::vendor_device_request(request, value, 0), &[], 1_000)
+        {
+            return format!("set-up {request:#04x} {}", refusal(&err));
+        }
+    }
+    if let Err(err) = device.bulk_out(0x01, &[0xff], 1_000) {
+        return format!("null packet {}", refusal(&err));
+    }
+    match device.bulk_in(0x81, 64, 1_000) {
+        Ok(ack) => format!("channel 80, data rate 2, null packet answered {ack:02x?}"),
+        Err(err) => format!("ack {}", refusal(&err)),
+    }
+}
+
+fn whole_device(device: Device) -> String {
+    if let Err(err) = device.claim(0) {
+        return refusal(&err);
+    }
+    let class = match device.control_out(usb::class_device_request(0x22, 3, 0), &[7], 100) {
+        Ok(()) => "sent",
+        Err(err) => kind(&err),
+    };
+    let set_configuration = ControlSetup {
+        request_type: RequestType::Standard,
+        recipient: Recipient::Device,
+        request: 0x09,
+        value: 1,
+        index: 0,
+    };
+    let reconfigure = match device.control_out(set_configuration, &[], 100) {
+        Ok(()) => "SENT",
+        Err(err) => kind(&err),
+    };
+    let get_descriptor = ControlSetup {
+        request_type: RequestType::Standard,
+        recipient: Recipient::Device,
+        request: 0x06,
+        value: 0x0100,
+        index: 0,
+    };
+    let descriptor = match device.control_in(get_descriptor, 18, 100) {
+        Ok(bytes) => format!("{} bytes", bytes.len()),
+        Err(err) => String::from(kind(&err)),
+    };
+    format!("class={class} set-configuration={reconfigure} get-descriptor={descriptor}")
 }
 
 fn kind(err: &UsbError) -> &'static str {

@@ -1897,16 +1897,21 @@ pub mod serial {
 /// use krate::usb;
 /// if let Some(radio) = usb::pick("Choose the radio dongle")? {
 ///     radio.claim(0)?;
-///     radio.bulk_out(0x01, &[0xff, 0x00], 1_000)?;
-///     let answer = radio.bulk_in(0x81, 64, 1_000)?; // empty if the wait ran out
-///     radio.control_out(usb::vendor_request(0x01, 2, 0), &[], 1_000)?;
+///     // A Crazyradio is set up with vendor requests to the whole device.
+///     radio.control_out(usb::vendor_device_request(0x01, 80, 0), &[], 1_000)?; // channel 80
+///     radio.control_out(usb::vendor_device_request(0x03, 2, 0), &[], 1_000)?; // 2 Mbit/s
+///     radio.bulk_out(0x01, &[0xff], 1_000)?;
+///     let ack = radio.bulk_in(0x81, 64, 1_000)?; // empty if the wait ran out
 /// }
 /// ```
 ///
-/// A control request goes to the claimed interface or one of its endpoints,
-/// never to the whole device; of the standard requests only GET_STATUS and
-/// GET_DESCRIPTOR are sent. A computer only: in a browser tab and on a phone
-/// every call answers `UsbError::Unavailable` with words saying so.
+/// A control request goes to the claimed interface ([`vendor_request`],
+/// [`class_request`]), one of its endpoints, or, a class or vendor request,
+/// to the whole device ([`vendor_device_request`], [`class_device_request`]);
+/// an interface is claimed first either way. Of the standard requests only
+/// GET_STATUS and GET_DESCRIPTOR are sent. A computer only: in a browser tab
+/// and on a phone every call answers `UsbError::Unavailable` with words
+/// saying so.
 pub mod usb {
     use crate::bindings::krate::usb::devices as host;
     pub use crate::bindings::krate::usb::devices::{
@@ -1950,6 +1955,28 @@ pub mod usb {
         ControlSetup {
             request_type: RequestType::Class,
             ..vendor_request(request, value, interface)
+        }
+    }
+
+    /// A vendor request to the whole device the person picked: `request`
+    /// with `value` and `index`, both the request's own. Many vendor
+    /// devices are set up this way (a Crazyradio's channel is
+    /// `vendor_device_request(0x01, channel, 0)`). Claim an interface first.
+    pub fn vendor_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Device,
+            request,
+            value,
+            index,
+        }
+    }
+
+    /// A class request to the whole device, the same way.
+    pub fn class_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Class,
+            ..vendor_device_request(request, value, index)
         }
     }
 
@@ -2044,7 +2071,7 @@ pub mod usb {
         }
 
         /// A control request that reads up to `length` bytes (at most 4096)
-        /// from the claimed interface or one of its endpoints.
+        /// from the claimed interface, one of its endpoints or the device.
         pub fn control_in(
             &self,
             setup: ControlSetup,
@@ -2055,7 +2082,7 @@ pub mod usb {
         }
 
         /// A control request that writes `data` (at most 4096 bytes) to the
-        /// claimed interface or one of its endpoints.
+        /// claimed interface, one of its endpoints or the device.
         pub fn control_out(
             &self,
             setup: ControlSetup,

@@ -1520,6 +1520,7 @@ fn usb_setup(setup: usb::devices::ControlSetup) -> crate::usb_host::Setup {
         recipient: match setup.recipient {
             usb::devices::Recipient::Interface => Recipient::Interface,
             usb::devices::Recipient::Endpoint => Recipient::Endpoint,
+            usb::devices::Recipient::Device => Recipient::Device,
         },
         request: setup.request,
         value: setup.value,

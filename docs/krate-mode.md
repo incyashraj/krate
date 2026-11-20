@@ -521,8 +521,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 
 ### `usb`
 
+- `usb::class_device_request(request: u8, value: u16, index: u16) -> ControlSetup`
 - `usb::class_request(request: u8, value: u16, interface: u8) -> ControlSetup`
 - `usb::pick(title: &str) -> Result<Option<Device>, UsbError>`
+- `usb::vendor_device_request(request: u8, value: u16, index: u16) -> ControlSetup`
 - `usb::vendor_request(request: u8, value: u16, interface: u8) -> ControlSetup`
 - `usb::words(err: &UsbError) -> &str`
 
@@ -596,7 +598,7 @@ people can send. check-app ends with a note naming any it found.
 | `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
 | `device.serial` | no | computer only | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
 | `device.printer` | no | computer only | print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing |
-| `device.usb:<vendor-id>:<product-id>` | no | computer only | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and interface control transfers, never keyboards, mice, storage, audio, video or hubs |
+| `device.usb:<vendor-id>:<product-id>` | no | computer only | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
