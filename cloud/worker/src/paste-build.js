@@ -48,6 +48,11 @@ export function parsePastedApp(input) {
   const OPEN = /^[ \t]*(`{3,}|~{3,})[ \t]*[\w+.#-]*[ \t]*$/;
   const CLOSE = /^[ \t]*(`{3,}|~{3,})[ \t]*$/;
   const ANY_FENCE = /^[ \t]*(`{3,}|~{3,})/;
+  // What a chat writes when it labels each file's own code block, as the
+  // guide's worked examples do: "`manifest.toml`:", "**src/lib.rs**",
+  // "### Cargo.toml". Taken as a file only outside any code block and only
+  // when a code block opens on the next line that is not blank.
+  const LABEL = /^[ \t>]*(?:#{1,6}[ \t]+)?[*_`'"]*((?:[\w.-]+\/)*[\w.-]+\.(?:toml|rs|md|txt|json|csv|lock))[*_`'"]*[ \t]*:?[ \t]*[*_]*[ \t]*$/;
 
   if (typeof input !== "string" || !input.trim()) return { problem: "Nothing was pasted. Paste your AI's whole answer." };
   if (input.length > MAX_CHARS) return { problem: "That is more than 3 MB of text. An app's source is far smaller: paste only the AI's answer with the files." };
@@ -56,13 +61,32 @@ export function parsePastedApp(input) {
   const found = [];
   let current = null;
   let ended = false;
-  for (const line of lines) {
+  let fence = null;
+  for (let n = 0; n < lines.length; n += 1) {
+    const line = lines[n];
     if (ended) break;
     const mark = MARK.exec(line);
     if (mark) {
       current = { path: mark[1].trim(), lines: [] };
       found.push(current);
       continue;
+    }
+    if (!fence) {
+      const label = LABEL.exec(line);
+      if (label) {
+        let next = n + 1;
+        while (next < lines.length && !lines[next].trim()) next += 1;
+        if (next < lines.length && OPEN.test(lines[next])) {
+          current = { path: label[1], lines: [] };
+          found.push(current);
+          continue;
+        }
+      }
+      const opened = OPEN.exec(line);
+      if (opened) fence = opened[1];
+    } else {
+      const closed = CLOSE.exec(line);
+      if (closed && closed[1][0] === fence[0] && closed[1].length >= fence.length) fence = null;
     }
     if (END.test(line) && current) {
       ended = true;
@@ -215,7 +239,10 @@ export async function pasteBuildRoute(request, url, deps) {
     if (out.signIn) return json({ problem: "Sign in to Krate first.", signed_out: true }, 401);
     const s = out.result.structuredContent || {};
     if (out.result.isError || !s.build_id) {
-      return json({ problem: asPage(s.message || out.result.content[0].text) }, 429);
+      const words = asPage(s.message || out.result.content[0].text);
+      // A limit reached, or a build still running, is "try later"; anything
+      // else is the build service not taking it.
+      return json({ problem: words }, /the most it may|still running/.test(words) ? 429 : 503);
     }
     return json({ build_id: s.build_id, name: parsed.name, files: parsed.files.map((f) => f.path) }, 202);
   }

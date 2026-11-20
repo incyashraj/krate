@@ -125,6 +125,19 @@ test("the documented format reads back exactly, the AI's words around it ignored
   assert.deepEqual(parsePastedApp(ANSWER.replace(/\n/g, "\r\n")).files, got.files);
 });
 
+test("the example in the published guide (docs/krate-mode.md) reads back as the three files", () => {
+  const guide = readFileSync(join(here, "..", "..", "..", "docs", "krate-mode.md"), "utf8");
+  const at = guide.indexOf("## If you have no Krate tool");
+  assert.ok(at > 0, "the guide teaches the no-tool path");
+  const block = /\n((?: {4}.*\n|\n)*? {4}--- END ---\n(?: {4}```\n)?)/.exec(guide.slice(at));
+  assert.ok(block, "the guide shows the block");
+  const example = block[1].replace(/^ {4}/gm, "");
+  const got = parsePastedApp(example);
+  assert.equal(got.problem, undefined, got.problem);
+  assert.deepEqual(got.files.map((f) => f.path), ["Cargo.toml", "manifest.toml", "src/lib.rs"]);
+  assert.match(guide.slice(at), /https:\/\/hub\.krate\.tech\/build/);
+});
+
 test("the forms an AI drifts into: a code block per file, bold or heading markers, a path in backticks", () => {
   const drift = `Sure! Here are the files.
 
@@ -148,6 +161,16 @@ Let me know if you want changes.`;
   // Prose after the last block is cut at --- END --- only; without it the
   // last file's block ends at its own fence.
   assert.ok(!got.files[2].content.includes("Let me know"), got.files[2].content);
+
+  // The guide's own worked examples label a block with its file name and no
+  // FILE: -- an AI copying that style reads back too.
+  const labelled = `Here it is.\n\n\`Cargo.toml\`:\n\n\`\`\`toml\n${CARGO}\`\`\`\n\nThe manifest:\n\n**manifest.toml**\n\`\`\`toml\n${MANIFEST}\`\`\`\n\n### src/lib.rs\n\`\`\`rust\n${LIB}\`\`\`\n`;
+  const lab = parsePastedApp(labelled);
+  assert.equal(lab.problem, undefined, lab.problem);
+  assert.deepEqual(lab.files, got.files);
+  // A file name inside a code block is code, not a label.
+  const inside = parsePastedApp(`--- FILE: Cargo.toml ---\n${CARGO}--- FILE: manifest.toml ---\n${MANIFEST}--- FILE: src/lib.rs ---\n\`\`\`rust\n// see\nREADME.md\n\`\`\`\n${LIB}--- END ---`);
+  assert.ok(!inside.files || !inside.files.some((f) => f.path === "README.md"), JSON.stringify(inside));
 });
 
 test("a missing manifest, no markers, a broken code block, a bad path and a file twice are refused in words", () => {
