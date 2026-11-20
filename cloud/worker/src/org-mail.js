@@ -19,6 +19,8 @@
 // invitation an admin sent on purpose, and a security notice about who
 // owns a team. The switch for Krate's emails never stops them.
 
+import { emailHtml } from "./mail-layout.js";
+
 export const MAIL_FROM_ADDRESS = "incyashraj@gmail.com";
 export const MAIL_CC = "yashraj@krate.tech";
 /// Who Resend sends as: an address on krate.tech, the domain it signs for.
@@ -31,11 +33,13 @@ export function mailReady(env) {
 export const ORG_DAILY_LIMIT = 20;
 export const HUB_DAILY_LIMIT = 100;
 
-/// Send one plain-text mail through Gmail; null when it went, else why.
-/// Copied to krate.tech unless `cc` is null (a notification is the
-/// person's own, not the founder's to read).
-export async function gmail(env, smtpSend, { to, subject, text, cc = MAIL_CC }) {
-  if (!env.GMAIL_APP_PASSWORD) return resendMail(env, { to, subject, text });
+/// Send one mail through Gmail; null when it went, else why. `text` always,
+/// `html` beside it when given (mail-layout.js: the two go as one
+/// multipart/alternative message, the words first). Copied to krate.tech
+/// unless `cc` is null (a notification is the person's own, not the
+/// founder's to read).
+export async function gmail(env, smtpSend, { to, subject, text, html, cc = MAIL_CC }) {
+  if (!env.GMAIL_APP_PASSWORD) return resendMail(env, { to, subject, text, html });
   const connect = env.SMTP_CONNECT || (await import("cloudflare:sockets")).connect;
   const problem = await smtpSend(connect, {
     user: MAIL_FROM_ADDRESS,
@@ -45,19 +49,22 @@ export async function gmail(env, smtpSend, { to, subject, text, cc = MAIL_CC }) 
     cc: cc || undefined,
     subject,
     text,
+    html,
   });
   return problem ? "the mail could not be sent -- copy the link and send it yourself" : null;
 }
 
 /// The same mail through Resend; null when it went, else why. No copy to
 /// krate.tech: it is the address the mail comes from.
-async function resendMail(env, { to, subject, text }) {
+async function resendMail(env, { to, subject, text, html }) {
   if (!env.RESEND_API_KEY) return "invitation mail is not set up on this hub";
+  const mail = { from: RESEND_FROM, to: [to], reply_to: MAIL_FROM_ADDRESS, subject, text };
+  if (html) mail.html = html;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: RESEND_FROM, to: [to], reply_to: MAIL_FROM_ADDRESS, subject, text }),
+      body: JSON.stringify(mail),
     });
     if (res.ok) return null;
     console.error(`resend refused an organisation mail: ${res.status} ${await res.text().catch(() => "")}`);
@@ -102,6 +109,29 @@ export function inviteMailText({ inviter, orgName, slug, role, joinUrl, expiresA
   ].join("\n");
 }
 
+/// The same invitation, designed (mail-layout.js): the same words, Join as
+/// the one button.
+export function inviteMailHtml({ inviter, orgName, slug, role, joinUrl, expiresAt, email }) {
+  let site = "https://krate.tech";
+  try {
+    site = new URL(joinUrl).origin;
+  } catch (_) {}
+  return emailHtml({
+    title: `${inviter} invited you to ${orgName} on Krate`,
+    preheader: `Join ${orgName} on Krate. The invitation works once, only for ${email}.`,
+    heading: `Join ${orgName} on Krate`,
+    blocks: [`${inviter} invited you to ${orgName} on Krate. There you can ${ROLE_WORDS[role] || ROLE_WORDS.recipient}.`],
+    button: { label: `Join ${orgName}`, url: joinUrl },
+    after: [
+      `It takes one click: sign in with this address and press Join. Then get Krate to open ${orgName}'s apps (${site}/download/). Every one is signed by ${orgName} and checked before it opens.`,
+    ],
+    note: [
+      `The invitation works once, only for ${email}, until ${when(expiresAt)}.`,
+      `If you were not expecting it, ignore this mail. (${orgName} is "${slug}" on Krate.)`,
+    ],
+  });
+}
+
 /// Count one mail against the hub's day; false once 100 have gone.
 async function hubSlot(env) {
   const key = `org-invite-mail:${new Date().toISOString().slice(0, 10)}`;
@@ -128,18 +158,20 @@ export async function mailInvite(env, smtpSend, invite, { orgName, slug, inviter
   if (!(await hubSlot(env))) {
     return { emailed: false, email_problem: "Krate has sent all its invitation mails for today -- copy the link and send it" };
   }
+  const words = {
+    inviter,
+    orgName,
+    slug,
+    role: invite.role,
+    joinUrl: invite.join_url,
+    expiresAt: invite.expires_at,
+    email: invite.display,
+  };
   const problem = await gmail(env, smtpSend, {
     to: invite.display,
     subject: `${inviter} invited you to ${orgName} on Krate`,
-    text: inviteMailText({
-      inviter,
-      orgName,
-      slug,
-      role: invite.role,
-      joinUrl: invite.join_url,
-      expiresAt: invite.expires_at,
-      email: invite.display,
-    }),
+    text: inviteMailText(words),
+    html: inviteMailHtml(words),
   });
   return problem ? { emailed: false, email_problem: problem } : { emailed: true };
 }
@@ -177,17 +209,34 @@ export async function mailRecovery(env, smtpSend, { slug, orgName, recovery, not
       notMailed.push(principal);
       continue;
     }
+    const subject = `Krate support was asked to add an owner to ${orgName}`;
+    const page = `${site}/org/?o=${encodeURIComponent(slug)}`;
+    // The person as people write them: an address, or @login for GitHub.
+    const person = String(recovery.for).replace(/^email:/, "").replace(/^github:/, "@");
     const problem = await gmail(env, smtpSend, {
       to,
-      subject: `Krate support was asked to add an owner to ${orgName}`,
+      subject,
       text: [
-        `Krate support has been asked to make ${recovery.for} an owner of ${orgName} (${slug}).`,
+        `Krate support has been asked to make ${person} an owner of ${orgName} (${slug}).`,
         "",
         `Reason given: ${recovery.reason}`,
         "",
         `It takes effect on ${when(recovery.effective_at)} unless an owner or admin objects before then.`,
-        `To object, open ${site}/org/?o=${encodeURIComponent(slug)} and choose Object, or reply to this mail.`,
+        `To object, open ${page} and choose Object, or reply to this mail.`,
       ].join("\n"),
+      html: emailHtml({
+        title: subject,
+        preheader: `It takes effect on ${when(recovery.effective_at)} unless an owner or admin objects.`,
+        heading: `Krate support was asked to add an owner to ${orgName}`,
+        blocks: [
+          `Krate support has been asked to make ${person} an owner of ${orgName} (${slug}).`,
+          "Reason given:",
+          { quote: recovery.reason },
+          `It takes effect on ${when(recovery.effective_at)} unless an owner or admin objects before then. To object, open ${orgName} on Krate and choose Object, or reply to this mail.`,
+        ],
+        button: { label: `Open ${orgName}`, url: page },
+        note: [`You get this because you are an owner or admin of ${orgName} on Krate.`],
+      }),
     });
     (problem ? notMailed : mailed).push(principal);
   }

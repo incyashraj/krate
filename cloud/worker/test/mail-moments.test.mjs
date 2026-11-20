@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { orgEnv, call, tokenFor, worker } from "./org-tools.mjs";
 import { sha256Hex } from "./r2-mock.mjs";
+import { assertLayout } from "./mail-layout-tools.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ported = (name) => new Uint8Array(readFileSync(join(here, "..", "..", "..", "evidence", "ported", name)));
@@ -55,6 +56,9 @@ test("a publish mails its publisher once, with the link; a quiet publish or the 
     assert.equal(m.subject, "Bounce is live on Krate");
     assert.ok(m.text.includes(up.body.url), m.text);
     assert.ok(m.text.includes("opens in any browser, on a phone or a computer"), m.text);
+    assertLayout(m.html, up.body.url, "Open Bounce");
+    assert.ok(m.html.includes("opens in any browser, on a phone or a computer"), "the same words in the designed copy");
+    assert.match(m.html, />Unsubscribe<\/a>/, "the unsubscribe link in the HTML too");
     // The same bytes again: the hub already holds them, so nothing new is live.
     await call(env, "ada@example.com", "POST", "/publish", { bytes: ported("bounce.krate"), headers: { "x-krate-name": "Bounce" } });
     assert.equal(mail.sent.length, 1, "the same app is not announced twice");
@@ -105,6 +109,7 @@ test("the first time someone else opens an app in a tab, its publisher hears onc
     assert.equal(mail.sent[0].subject, "Someone just opened Bounce");
     assert.deepEqual(mail.sent[0].to, ["ada@example.com"]);
     assert.ok(mail.sent[0].text.includes(`https://hub.example/a/${hash}`), mail.sent[0].text);
+    assertLayout(mail.sent[0].html, `https://hub.example/a/${hash}`, "Open Bounce");
     await open(null);
     await open("bob@example.com");
     assert.equal(mail.sent.length, 1, "only the first open by someone else");
@@ -137,6 +142,8 @@ test("the first file a build makes is mailed to the person who asked for it, onc
     assert.deepEqual(mail.sent[0].to, ["ada@example.com"]);
     assert.ok(mail.sent[0].text.includes("a habit tracker with streaks"), mail.sent[0].text);
     assert.ok(mail.sent[0].text.includes("https://krate.tech/app/"), mail.sent[0].text);
+    assertLayout(mail.sent[0].html, "https://krate.tech/app/", "Open Krate Studio");
+    assert.ok(mail.sent[0].html.includes("a habit tracker with streaks</td>"), "what they asked for, set apart");
     await post("/case/attempt", { device, id: opened.id, outcome: "made" });
     assert.equal(mail.sent.length, 1, "a change to the same app is not a new app");
   } finally {

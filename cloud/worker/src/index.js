@@ -40,6 +40,7 @@ import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
 import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
+import { emailHtml } from "./mail-layout.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
 import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
@@ -3749,11 +3750,31 @@ function founderInboxes(env) {
 }
 
 /// The moment an account is made: who, how, when, and the welcome ready
-/// to send. Plain text so it reads at a glance on a phone.
+/// to send. Short lines so it reads at a glance on a phone, in the text
+/// and in the designed copy (mail-layout.js).
 ///
 /// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
+  const mail = founderSignupMail(user);
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Krate <hello@krate.tech>",
+      to: founderInboxes(env),
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    }),
+  });
+}
+
+/// "New on Krate: <who>": subject, text and HTML.
+function founderSignupMail(user) {
   const who = user.name || user.login || user.email || "Someone";
   const how = (user.providers || []).join(", ") || "unknown";
   const at = new Date(user.created || Date.now()).toLocaleString("en-GB", {
@@ -3770,23 +3791,35 @@ async function notifyFounderOfSignup(env, user) {
     `When:   ${at} Singapore time`,
     "",
   ];
-  if (user.email) {
-    lines.push("Write them the welcome (opens Gmail, ready to send):", welcomeComposeUrl(user), "");
+  const compose = user.email ? welcomeComposeUrl(user) : null;
+  if (compose) {
+    lines.push("Write them the welcome (opens Gmail, ready to send):", compose, "");
   }
-  lines.push("Everyone, welcomed or not: https://hub.krate.tech/admin#welcome");
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: "Krate <hello@krate.tech>",
-      to: founderInboxes(env),
-      subject: `New on Krate: ${who}`,
-      text: lines.join("\n"),
-    }),
+  const desk = "https://hub.krate.tech/admin#welcome";
+  lines.push(`Everyone, welcomed or not: ${desk}`);
+  const subject = `New on Krate: ${who}`;
+  const html = emailHtml({
+    title: subject,
+    preheader: `Signed in with ${how}, ${at} Singapore time.`,
+    heading: `${who} just made a Krate account`,
+    blocks: [
+      {
+        rows: [
+          ["Name", user.name || "(none given)"],
+          ["Email", user.email || "(none)"],
+          ["Signed in with", how],
+          ["When", `${at} Singapore time`],
+        ],
+      },
+      ...(compose ? ["Write them the welcome. It opens Gmail, ready to send."] : []),
+    ],
+    // The compose link is a page of encoded text: on the button only (the
+    // text part spells it out).
+    button: compose ? { label: "Write the welcome", url: compose, written: false } : { label: "Open the desk", url: desk },
+    after: compose ? [`Everyone, welcomed or not: ${desk}`] : [],
+    footer: ["Sent to the founder only, when someone makes an account."],
   });
+  return { subject, text: lines.join("\n"), html };
 }
 
 /// Send one welcome; null when it went, else why not.
@@ -3940,8 +3973,9 @@ async function smtpSend(connect, msg) {
   }
 }
 
-// For scripts/send-welcome-test.mjs: the exact note, sent by hand.
-export { welcomeText, sendWelcome };
+// For scripts/send-welcome-test.mjs: the exact note, sent by hand. The two
+// designed mails built here, for the tests and the design previews.
+export { welcomeText, sendWelcome, signInEmailHtml, founderSignupMail };
 
 // ------------------------------------------------------ the KV list budget
 //
@@ -4222,168 +4256,25 @@ async function googleCallback(url, env, request) {
 /// somebody signing in by email it is the FIRST thing Krate ever shows them,
 /// before the app, before the site.
 ///
-/// A terminal, because that is what Krate is: the site's own hero is a
-/// terminal window, and the people receiving this are developers. The
-/// palette is lifted from docs/landing/site.css rather than invented --
-/// --bg #0a0a0a, --panel #0f1012, --line #1f2228, --good #4ade80,
-/// --accent #6291ff, --warn #f4dc74, and the same traffic-light dots.
-///
-/// Written for mail clients, not browsers, which is why it looks like 2005:
-/// nested tables for layout, every style inline, no flexbox, no grid, no
-/// external stylesheet. Gmail strips <style> blocks, Outlook renders through
-/// Word, and anything clever silently collapses.
-///
-/// Dark mail has one extra trap on top of that: a client that forces its own
-/// light theme will repaint backgrounds and leave the text colours alone. So
-/// nothing here depends on the dark background for legibility -- every text
-/// colour is readable on white too, and the button's label is white on a
-/// solid cell that carries `bgcolor` as well as a CSS background, which is
-/// what survives Outlook.
+/// The look is the site's own, shared by every system email
+/// (mail-layout.js): the header's mark, a white card, a black pill button,
+/// dark mode from the site's dark tokens. It replaced a dark terminal
+/// window, which matched the site before its light redesign.
 ///
 /// Three things it must do even when images are blocked, which is the
-/// default in most clients:
-///   - the button still reads as a button (colour on the anchor itself),
+/// default in most clients -- the layout guarantees each:
+///   - the button still reads as a button (colour on the cell and anchor),
 ///   - the full URL is visible as text, so it can be copied,
 ///   - the logo has alt text that says the product's name.
 function signInEmailHtml(link) {
-  const BG = "#0a0a0a";
-  const PANEL = "#0f1012";
-  const LINE = "#1f2228";
-  const GOOD = "#4ade80";
-  const ACCENT = "#6291ff";
-  const WARN = "#f4dc74";
-  const DIM = "#8b8f98";
-  const TEXT = "#e8eaed";
-  const MONO =
-    "SFMono-Regular,'Cascadia Code',Menlo,Consolas,'Liberation Mono',monospace";
-  // Absolute: a mail client has no origin to resolve against.
-  const LOGO = "https://krate.tech/krate-logo.png";
-  const esc = (s) =>
-    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const href = esc(link);
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
-<title>Sign in to Krate</title>
-</head>
-<body style="margin:0;padding:0;background:${BG};">
-<!-- Preheader: the grey line a client shows beside the subject. Hidden in
-     the body, or it prints twice. -->
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">krate account login &mdash; your link is good for 15 minutes.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
-<tr><td align="center" style="padding:32px 16px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
-
-    <!-- Wordmark above the window, so the sender is clear before anything
-         else renders. -->
-    <tr><td style="padding:0 4px 14px 4px;">
-      <img src="${LOGO}" width="26" height="26" alt="Krate"
-           style="display:inline-block;vertical-align:middle;border:0;">
-      <span style="display:inline-block;vertical-align:middle;padding-left:9px;font:600 16px/1 ${MONO};color:${TEXT};">krate</span>
-    </td></tr>
-
-    <tr><td style="background:${PANEL};border:1px solid ${LINE};border-radius:12px;">
-
-      <!-- Title bar: the same three dots as the site's terminal. -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="padding:11px 14px;border-bottom:1px solid ${LINE};">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <!-- The dots are CELLS, not spans.
-                 As spans they came out as elongated ovals on Gmail mobile:
-                 the &nbsp; inside inherits the body's 1.75 line-height, and
-                 a mobile client ignores width/height on an inline-block, so
-                 the box grew taller than it was wide. A td with width,
-                 height and line-height:0 is the shape email clients
-                 actually honour. Photographed on a phone before and after.
-
-                 The hexes are the real macOS traffic lights and were never
-                 wrong -- #FF5F57, #FEBC2E, #28C840. They read as dull in a
-                 dark-mode client because it repaints around them, which is
-                 why bgcolor is set as well as the CSS background: the
-                 attribute is what survives that. -->
-            <td width="12" height="12" bgcolor="#FF5F57" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FF5F57;">&#8203;</td>
-            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
-            <td width="12" height="12" bgcolor="#FEBC2E" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FEBC2E;">&#8203;</td>
-            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
-            <td width="12" height="12" bgcolor="#28C840" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#28C840;">&#8203;</td>
-            <td style="padding-left:14px;font:400 11.5px/1 ${MONO};color:${DIM};">krate &mdash; login</td>
-          </tr></table>
-        </td></tr>
-      </table>
-
-      <!-- Body: a session, read top to bottom. -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="padding:20px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${TEXT};">
-          <span style="color:${GOOD};">$</span> <span style="color:${TEXT};">krate account login</span>
-        </td></tr>
-
-        <tr><td style="padding:6px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${DIM};">
-          <span style="color:${GOOD};">&#10003;</span> request received<br>
-          <span style="color:${GOOD};">&#10003;</span> link signed, valid for <span style="color:${WARN};">15 minutes</span><br>
-          <span style="color:${DIM};">&#8230;</span> waiting for you to confirm
-        </td></tr>
-
-        <!-- The button. bgcolor AND a CSS background: Outlook honours the
-             attribute, everything else the style. -->
-        <tr><td style="padding:22px 18px 0 18px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td align="center" bgcolor="${ACCENT}" style="border-radius:8px;">
-              <!-- A DARK label on the blue, and a border in the same blue.
-                   Email clients that force a light theme repaint backgrounds
-                   and leave text colours alone, so no single label colour is
-                   safe on its own: white vanished when the cell was
-                   repainted white, and dark-on-dark would vanish the other
-                   way. Dark ink reads on the blue AND on a repainted light
-                   cell, and the border keeps the shape either way. Checked
-                   by rendering with every background forced to #ffffff. -->
-              <a href="${href}"
-                 style="display:inline-block;padding:13px 26px;border-radius:8px;background:${ACCENT};border:1px solid ${ACCENT};color:#0a0a0a;text-decoration:none;font:700 14px/1 ${MONO};">
-                Sign in to Krate &rarr;
-              </a>
-            </td>
-          </tr></table>
-        </td></tr>
-
-        <tr><td style="padding:20px 18px 0 18px;font:400 12.5px/1.6 ${MONO};color:${DIM};">
-          <span style="color:${DIM};"># or paste this into your browser</span>
-        </td></tr>
-
-        <!-- word-break, or a long token pushes the card wider than a phone. -->
-        <tr><td style="padding:8px 18px 0 18px;">
-          <div style="padding:12px 13px;background:${BG};border:1px solid ${LINE};border-radius:8px;font:400 12.5px/1.7 ${MONO};color:${ACCENT};word-break:break-all;">
-            ${href}
-          </div>
-        </td></tr>
-
-        <tr><td style="padding:18px 18px 22px 18px;font:400 12.5px/1.7 ${MONO};color:${DIM};">
-          <span style="color:${DIM};"># the link works once. if you did not ask to sign in,</span><br>
-          <span style="color:${DIM};"># nothing has happened and you can ignore this.</span>
-        </td></tr>
-      </table>
-
-    </td></tr>
-
-    <tr><td style="padding:16px 4px 0 4px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="left" style="font:400 11.5px/1.5 ${MONO};color:${DIM};">
-          build once. run anywhere.
-        </td>
-        <td align="right" style="font:400 11.5px/1.5 ${MONO};">
-          <a href="https://krate.tech" style="color:${DIM};text-decoration:none;">krate.tech</a>
-          <span style="color:${LINE};">&nbsp;&middot;&nbsp;</span>
-          <a href="https://krate.tech/docs/" style="color:${DIM};text-decoration:none;">docs</a>
-        </td>
-      </tr></table>
-    </td></tr>
-
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  return emailHtml({
+    title: "Sign in to Krate",
+    preheader: "Your sign-in link works once, for 15 minutes.",
+    heading: "Sign in to Krate",
+    blocks: ["Press the button to sign in. The link works once and expires in 15 minutes."],
+    button: { label: "Sign in to Krate", url: link },
+    note: ["If you did not ask to sign in, nothing has happened and you can ignore this email."],
+  });
 }
 
 /// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the

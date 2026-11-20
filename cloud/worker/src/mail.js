@@ -1,7 +1,7 @@
 // Mail the hub sends a person about their own things: their app is live,
 // the app they asked for is made, someone opened what they shared.
 //
-// Plain text, from Krate's own address on krate.tech (Resend signs it with
+// Text and HTML (mail-layout.js, the site's look), from Krate's own address on krate.tech (Resend signs it with
 // DKIM and send.krate.tech passes SPF), replies to the founder. Every send
 // is best effort: a mail that fails changes nothing about what it is about,
 // and nothing here ever throws into a publish, a build or an open.
@@ -16,11 +16,14 @@
 
 import { addressFor } from "./org-mail.js";
 import { newsMail } from "./mail-prefs.js";
+import { emailHtml } from "./mail-layout.js";
 
 export const KRATE_FROM = "Krate <hello@krate.tech>";
 export const REPLY_TO = "incyashraj@gmail.com";
 const SITE = "https://krate.tech";
 const SIGN_OFF = "\n\nKrate\nkrate.tech\n\nReply to this mail and it reaches the person who builds Krate.";
+/// The same sign-off under the designed copy.
+const REPLY_LINE = "Reply to this mail and it reaches the person who builds Krate.";
 
 /// One mail through Resend; null when it went, else why not. `html` goes
 /// beside the text when given; `headers` are extra mail headers (the
@@ -83,7 +86,8 @@ async function sendNews(env, { id, user, to }, mail, what) {
   const news = await newsMail(env, id, user, what);
   if (news.skip) return news.skip;
   if (!(await momentAllowed(env, to))) return "over today's mail ceiling";
-  const why = await sendMail(env, { to, subject: mail.subject, text: mail.text + news.footer, headers: news.headers });
+  const html = emailHtml({ ...mail.layout, title: mail.subject, unsubscribe: news.link });
+  const why = await sendMail(env, { to, subject: mail.subject, text: mail.text + news.footer, html, headers: news.headers });
   if (why) console.error(`${what} did not go: ${why}`);
   return why;
 }
@@ -144,8 +148,20 @@ export async function daySlot(env) {
 }
 
 /// "Your app is live": the link, what it does when opened, and where it is.
+/// `layout` is the same words for the designed copy (mail-layout.js).
 export function publishedMail({ name, url, listed }) {
   return {
+    layout: {
+      preheader: "Send this link to anyone. It opens in any browser.",
+      heading: `${name} is live`,
+      blocks: [`Your app ${name} is live. Send this link to anyone:`],
+      button: { label: `Open ${name}`, url },
+      after: [
+        "It opens in any browser, on a phone or a computer, with nothing to install, and shows what it asks for before it runs. With Krate installed, the same app runs natively on Mac, Windows and Linux.",
+        listed ? `It is in the gallery too: ${SITE}/cloud/` : "It is unlisted: only people with the link can find it.",
+      ],
+      footer: [REPLY_LINE],
+    },
     subject: `${name} is live on Krate`,
     text: `Your app ${name} is live. Send this link to anyone:
 
@@ -161,6 +177,17 @@ ${listed ? `It is in the gallery too: ${SITE}/cloud/` : "It is unlisted: only pe
 export function madeMail({ request }) {
   const asked = String(request || "").trim();
   return {
+    layout: {
+      preheader: "Try it, change it by asking, and send it as a link.",
+      heading: "Your app is ready",
+      blocks: [
+        `The app you asked Krate to make is ready${asked ? ":" : "."}`,
+        ...(asked ? [{ quote: asked }] : []),
+        "Open Krate Studio to try it, change it by asking, and send it as a link that opens on any phone or computer.",
+      ],
+      button: { label: "Open Krate Studio", url: `${SITE}/app/` },
+      footer: [REPLY_LINE],
+    },
     subject: "Your app is ready",
     text: `The app you asked Krate to make is ready${asked ? `:\n\n  "${asked}"` : "."}
 
@@ -174,6 +201,14 @@ ${SITE}/app/${SIGN_OFF}`,
 /// opened it from a link.
 export function firstOpenMail({ name, url }) {
   return {
+    layout: {
+      preheader: `Someone opened ${name} from your link for the first time.`,
+      heading: `Someone opened ${name}`,
+      blocks: [`Someone opened ${name} from your link for the first time, in their browser.`, "Send it to more people the same way:"],
+      button: { label: `Open ${name}`, url },
+      after: ["Each one sees what it asks for before it runs, and opens it with nothing to install."],
+      footer: [REPLY_LINE],
+    },
     subject: `Someone just opened ${name}`,
     text: `Someone opened ${name} from your link for the first time, in their browser.
 
