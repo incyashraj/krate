@@ -253,6 +253,14 @@ Miss a step and it fails to build with "no global memory allocator found",
    `"std"` fails with "duplicate lang item `panic_impl`". **The two lines move
    together, and this is the step that is missed most often.**
 3. Keep `panic = "abort"` and `opt-level = "s"` in `[profile.release]`.
+4. **`use krate::prelude::*;` near the top of every file that does float maths.**
+   In `no_std`, `x.floor()`, `round`, `ceil`, `sqrt`, `sin`, `cos`, `atan2`,
+   `powf` and `rem_euclid` do not exist on `f32` or `f64`; the prelude brings
+   them back with `std`'s meanings (`krate::math::F32Ext` / `F64Ext`). Without
+   it the build fails with "no method named `floor` found for type `f32`" --
+   the first app Claude built through Krate's connector failed exactly so.
+   Never hand-write a floor by casting to an integer: that rounds negatives the
+   wrong way.
 
 ### What to avoid in `no_std`
 
