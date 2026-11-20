@@ -45,6 +45,7 @@ world = "gui"
 "krate:process" = { path = "../../wit/krate/phase4/deps/process" }
 "krate:serial" = { path = "../../wit/krate/phase4/deps/serial" }
 "krate:print" = { path = "../../wit/krate/phase4/deps/print" }
+"krate:usb" = { path = "../../wit/krate/phase4/deps/usb" }
 "krate:ui" = { path = "../../wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "../../wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "../../wit/krate/phase4/deps/gpu" }

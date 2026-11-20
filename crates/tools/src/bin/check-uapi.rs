@@ -34,6 +34,7 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:store/org@0.1.0",
     "krate:time/clock@0.1.0",
     "krate:time/sleep@0.1.0",
+    "krate:usb/devices@0.1.0",
 ];
 
 const EXPECTED_PACKAGES: &[&str] = &[
@@ -49,6 +50,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "krate:serial@0.1.0",
     "krate:store@0.1.0",
     "krate:time@0.1.0",
+    "krate:usb@0.1.0",
 ];
 
 fn main() -> Result<()> {

@@ -1379,6 +1379,14 @@ fn plain_capability(cap: &str) -> Option<String> {
         "device.serial" => "talk to a serial device you choose",
         // A printer the person picks (IC-986).
         "device.printer" => "print to a printer you choose",
+        // A USB device the person picks (IC-988): the manifest crate's
+        // words, with the device's ids.
+        "device.usb" => {
+            return cap
+                .parse::<krate_manifest::Capability>()
+                .ok()
+                .map(|cap| cap.plain());
+        }
         // Other devices on the network reaching in (IC-987): the manifest
         // crate's words, with the port.
         "net.listen" => {
@@ -1837,6 +1845,12 @@ mod tests {
                     .plain()
                     .as_str()
             )
+        );
+        // A USB device is the one the person picks, of the model the
+        // manifest names (IC-988): the manifest crate's words, ids and all.
+        assert_eq!(
+            plain_capability("device.usb:1915:7777").as_deref(),
+            Some("talk to the 1915:7777 USB device you choose")
         );
     }
 

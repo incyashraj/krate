@@ -146,6 +146,20 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // label prints with no dialog. Never default-granted, never in a tab or
     // on a phone.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "printer", false),
+    // A USB device the person picks (IC-988): a radio dongle, an instrument
+    // with its own protocol. Scoped to one device model by its vendor and
+    // product ids in hex -- `device.usb:1915:7777` -- exact, no wildcard, and
+    // an app may name several. The app never lists devices: the person picks
+    // one connected device of a named model, and that pick is the grant, for
+    // that device, for that run. Never default-granted, never in a tab or on
+    // a phone.
+    CapabilitySpec::resource_scoped(
+        CapabilityPhase::Phase2,
+        "device",
+        "usb",
+        "<vendor-id>:<product-id>",
+        false,
+    ),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",
@@ -889,6 +903,12 @@ impl Capability {
             ("device", "serial") => "talk to a serial device you choose".to_string(),
             // IC-986: the person picks the printer; the line says so.
             ("device", "printer") => "print to a printer you choose".to_string(),
+            // IC-988: the person picks the device, of a model the manifest
+            // names by its ids; the line says both.
+            ("device", "usb") => match resource {
+                Some(ids) => format!("talk to the {ids} USB device you choose"),
+                None => "talk to a USB device you choose".to_string(),
+            },
             ("photos", "add") => "add pictures to your photo library".to_string(),
             // IC-977: what a program can do, said plainly. A build runs the
             // project's own code (build scripts, macros, tests), so cargo
@@ -1259,6 +1279,10 @@ fn validate_capability_resource(
         return validate_program_name(resource);
     }
 
+    if module == "device" && action == "usb" {
+        return validate_usb_ids(resource).map(|_| ());
+    }
+
     if module == "gfx" && action == "gpu" {
         validate_one_of(resource, &["basic", "compute"], "GPU resource")?;
     }
@@ -1280,10 +1304,49 @@ fn canonicalize_capability_resource(module: &str, action: &str, resource: &str) 
             .ok()
             .map(|port| port.to_string());
     }
+    if module == "device" && action == "usb" {
+        return validate_usb_ids(resource)
+            .ok()
+            .map(|(vendor, product)| usb_ids(vendor, product));
+    }
     if module == "ui" || module == "gfx" {
         return Some(resource.to_ascii_lowercase());
     }
     Some(resource.to_string())
+}
+
+/// `device.usb:<vendor-id>:<product-id>` as Krate writes it: four lowercase
+/// hex digits each (IC-988).
+pub fn usb_ids(vendor: u16, product: u16) -> String {
+    format!("{vendor:04x}:{product:04x}")
+}
+
+/// `device.usb:<vendor-id>:<product-id>` names exactly one device model
+/// (IC-988): two ids of four hex digits each, as `lsusb` and the system's
+/// own lists print them (`1915:7777`). No wildcard, no range, no `0x`, and
+/// not 0000, so the line on the consent card names one kind of device.
+pub fn validate_usb_ids(resource: &str) -> std::result::Result<(u16, u16), String> {
+    let shape = || {
+        format!(
+            "`{resource}` is not a USB device: device.usb names one model by its vendor and \
+             product ids, four hex digits each, such as `device.usb:1915:7777`"
+        )
+    };
+    let (vendor, product) = resource.split_once(':').ok_or_else(shape)?;
+    let id = |part: &str| {
+        (part.len() == 4 && part.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| u16::from_str_radix(part, 16).ok())
+            .flatten()
+            .ok_or_else(shape)
+    };
+    let (vendor, product) = (id(vendor)?, id(product)?);
+    if vendor == 0 {
+        return Err(format!(
+            "`{resource}` has vendor id 0000, which no real device has: name the device's own \
+             ids, such as `device.usb:1915:7777`"
+        ));
+    }
+    Ok((vendor, product))
 }
 
 /// The lowest port an app may listen on (IC-987). Below it the ports belong
@@ -1748,6 +1811,45 @@ mod tests {
             "device.usb",
         ] {
             assert!(named.parse::<Capability>().is_err(), "{named}");
+        }
+    }
+
+    /// `device.usb:<vendor>:<product>` (IC-988) names one device model by
+    /// its two ids in hex, exactly: never a wildcard, a range or a bare
+    /// `device.usb`; never granted without asking, never in a tab; and the
+    /// consent line names the ids the person is asked about.
+    #[test]
+    fn a_usb_device_is_named_by_its_two_ids_exactly() {
+        let cap: Capability = "device.usb:1915:7777".parse().expect("device.usb");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(!cap.works_in_a_tab(), "a tab has no USB yet");
+        assert_eq!(cap.plain(), "talk to the 1915:7777 USB device you choose");
+        // Upper case is the same device, written the one way.
+        let upper: Capability = "device.usb:1A86:7523".parse().expect("upper case");
+        assert_eq!(upper.to_string(), "device.usb:1a86:7523");
+        assert_eq!(validate_usb_ids("1915:7777"), Ok((0x1915, 0x7777)));
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.usb")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for refused in [
+            "device.usb",
+            "device.usb:",
+            "device.usb:1915",
+            "device.usb:1915:*",
+            "device.usb:*:*",
+            "device.usb:*",
+            "device.usb:0x1915:0x7777",
+            "device.usb:1915:777",
+            "device.usb:19150:7777",
+            "device.usb:1915:7777:0",
+            "device.usb:1915-191f:7777",
+            "device.usb:0000:7777",
+            "device.usb:gggg:7777",
+        ] {
+            assert!(refused.parse::<Capability>().is_err(), "{refused}");
         }
     }
 

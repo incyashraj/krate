@@ -38,13 +38,20 @@ pub enum UapiCall {
     Device(DeviceCall),
 }
 
-/// Reaching a device the person picks (IC-985). One kind so far: a serial
-/// port, picked from the system's list, never named by the app.
+/// Reaching a device the person picks (IC-985): a serial port, a printer
+/// (IC-986) or a USB device (IC-988), picked from the system's list, never
+/// named by the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceCall {
     Serial,
     /// A printer (IC-986), picked from the system's list the same way.
     Printer,
+    /// A USB device (IC-988), picked from the devices whose vendor and
+    /// product ids the manifest names: `device.usb:1915:7777`.
+    Usb {
+        vendor_id: u16,
+        product_id: u16,
+    },
 }
 
 impl fmt::Display for DeviceCall {
@@ -52,6 +59,10 @@ impl fmt::Display for DeviceCall {
         f.write_str(match self {
             Self::Serial => "serial",
             Self::Printer => "printer",
+            Self::Usb {
+                vendor_id,
+                product_id,
+            } => return write!(f, "usb:{vendor_id:04x}:{product_id:04x}"),
         })
     }
 }
@@ -864,6 +875,10 @@ mod tests {
             UapiCall::Process(ProcessCall::Terminal),
             UapiCall::Device(DeviceCall::Serial),
             UapiCall::Device(DeviceCall::Printer),
+            UapiCall::Device(DeviceCall::Usb {
+                vendor_id: 0x1915,
+                product_id: 0x7777,
+            }),
             UapiCall::Net(NetCall::Listen { port: 8080 }),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),

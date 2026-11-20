@@ -11079,9 +11079,11 @@ impl Wall {
                  result where you need it."
             }
             Wall::Hardware => {
-                "Krate has no capability for MIDI, Bluetooth or raw USB \
-                 devices, so an app cannot reach one. I can build the same idea \
-                 driven by the keyboard, the mouse, or a file you give it."
+                "Krate has no capability for MIDI or Bluetooth devices, game \
+                 controllers, or USB keyboards, mice, drives, cameras and \
+                 microphones (the computer's own drivers keep those), so an app \
+                 cannot reach one. I can build the same idea driven by the \
+                 keyboard, the mouse, or a file you give it."
             }
             Wall::Background => {
                 "A Krate app is one window and one run: it cannot keep working \
@@ -11155,15 +11157,32 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     // Physical devices with no capability of any kind. A serial device has
     // one now (device.serial, IC-985) -- an Arduino, an instrument, a board
     // on a USB serial line -- so a request that names serial is buildable.
-    if !any(&["serial"])
+    // So is a USB device the computer has no driver for (device.usb,
+    // IC-988): a radio dongle, an instrument; the USB devices the computer
+    // keeps for itself are the wall below.
+    if any(&[" usb", "usb "])
         && any(&[
-            "midi",
-            "bluetooth",
-            " usb",
-            "usb ",
+            "keyboard",
+            "mouse",
+            "flash drive",
+            "thumb drive",
+            "usb stick",
+            "usb drive",
+            "hard drive",
+            "webcam",
+            "microphone",
+            "headset",
+            "security key",
+            "yubikey",
             "gamepad",
             "game controller",
+            "joystick",
         ])
+    {
+        return Some(Wall::Hardware);
+    }
+    if !any(&["serial"])
+        && any(&["midi", "bluetooth", "gamepad", "game controller"])
         && any(&[
             "connect",
             "connected",
@@ -24482,6 +24501,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "process.run" | "process.terminal" => Some(":process/"),
             "device.serial" => Some(":serial/"),
             "device.printer" => Some(":print/"),
+            "device.usb" => Some(":usb/"),
             // Listening (IC-987): the sockets interface, not just any of net.
             // Optional is fine here -- it is how an app that serves only this
             // computer declares its port without a question.
@@ -24518,6 +24538,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
                 | "bluetooth.connect"
                 | "device.serial"
                 | "device.printer"
+                | "device.usb"
         );
         if defining && !request.required {
             return Some(format!(
@@ -30397,6 +30418,13 @@ mod wall_tests {
                 Wall::Hardware,
             ),
             ("read my bluetooth heart rate device", Wall::Hardware),
+            // The USB devices the computer keeps for itself (IC-988).
+            (
+                "an app that remaps the keys on my usb keyboard",
+                Wall::Hardware,
+            ),
+            ("read the files on my usb stick directly", Wall::Hardware),
+            ("a game I play with my usb game controller", Wall::Hardware),
             (
                 "a background timer that keeps running after I close the window",
                 Wall::Background,
@@ -30449,6 +30477,10 @@ mod wall_tests {
             // A serial device has a capability (device.serial, IC-985).
             "an app that reads my arduino over the serial port and plots it",
             "a terminal for my lab instrument on its usb serial line",
+            // A USB device the computer has no driver for has a capability
+            // (device.usb, IC-988).
+            "an app that talks to my crazyradio usb dongle and sends it packets",
+            "a tool that reads my usb spectrometer and plots the spectrum",
         ];
         for request in buildable {
             assert_eq!(
@@ -31505,6 +31537,23 @@ again: {} -> {}",
         let problem = manifest_overreach(&listen(true), &http_only)
             .expect("must refuse a listen ask with no sockets import");
         assert!(problem.contains(":net/sockets"), "{problem}");
+
+        // A USB device (IC-988): asked for with the import, clean; asked for
+        // without it, refused; and never optional, because the device is
+        // the app's reason to exist.
+        let usb = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.usb:1915:7777\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let usb_imports = vec!["krate:usb/devices@0.1.0".to_string()];
+        assert!(manifest_overreach(&usb(true), &usb_imports).is_none());
+        let problem = manifest_overreach(&usb(true), &serial_imports)
+            .expect("must refuse a USB ask with no USB import");
+        assert!(problem.contains(":usb/"), "{problem}");
+        let problem =
+            manifest_overreach(&usb(false), &usb_imports).expect("must refuse an optional USB ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
     }
 
     /// The install loop must stop when a pass changes nothing.

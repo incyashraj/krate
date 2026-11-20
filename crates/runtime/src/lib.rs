@@ -126,6 +126,7 @@ pub mod secret_host;
 ))]
 pub mod serial_host;
 pub mod shared_host;
+// USB devices the person picks (krate:usb, IC-988): desktop only.
 #[cfg(target_os = "macos")]
 mod speech_apple;
 mod speech_synthesis;
@@ -136,6 +137,11 @@ pub mod store_host;
 pub mod text_overlap;
 pub mod touch_pad;
 pub mod usability;
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod usb_host;
 
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::locale::{
@@ -1757,6 +1763,9 @@ impl Runtime {
         // Printers the person picks (IC-986); a phone or a tab answers
         // `unavailable`, so the import always links.
         link_phase2!(phase2_bindings::krate::print::printers);
+        // USB devices the person picks (IC-988); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::usb::devices);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -6317,6 +6326,190 @@ mod tests {
             host.open(1, settings).expect("no trap"),
             Err(SerialError::UnknownHandle)
         ));
+    }
+
+    /// A USB device is reached only by the ids the manifest names, only when
+    /// the person allowed them, and never when the computer keeps the device
+    /// (krate:usb, IC-988). Refused, no list is shown and no device is
+    /// opened, and the words name the capability; every later call is held
+    /// to the same rule, so a handle cannot be guessed past it either.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_usb_device_is_reached_only_by_the_ids_the_manifest_names() {
+        use phase2_bindings::krate::usb::devices::{
+            ControlSetup, Host, Recipient, RequestType, UsbError,
+        };
+        use usb_host::fake::FakeUsb;
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |policy: SessionPolicy, declared: Option<&[&str]>| {
+            let fake = FakeUsb::standard();
+            let log = fake.log();
+            let host = phase2_host::Phase2Host::new(
+                UapiGuard::new(policy),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+            .with_usb_backend(Box::new(fake));
+            (host, log)
+        };
+        let grants = |list: &[&str]| {
+            SessionPolicy::from_cli_grants(&list.iter().map(|g| g.to_string()).collect::<Vec<_>>())
+                .expect("grants")
+        };
+        let pick = |host: &mut phase2_host::Phase2Host, ids: &str| {
+            usb_host::TEST_PICK.with(|pick| *pick.borrow_mut() = Some(ids.to_string()));
+            let picked = host.pick("Choose the dongle".into()).expect("no trap");
+            usb_host::TEST_PICK.with(|pick| *pick.borrow_mut() = None);
+            picked
+        };
+        let said = |err: UsbError| match err {
+            UsbError::NotAllowed(said) => said,
+            other => panic!("refused by name, got {other:?}"),
+        };
+        let setup = ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Interface,
+            request: 1,
+            value: 0,
+            index: 0,
+        };
+
+        let undeclared = "this app did not ask for device.usb, so it cannot talk to a USB device";
+        let refused =
+            "you did not allow this app to talk to the 1915:7777 USB device (device.usb:1915:7777)";
+        let organisation = "the organisation that manages this computer does not allow apps to \
+                            talk to USB devices (device.usb)";
+        let no_usb = krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("device.usb").expect("a capability")],
+            network: None,
+            calls: Vec::new(),
+        };
+        for (allowed, declared, words) in [
+            // Allowed on the command line, never declared.
+            (grants(&["device.usb:1915:7777"]), Some(&[][..]), undeclared),
+            // No manifest at all names nothing.
+            (grants(&["device.usb:1915:7777"]), None, undeclared),
+            // Declared, and the person said no.
+            (grants(&[]), Some(&["device.usb:1915:7777"][..]), refused),
+            // Declared and allowed, and the organisation says no USB.
+            (
+                grants(&["device.usb:1915:7777"]).with_organisation(no_usb.clone()),
+                Some(&["device.usb:1915:7777"][..]),
+                organisation,
+            ),
+        ] {
+            let (mut host, log) = host_with(allowed, declared);
+            assert_eq!(said(pick(&mut host, "1915:7777").expect_err("pick")), words);
+            assert_eq!(
+                said(host.claim(1, 0).expect("no trap").expect_err("claim")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.bulk_in(1, 0x81, 64, 10)
+                        .expect("no trap")
+                        .expect_err("bulk in")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.interrupt_out(1, 0x02, b"x".to_vec(), 10)
+                        .expect("no trap")
+                        .expect_err("interrupt out")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.control_out(1, setup, b"x".to_vec(), 10)
+                        .expect("no trap")
+                        .expect_err("control out")
+                ),
+                words
+            );
+            assert!(
+                log.lock().expect("log").events.is_empty(),
+                "refused: nothing listed is opened"
+            );
+        }
+
+        // 7777 and 7778 both named; only 7777 allowed. A connected model the
+        // manifest never names is undeclared; a named one the person did not
+        // allow is theirs to refuse; a keyboard is the computer's even when
+        // named and allowed.
+        let (mut host, log) = host_with(
+            grants(&["device.usb:1915:7777", "device.usb:1915:0101"]),
+            Some(&[
+                "device.usb:1915:7777",
+                "device.usb:1915:7778",
+                "device.usb:1915:0101",
+            ]),
+        );
+        assert_eq!(
+            said(pick(&mut host, "1915:0202").expect_err("an unnamed thumb drive")),
+            "this app did not ask for device.usb:1915:0202, so it cannot talk to that USB device"
+        );
+        assert_eq!(
+            said(pick(&mut host, "1915:7778").expect_err("named, not allowed")),
+            "you did not allow this app to talk to the 1915:7778 USB device \
+             (device.usb:1915:7778)"
+        );
+        assert!(matches!(
+            pick(&mut host, "1915:0101"),
+            Err(UsbError::NotForApps(words)) if words.contains("keyboard")
+        ));
+        assert!(log.lock().expect("log").events.is_empty(), "nothing opened");
+        assert!(matches!(pick(&mut host, "cancel"), Ok(None)));
+
+        // The allowed one: picked, claimed, and spoken to byte for byte.
+        let device = pick(&mut host, "1915:7777")
+            .expect("pick")
+            .expect("a device");
+        assert_eq!((device.vendor_id, device.product_id), (0x1915, 0x7777));
+        assert_eq!(device.name, "Radio dongle (1915:7777)");
+        let h = device.handle;
+        assert!(matches!(
+            host.bulk_out(h, 0x01, b"x".to_vec(), 10).expect("no trap"),
+            Err(UsbError::NotClaimed)
+        ));
+        host.claim(h, 0).expect("no trap").expect("claim");
+        host.bulk_out(h, 0x01, vec![0x00, 0x01, 0xfe, 0xff], 1_000)
+            .expect("no trap")
+            .expect("bulk out");
+        assert_eq!(
+            host.bulk_in(h, 0x81, 64, 1_000)
+                .expect("no trap")
+                .expect("bulk in"),
+            vec![0x00, 0x01, 0xfe, 0xff]
+        );
+        // A handle the person never gave is no device.
+        assert!(matches!(
+            host.claim(h + 1, 0).expect("no trap"),
+            Err(UsbError::UnknownHandle)
+        ));
+        // The run ends: nothing left claimed or open.
+        drop(host);
+        let log = log.lock().expect("log");
+        assert!(log.claimed.is_empty(), "{:?}", log.claimed);
+        assert_eq!(log.open, 0);
     }
 
     /// Printing reaches a printer only when the manifest declares

@@ -7410,6 +7410,221 @@ fn an_app_serves_only_the_port_it_declares_and_stops_with_the_run() {
     drop(busy);
 }
 
+/// An app talks to a USB device the person picks, of a model its manifest
+/// names, and nothing else (krate:usb, IC-988).
+///
+/// `usb-probe.wasm` is apps/krate-usb-probe built. The devices are the
+/// runtime's fake ones (`KRATE_USB_FAKE`, which only a debug build reads):
+/// an echoing radio dongle 1915:7777 with a HID interface beside its own,
+/// a second dongle 1915:7778, a keyboard 1915:0101, a thumb drive and a
+/// hub. The fake writes every event to the file the variable names, so the
+/// test sees what reached the device, byte for byte, and that the run let
+/// it go. The person's pick is scripted with KRATE_USB_PICK.
+#[test]
+fn an_app_talks_only_to_the_usb_device_the_person_picks() {
+    if !cfg!(debug_assertions) {
+        // A release build never reads KRATE_USB_FAKE, by design.
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/usb-probe.wasm")).expect("probe");
+    let pack = |name: &str, devices: &[&str]| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        let asks: String = devices
+            .iter()
+            .map(|ids| {
+                format!(
+                    "\n[[capabilities]]\ncap = \"device.usb:{ids}\"\nrationale = \"the device\"\nrequired = false\n"
+                )
+            })
+            .collect();
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{asks}"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        let packed = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(
+            packed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+        bundle
+    };
+    // Optional here, so a run the person said no to still starts and the
+    // app hears the refusal itself (check-app holds a real app's ask to
+    // required).
+    let asks = pack("usb-probe", &["1915:7777"]);
+    let asks_a_keyboard = pack("usb-keys", &["1915:7777", "1915:0101"]);
+    let never_asked = pack("usb-quiet", &[]);
+    let runs = std::cell::Cell::new(0);
+    // One run: what the app printed, and what the devices saw.
+    let run = |bundle: &std::path::Path, grants: &[&str], pick: &str, check: &str| {
+        runs.set(runs.get() + 1);
+        let log = dir.path().join(format!("usb-{}.log", runs.get()));
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_USB_FAKE", &log)
+            .env("KRATE_USB_PICK", pick)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let saw = std::fs::read_to_string(&log).unwrap_or_default();
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            saw.lines().map(str::to_string).collect::<Vec<_>>(),
+        )
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability, no list and no device -- refused by name, and nothing
+    // was opened.
+    let (said, saw) = run(&never_asked, &all, "1915:7777", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: this app did not ask for device.usb, so it cannot talk to a USB device"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    let (said, saw) = run(&asks, &basics, "1915:7777", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: you did not allow this app to talk to the 1915:7777 USB device \
+         (device.usb:1915:7777)"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // The person cancels: no device.
+    assert_eq!(run(&asks, &all, "cancel", "pick").0, "pick: none");
+    // A connected model the manifest never names is never reachable.
+    let (said, saw) = run(&asks, &all, "1915:7778", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: this app did not ask for device.usb:1915:7778, so it cannot talk to \
+         that USB device"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // A keyboard is the computer's, even named and allowed.
+    let (said, saw) = run(&asks_a_keyboard, &all, "1915:0101", "pick");
+    assert!(
+        said.starts_with("pick: not-for-apps: Keyboard (1915:0101) is a keyboard, mouse"),
+        "{said}"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // A pick names ids, nothing else.
+    assert!(
+        run(&asks, &all, "/dev/bus/usb/001/004", "pick")
+            .0
+            .starts_with("pick: unavailable: KRATE_USB_PICK names"),
+        "a path is not a device's ids"
+    );
+    // The pick says which device it is.
+    assert_eq!(
+        run(&asks, &all, "1915:7777", "pick").0,
+        "pick: picked Radio dongle (1915:7777) 1915:7777"
+    );
+
+    // Bulk, interrupt and control, byte for byte; a quiet read ends empty;
+    // the closed handle is spent; and the device was let go.
+    let (said, saw) = run(&asks, &all, "1915:7777", "talk");
+    assert_eq!(
+        said,
+        "talk: bulk echoed 256 bytes, interrupt echoed 3 bytes, control kept 3 bytes, then \
+         nothing for 100 ms, closed: unknown-handle"
+    );
+    let every_byte: String = (0..=255u8).map(|b| format!("{b:02x}")).collect();
+    assert!(
+        saw.contains(&format!("out 1915:7777 0x01 {every_byte}")),
+        "every byte value reached the device as sent: {saw:?}"
+    );
+    assert!(
+        saw.contains(&"out 1915:7777 0x02 00ff7f".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        saw.contains(
+            &"control-out 1915:7777 Vendor Interface 0x01 0x0007 0x0000 090807".to_string()
+        ),
+        "{saw:?}"
+    );
+    assert_eq!(
+        saw.last().map(String::as_str),
+        Some("close 1915:7777"),
+        "{saw:?}"
+    );
+    assert!(saw.contains(&"release 1915:7777 0".to_string()), "{saw:?}");
+
+    // Handles the person never gave reach nothing.
+    assert_eq!(
+        run(&asks, &all, "1915:7777", "forge").0,
+        "forge: unclaimed=not-claimed next=unknown-handle zero=unknown-handle"
+    );
+    // The HID interface beside the dongle's own is the computer's.
+    let (said, saw) = run(&asks, &all, "1915:7777", "hid");
+    assert!(
+        said.starts_with(
+            "hid: not-for-apps: interface 1 of Radio dongle (1915:7777) is a keyboard"
+        ),
+        "{said}"
+    );
+    assert!(
+        !saw.iter().any(|event| event.starts_with("claim")),
+        "{saw:?}"
+    );
+    // Nothing outside the claimed interface: another interface, a request
+    // that would reconfigure the device, the HID interface's endpoint.
+    let (said, saw) = run(&asks, &all, "1915:7777", "outside");
+    assert_eq!(
+        said,
+        "outside: interface-1=bad-request set-configuration=bad-request endpoint-0x83=bad-request"
+    );
+    assert!(
+        !saw.iter()
+            .any(|event| event.starts_with("control") || event.starts_with("in ")),
+        "nothing refused reached the device: {saw:?}"
+    );
+    // A device that takes nothing: the write ends with its wait.
+    assert_eq!(run(&asks, &all, "1915:7777", "slow").0, "slow: timed-out");
+
+    // The app leaves the device claimed and open: the run ending releases
+    // and closes it.
+    let (said, saw) = run(&asks, &all, "1915:7777", "hold");
+    assert_eq!(said, "hold: left open");
+    assert_eq!(
+        saw,
+        [
+            "open 1915:7777",
+            "claim 1915:7777 0",
+            "out 1915:7777 0x01 48454c44",
+            "release 1915:7777 0",
+            "close 1915:7777",
+        ],
+        "the run let the device go"
+    );
+}
+
 /// The far end of a pseudo-terminal: the stand-in serial device.
 #[cfg(unix)]
 struct Pty {

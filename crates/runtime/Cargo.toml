@@ -143,6 +143,10 @@ portable-pty = "0.9.0"
 # libudev feature is off so a Linux build needs no system library (the list
 # is read from /sys instead).
 serialport = { version = "4.10.1", default-features = false }
+# krate:usb (IC-988): a USB device the person picks. nusb (Apache-2.0 OR MIT)
+# is pure Rust on all three systems -- IOKit on macOS, WinUSB on Windows,
+# usbfs on Linux -- so no libusb and no system library to install.
+nusb = "0.2.9"
 
 [target.'cfg(target_os = "android")'.dependencies]
 krate-adapter-android = { path = "../adapter-android" }

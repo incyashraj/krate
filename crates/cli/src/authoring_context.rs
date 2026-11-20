@@ -329,6 +329,31 @@ declared, or the person said no); `Err(Busy)` is another program holding \
 the device; `Err(Disconnected)` is the cable pulled: offer to pick again. \
 Show `krate::serial::words(&err)`. A computer only (macOS, Windows, Linux): \
 a browser tab and a phone answer `Err(Unavailable)` in words.\n\n\
+To talk raw USB to a device the computer has no driver for -- a radio \
+dongle (Crazyradio), an instrument with its own protocol, a board -- \
+declare each model the app is for by its vendor and product ids in hex, \
+`device.usb:1915:7777`, with a rationale, required (one entry a model; no \
+wildcard). A device that shows up as a serial port is `device.serial`, not \
+this. The app never lists devices: `krate::usb::pick(\"Choose the radio \
+dongle\")?` (from a button) shows the person only connected devices of the \
+named models and answers the one they choose, `None` when they cancel; that \
+pick is the grant until the `Device` is dropped or the app ends. Then \
+`device.claim(0)?` (one interface a pick), `device.bulk_out(0x01, &bytes, \
+1_000)?`, `device.bulk_in(0x81, 64, 1_000)?` (empty when the wait ran out; \
+rounded up to whole packets), `interrupt_in`/`interrupt_out` the same way, \
+and `device.control_out(krate::usb::vendor_request(req, value, 0), &data, \
+1_000)?` / `control_in(setup, len, wait)`. Control requests go to the claimed \
+interface or one of its endpoints only (the low byte of `index` names it), \
+never to the whole device, and of the standard requests only GET_STATUS and \
+GET_DESCRIPTOR. At most 65536 bytes a transfer, 4096 a control transfer, \
+waits of 1 to 60000 ms; keep waits short in a windowed app and poll from \
+the event loop. Keyboards, mice and other HID, storage, audio, video and \
+hubs answer `Err(NotForApps)` even when named. `Err(NotAllowed)` names the \
+capability; `Err(Busy)` is another program or a driver holding it; \
+`Err(Disconnected)`: offer to pick again. Show `krate::usb::words(&err)`. A \
+computer only (macOS, Windows, Linux; Linux needs a udev rule, which the \
+words give, and Windows the WinUSB driver): a browser tab and a phone \
+answer `Err(Unavailable)`.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -1002,6 +1027,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "process.terminal" => "the person's own shell in a terminal the app draws",
         "device.serial" => "a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable",
         "device.printer" => "print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing",
+        "device.usb" => "a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and interface control transfers, never keyboards, mice, storage, audio, video or hubs",
         _ => "",
     }
 }

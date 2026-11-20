@@ -134,6 +134,7 @@ world = "cli"
 "krate:process" = { path = "PREFIX/wit/krate/phase2/deps/process" }
 "krate:serial" = { path = "PREFIX/wit/krate/phase2/deps/serial" }
 "krate:print" = { path = "PREFIX/wit/krate/phase2/deps/print" }
+"krate:usb" = { path = "PREFIX/wit/krate/phase2/deps/usb" }
 
 [profile.release]
 panic = "abort"
@@ -195,6 +196,7 @@ world = "gui"
 "krate:process" = { path = "PREFIX/wit/krate/phase4/deps/process" }
 "krate:serial" = { path = "PREFIX/wit/krate/phase4/deps/serial" }
 "krate:print" = { path = "PREFIX/wit/krate/phase4/deps/print" }
+"krate:usb" = { path = "PREFIX/wit/krate/phase4/deps/usb" }
 "krate:ui" = { path = "PREFIX/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "PREFIX/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "PREFIX/wit/krate/phase4/deps/gpu" }
@@ -517,6 +519,13 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `time::now_millis() -> u64`
 - `time::sleep_millis(millis: u32) -> ()`
 
+### `usb`
+
+- `usb::class_request(request: u8, value: u16, interface: u8) -> ControlSetup`
+- `usb::pick(title: &str) -> Result<Option<Device>, UsbError>`
+- `usb::vendor_request(request: u8, value: u16, interface: u8) -> ControlSetup`
+- `usb::words(err: &UsbError) -> &str`
+
 ### Methods, called on a value
 
 These are not paths. Get the value first -- `io::stdio::stdout()`,
@@ -587,6 +596,7 @@ people can send. check-app ends with a note naming any it found.
 | `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
 | `device.serial` | no | computer only | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
 | `device.printer` | no | computer only | print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing |
+| `device.usb:<vendor-id>:<product-id>` | no | computer only | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and interface control transfers, never keyboards, mice, storage, audio, video or hubs |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
