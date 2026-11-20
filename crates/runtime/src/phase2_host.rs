@@ -120,6 +120,10 @@ pub struct Phase2Host<'a> {
     /// TCP connections, UDP sockets and lookups (`krate:net/sockets`).
     #[cfg(not(target_arch = "wasm32"))]
     async_sockets: crate::async_sockets::AsyncSockets,
+    /// Listeners announced on the local network (IC-990): withdrawn as each
+    /// closes, and all of them as the run ends and this drops.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    discovery: crate::serve_discovery::Discovery,
     /// A threaded app (IC-940): a sleep is judged here and slept after the
     /// host is let go, so one thread's sleep never holds the others out.
     // Threaded apps only, which iOS and the web do not run.
@@ -173,6 +177,8 @@ impl<'a> Phase2Host<'a> {
             async_ws: crate::async_ws::AsyncWs::new(),
             #[cfg(not(target_arch = "wasm32"))]
             async_sockets: crate::async_sockets::AsyncSockets::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            discovery: crate::serve_discovery::Discovery::new(),
             default_http_timeout_millis,
             sleep_outside_host: false,
         }
@@ -437,6 +443,40 @@ impl<'a> Phase2Host<'a> {
     pub(crate) fn with_usb_backend(mut self, backend: Box<dyn crate::usb_host::Backend>) -> Self {
         self.usb = crate::usb_host::UsbDevices::new(backend);
         self
+    }
+
+    /// Announce through `responder` instead of the network: a test's.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_announcer(
+        mut self,
+        responder: Box<dyn crate::serve_discovery::Responder>,
+    ) -> Self {
+        self.discovery = crate::serve_discovery::Discovery::with_responder(responder);
+        self
+    }
+
+    /// Which port a listener for the local network holds, judged again
+    /// (IC-990): only such a listener says where it is reached or announces
+    /// itself, and only one the person let the network open. A listener for
+    /// this computer alone is refused in words; any other handle is unknown.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    fn network_listener(&self, listener: u64) -> Result<u16, net::sockets::ListenError> {
+        use net::sockets::{ListenError, ListenScope};
+        let (port, this_computer) = self
+            .async_sockets
+            .listener(listener)
+            .map_err(listen_fault_to_wit)?;
+        if this_computer {
+            return Err(ListenError::NotAllowed(format!(
+                "this app listens on port {port} for this computer only, so other devices on \
+                 your network cannot open it"
+            )));
+        }
+        self.admit_listen(port, ListenScope::LocalNetwork)?;
+        Ok(port)
     }
 
     /// May this run print (`device.printer`, IC-986)? Only when the manifest
@@ -3059,8 +3099,87 @@ impl net::sockets::Host for Phase2Host<'_> {
             .map_err(listen_fault_to_wit))
     }
 
+    fn tcp_addresses(
+        &mut self,
+        listener: u64,
+    ) -> wasmtime::Result<Result<Vec<net::sockets::ListenAddress>, net::sockets::ListenError>> {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            use crate::serve_discovery as found;
+            let port = match self.network_listener(listener) {
+                Ok(port) => port,
+                Err(err) => return Ok(Err(err)),
+            };
+            Ok(Ok(found::local_network_addresses()
+                .into_iter()
+                .map(|ip| net::sockets::ListenAddress {
+                    ip: ip.to_string(),
+                    port,
+                    url: found::url(&ip.to_string(), port),
+                })
+                .collect()))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            let _ = listener;
+            Ok(Err(no_listening_here()))
+        }
+    }
+
+    fn tcp_announce(
+        &mut self,
+        listener: u64,
+        service_type: String,
+    ) -> wasmtime::Result<Result<net::sockets::Announcement, net::sockets::ListenError>> {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            use crate::serve_discovery as found;
+            use net::sockets::ListenError;
+            let port = match self.network_listener(listener) {
+                Ok(port) => port,
+                Err(err) => return Ok(Err(err)),
+            };
+            let service_type = match found::service_type(&service_type) {
+                Ok(ty) => ty,
+                Err(words) => return Ok(Err(ListenError::Failed(words))),
+            };
+            let ips = found::local_network_addresses();
+            if ips.is_empty() {
+                return Ok(Err(ListenError::Failed(
+                    "this computer is not on a local network right now, so no device could find \
+                     the app: connect it to Wi-Fi or a network cable, then announce again"
+                        .to_string(),
+                )));
+            }
+            let announced = found::Announcement {
+                name: found::instance_name(&self.app_name),
+                host: format!("{}.local", found::host_label(&self.app_name)),
+                service_type,
+                port,
+                ips,
+            };
+            if let Err(why) = self.discovery.announce(listener, &announced) {
+                return Ok(Err(ListenError::Failed(format!(
+                    "could not announce the app on your network: {why}"
+                ))));
+            }
+            Ok(Ok(net::sockets::Announcement {
+                url: found::url(&announced.host, port),
+                name: announced.name,
+                host: announced.host,
+            }))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            let _ = (listener, service_type);
+            Ok(Err(no_listening_here()))
+        }
+    }
+
     fn close(&mut self, handle: u64) -> wasmtime::Result<()> {
         self.async_sockets.close(handle);
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        self.discovery.withdraw(handle);
         Ok(())
     }
 }
@@ -3167,6 +3286,19 @@ impl net::sockets::Host for Phase2Host<'_> {
         &mut self,
         _handle: u64,
     ) -> wasmtime::Result<Result<u16, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_addresses(
+        &mut self,
+        _listener: u64,
+    ) -> wasmtime::Result<Result<Vec<net::sockets::ListenAddress>, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_announce(
+        &mut self,
+        _listener: u64,
+        _service_type: String,
+    ) -> wasmtime::Result<Result<net::sockets::Announcement, net::sockets::ListenError>> {
         Ok(Err(no_listening_here()))
     }
     fn close(&mut self, _handle: u64) -> wasmtime::Result<()> {

@@ -148,6 +148,14 @@ serialport = { version = "4.10.1", default-features = false }
 # is pure Rust on all three systems -- IOKit on macOS, WinUSB on Windows,
 # usbfs on Linux -- so no libusb and no system library to install.
 nusb = "0.2.9"
+# A listener for the network says where it is reached and announces itself
+# (IC-990): if-addrs lists this computer's addresses (only the private ones
+# are shown, never a public one or a hardware address), and mdns-sd
+# (Apache-2.0 OR MIT, no async runtime) answers multicast DNS for a listener
+# the person let the network open, so tablets and computers find it by the
+# app's name. The same if-addrs mdns-sd uses, so one copy.
+if-addrs = { version = "0.15", features = ["link-local"] }
+mdns-sd = { version = "=0.21.6", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 krate-adapter-android = { path = "../adapter-android" }

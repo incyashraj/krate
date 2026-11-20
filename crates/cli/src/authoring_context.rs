@@ -1025,7 +1025,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "store.secret" => "secrets encrypted at rest (passwords, tokens); not the OS keychain",
         "random.bytes" => "entropy (also what getrandom/rand need)",
         "net.connect" => "reach a host and port",
-        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration (section 2c, rule 7b)",
+        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (section 2c, rule 7b)",
         "net.connection" => "an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8)",
         "time.clock" => "wall-clock time",
         "time.monotonic" => "a monotonic timer",
@@ -1131,9 +1131,18 @@ listener.accept()? { ... }` takes the devices that arrived, and \
 work like a dialled connection; write the whole answer, then drop the \
 connection -- what was written still arrives. For a page, answer \
 `HTTP/1.1 200 OK` with `Content-Type`, `Content-Length` and \
-`Connection: close` headers. Tell the person what to open on the other \
-device: `http://` this computer's network address (its network settings \
-show it), then `:8080`; the app cannot read the address itself yet. \
+`Connection: close` headers. Show the person what to open on the other \
+device -- never ask them to find an IP: `listener.addresses()?` gives this \
+computer's private network addresses, main connection first, each a \
+`ListenAddress { ip, port, url }` with `url` like \
+`http://192.168.1.20:8080/` (empty when the computer is on no network; ask \
+again when showing it later). `listener.announce(\"_http._tcp\")?` lets \
+the network's devices find it by the app's name, as printers are found, \
+and returns `Announcement { name, host, url }` with `url` like \
+`http://shop-floor.local:8080/` -- show both, as some Android browsers do \
+not open `.local` names. Both need a `Scope::LocalNetwork` listener (the \
+same yes; `NotAllowed` for `ThisComputer`), and the announcement goes when \
+the listener is dropped. \
 Refusals are words \
 (`krate::net::listen::words(&err)`): `NotAllowed` names \
 `net.listen:<port>`, `InUse` is another program on the port, `BadPort` is \

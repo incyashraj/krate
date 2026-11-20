@@ -228,6 +228,12 @@ interface ws {
 /// one. A listener for this computer only needs the declaration; one other
 /// devices on the network can open needs the person's yes as well. Every
 /// listener closes when the run ends.
+///
+/// A listener for the network can say where it is reached and announce
+/// itself (IC-990): `tcp-addresses` gives this computer's addresses on the
+/// local network with the port, ready to show the person, and `tcp-announce`
+/// lets devices on the network find it by the app's name (DNS-SD over
+/// multicast DNS, as printers are found), until the listener closes.
 interface sockets {
   use types.{net-error};
 
@@ -304,6 +310,32 @@ interface sockets {
     failed(string),
   }
 
+  /// One address other devices on the local network reach a listener at
+  /// (IC-990).
+  record listen-address {
+    /// This computer's address on the local network, as an IP:
+    /// "192.168.1.20". Always a private address, never a public one.
+    ip: string,
+    /// The listener's port.
+    port: u16,
+    /// What to open in a browser on another device when the app serves web
+    /// pages: "http://192.168.1.20:8080/".
+    url: string,
+  }
+
+  /// A listener announced on the local network (IC-990).
+  record announcement {
+    /// The name devices on the network list it under: the app's own name,
+    /// "Shop Floor".
+    name: string,
+    /// The name devices reach this computer by for it: "shop-floor.local".
+    host: string,
+    /// What to open in a browser on another device when the app serves web
+    /// pages: "http://shop-floor.local:8080/". Computers and iPhones open
+    /// it; some Android browsers do not, so show `tcp-addresses` too.
+    url: string,
+  }
+
   /// One datagram that arrived on a UDP socket.
   record datagram {
     /// The sender's address, as an IP.
@@ -370,6 +402,25 @@ interface sockets {
 
   /// The local port of a listener or a connected TCP connection.
   tcp-local-port: func(handle: u64) -> result<u16, listen-error>;
+
+  /// Where other devices on the local network reach a listener (IC-990):
+  /// this computer's private network addresses with the listener's port,
+  /// its main connection first, to show the person. Only for a listener
+  /// opened for `local-network`, which the person allowed; one for this
+  /// computer alone answers `not-allowed`. Never a public address, never a
+  /// hardware (MAC) address. Empty when the computer is on no local network
+  /// (offline, or only on a public address). Never blocks.
+  tcp-addresses: func(listener: u64) -> result<list<listen-address>, listen-error>;
+
+  /// Let devices on the local network find a listener by name (IC-990):
+  /// DNS-SD over multicast DNS (Bonjour, Avahi), under the app's own name,
+  /// as `service-type` -- `_http._tcp` for web pages, or the app's own
+  /// (`_shopfloor._tcp`: 1 to 15 lowercase letters, digits and hyphens).
+  /// The same rule as `tcp-addresses`: a `local-network` listener only, so
+  /// the person's yes for the port covers it. Announcing again replaces the
+  /// announcement. Withdrawn when the listener closes or the app ends.
+  /// Returns at once; devices see it within a few seconds.
+  tcp-announce: func(listener: u64, service-type: string) -> result<announcement, listen-error>;
 
   /// Close a TCP connection, a UDP socket or a listener. Safe on a handle
   /// already closed. Closing a listener leaves the connections it accepted

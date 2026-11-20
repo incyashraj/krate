@@ -21258,6 +21258,8 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>{name} asked to reach a Bluetooth device, and you allowed it in Krate's permission window. It reaches only the device you pick.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>{name} asked to let other devices on your network find and open it, and you allowed it in Krate's permission window.</string>
 {icon_entry}</dict>
 </plist>
 "#,
@@ -22056,7 +22058,7 @@ fn open_studio() -> bool {
 /// before touching the framework, and answer unavailable without it. The
 /// tests below hold every bundle writer to this list.
 #[cfg(all(test, target_os = "macos"))]
-pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
+pub(crate) const HARDWARE_USAGE_KEYS: [&str; 8] = [
     "NSCameraUsageDescription",
     "NSMicrophoneUsageDescription",
     "NSSpeechRecognitionUsageDescription",
@@ -22064,6 +22066,9 @@ pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
     "NSLocationWhenInUseUsageDescription",
     "NSLocationUsageDescription",
     "NSBluetoothAlwaysUsageDescription",
+    // Announcing a listener by multicast DNS (IC-990): macOS asks the
+    // person before anything on the computer reaches its local network.
+    "NSLocalNetworkUsageDescription",
 ];
 
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
@@ -22142,6 +22147,9 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
          \u{20}   <key>NSBluetoothAlwaysUsageDescription</key>\n\
          \u{20}   <string>{name} asked to reach a Bluetooth device, and you allowed it \
          in Krate's permission window. It reaches only the device you pick.</string>\n\
+         \u{20}   <key>NSLocalNetworkUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to let other devices on your network find and \
+         open it, and you allowed it in Krate's permission window.</string>\n\
          </dict>\n</plist>\n"
     );
     fs::write(app.join("Contents/Info.plist"), plist)?;
