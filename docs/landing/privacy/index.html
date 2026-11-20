@@ -64,7 +64,7 @@
   <span class="eye">Privacy</span>
   <h1>What Krate collects, in plain words.</h1>
   <p class="lede">This page is written from the source code, which is public; every claim here can be checked against it.</p>
-  <span class="updated">Last updated 2026-09-30</span>
+  <span class="updated">Last updated 2026-11-21</span>
 </section>
 
 <div class="wrap doc lg">
@@ -74,6 +74,7 @@
     <a href="#usage">Anonymous usage counting</a>
     <a href="#website">The website</a>
     <a href="#account">Your account, if you sign in</a>
+    <a href="#claude-connector">The Claude connector</a>
     <a href="#questions">Questions</a>
   </aside>
   <article class="prose">
@@ -119,6 +120,37 @@
     signing in breaks. Shared-store data (an app feature you opt into per app) is synced
     through krate.tech and readable by anyone holding that store's invite
     code, which the consent screen says before you approve it.</p>
+
+    <h2 id="claude-connector">The Claude connector</h2>
+    <p>When you add Krate to Claude as a connector and ask it for an app,
+    Krate's hub (hub.krate.tech) receives what Claude sends it: the app's
+    files, the name Claude gives the app, and the words of any search of the
+    public gallery. It does not receive your conversation, neither your
+    messages nor Claude's replies. Krate's build service compiles and checks
+    the files with no AI and deletes its working copy when the build ends.
+    An app that passes is published to your Krate account, unlisted: only
+    people with its link can open it.</p>
+    <p>For each build the hub keeps a short record (your account, the app's
+    name, when, and its link) for 30 days, and the times of your builds for
+    two days, to count the hourly and daily limits.</p>
+    <p>Claude signs in to Krate with OAuth. You sign in with GitHub, Google
+    or an email link and choose Allow, and the connector may then only build
+    apps you ask for and publish them to your account. Claude holds two
+    tokens: an access token that lasts one hour, and a refresh token that
+    lasts 30 days and is replaced each time it is used. Both are sealed with
+    a key only the hub holds. The hub stores neither token. It keeps, for
+    each connection, which account allowed it, the connecting app's name,
+    when, and a counter that lets each refresh token work once (a refresh
+    token used twice ends the connection); that record expires 30 days after
+    it was last refreshed. Your account also keeps a list of the connections
+    it has allowed.</p>
+    <p>To disconnect, remove Krate in Claude, under Customize &gt;
+    Connectors. A token nobody uses stops working on its own: the access
+    token after an hour, the connection after 30 days without a refresh. An
+    app holding a Krate token can end the connection through the
+    hub's revocation address (hub.krate.tech/oauth/revoke). To have Krate end
+    a connection on its side, ask us through the
+    <a href="/contact/">contact page</a>.</p>
 
     <h2 id="questions">Questions</h2>
     <p>Open an issue at

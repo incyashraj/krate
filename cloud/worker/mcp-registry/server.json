@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "tech.krate/krate",
+  "title": "Krate",
+  "description": "Make an app by asking. Krate builds and checks it, and its link opens in any browser, phones too.",
+  "version": "1.0.0",
+  "websiteUrl": "https://krate.tech/docs/pages/make-an-app-with-claude.html",
+  "repository": {
+    "url": "https://github.com/incyashraj/krate",
+    "source": "github",
+    "id": "1215559452",
+    "subfolder": "cloud/worker"
+  },
+  "icons": [
+    {
+      "src": "https://krate.tech/krate-favicon.png",
+      "mimeType": "image/png",
+      "sizes": ["192x192"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hub.krate.tech/mcp"
+    }
+  ]
+}
