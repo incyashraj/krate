@@ -119,6 +119,8 @@ import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./accoun
 // SQLite-backed Durable Object per account; wrangler.toml binds it as
 // SYNC_ACCOUNTS.
 import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+// Krate as a remote MCP server (IC-989): the public gallery, read-only.
+import { mcpRoute, mcpCors, mcpPreflight } from "./mcp.js";
 export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
@@ -300,6 +302,10 @@ const RATE_LIMITS = {
   "scim/refused": 20,
   // A compromised-key report reads every line the hub holds.
   "publisher-keys/compromised": 5,
+  // The MCP endpoint (IC-989): every POST, reads only. A connector's calls
+  // come from its host's addresses, not each person's, so one address can
+  // carry many people: generous, and still a ceiling on the reads.
+  mcp: 120,
 };
 
 /// Who is asking, as far as the edge can tell.
@@ -452,6 +458,8 @@ export default {
 
     // The website and the CLI both call this from other origins.
     if (request.method === "OPTIONS") {
+      // An MCP client in a browser sends its own headers (IC-989).
+      if (pathname === "/mcp") return mcpPreflight();
       return cors(new Response(null, { status: 204 }));
     }
 
@@ -653,6 +661,16 @@ export default {
         // The gallery lists KV twice per answer and every visit asks, so the
         // answer is kept two minutes per query (listBudget).
         return cors(await cachedPublic(env, `/apps${url.search}`, 120, () => list(env, url)));
+      }
+      // Krate as a remote MCP server (IC-989, phase 1): the gallery's
+      // search, one app, and the front shelves, read-only, for Claude and
+      // any MCP client. Rate-limited per caller like the anonymous writes.
+      if (pathname === "/mcp") {
+        if (request.method === "POST") {
+          const over = await rateLimited(request, env, "mcp");
+          if (over) return mcpCors(over);
+        }
+        return await mcpRoute(request, mcpDeps(env));
       }
       if (request.method === "GET" && pathname.startsWith("/meta/")) {
         // One app's public face, by hash or short alias -- name, size,
@@ -1217,8 +1235,15 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
       422,
     );
   }
+  // The validator's plain words for each one, the words the consent sheet
+  // shows, kept with the listing so a page or a connector can say what an
+  // app may do without a table of its own (IC-989).
+  const capWords = new Map(
+    (Array.isArray(judgement.capabilities) ? judgement.capabilities : []).map((c) => [c.cap, c.words]),
+  );
   const manifestCapabilities = judgement.manifest.capabilities.map((c) => ({
     cap: c.cap,
+    ...(typeof capWords.get(c.cap) === "string" && capWords.get(c.cap) ? { words: capWords.get(c.cap).slice(0, 200) } : {}),
     rationale: c.rationale || "",
     required: Boolean(c.required),
   }));
@@ -2650,29 +2675,64 @@ async function makeit(request, env) {
   return json({ ok: true });
 }
 
-async function meta(hash, env) {
+/// One app's listing by the app's own link, a short alias or its hash:
+/// `{ hash, row }`, `{ hash, takedown }` (the raw takedown record) for a
+/// removed app, or null. What /meta/ and the MCP endpoint's get_app share.
+async function findListing(ref, env) {
+  let hash = String(ref || "");
   // The app's own link: whichever version is current now (IC-976).
   if (LINE_ID.test(hash)) {
     const now = await currentHash(env, hash);
-    if (!now) return text("not found", 404);
+    if (!now) return null;
     hash = now;
   }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
-    if (!full) return text("not found", 404);
+    if (!full) return null;
     hash = full;
   }
-  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return null;
   const takedown = await env.APPS.get(`takedown:${hash}`);
-  if (takedown) return takedownResponse(takedown, env);
+  if (takedown) return { hash, takedown };
   const raw = await env.APPS.get(`app:${hash}`);
-  if (!raw) return text("not found", 404);
-  let m = {};
+  if (!raw) return null;
   try {
-    m = JSON.parse(raw);
+    const row = JSON.parse(raw);
+    return row && typeof row === "object" ? { hash, row } : null;
   } catch (_) {
-    return text("not found", 404);
+    return null;
   }
+}
+
+/// What the MCP endpoint reads the gallery through (IC-989): the same
+/// ranked list /apps answers, from the same two-minute cache, and the same
+/// lookup /meta/ makes. The owner principal never leaves: list() strips it
+/// and mcp.js names only the fields it shows.
+function mcpDeps(env) {
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  return {
+    base,
+    async gallery(params) {
+      const search = String(params) ? `?${params}` : "";
+      const res = await cachedPublic(env, `/apps${search}`, 120, () => list(env, new URL(`${base || "https://hub.invalid"}/apps${search}`)));
+      return res.status === 200 ? await res.json() : null;
+    },
+    async findApp(ref) {
+      const found = await findListing(ref, env);
+      if (found && found.row && !found.row.unlisted) {
+        found.shot = (await env.BUNDLES.head(`shot:${found.hash}`)) ? `${base}/shot/${found.hash}` : null;
+      }
+      return found;
+    },
+    versionInfo: (hash) => versionInfo(env, hash, base),
+  };
+}
+
+async function meta(ref, env) {
+  const found = await findListing(ref, env);
+  if (!found) return text("not found", 404);
+  if (found.takedown) return takedownResponse(found.takedown, env);
+  const { hash, row: m } = found;
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const shot = await env.BUNDLES.head(`shot:${hash}`);
   return json({
