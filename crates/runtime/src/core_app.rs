@@ -771,7 +771,8 @@ impl super::Runtime {
         state.phase2.sleep_outside_host = true;
         // A windowed app's team-data sync never waits on the network.
         state.phase2.set_windowed();
-        // A headless run has nobody to pick a serial device (IC-985).
+        // A headless run has nobody to pick a serial device (IC-985) or a
+        // printer (IC-986).
         state.phase2.set_nobody_to_ask(gui_host.is_headless());
         state.phase3_gui = Some(gui_host);
 

@@ -2820,6 +2820,8 @@ function friendlyAsk(cap) {
     "process.terminal": "open a terminal on this computer: it can do anything you can",
     // IC-985: the device the person picks, nothing else.
     "device.serial": "talk to a serial device you choose",
+    // IC-986: the printer the person picks, nothing else.
+    "device.printer": "print to a printer you choose",
   };
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
@@ -4934,6 +4936,8 @@ const CAP_WORDS = {
   "process.terminal": "Open a terminal on this computer: it can do anything you can",
   // IC-985: the device the person picks, nothing else.
   "device.serial": "Talk to a serial device you choose",
+  // IC-986: the printer the person picks, nothing else.
+  "device.printer": "Print to a printer you choose",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
@@ -5392,6 +5396,9 @@ const CAPS_REACH_OUT = new Set([
   "process.terminal",
   // A device on a wire the person picks (IC-985).
   "device.serial",
+  // Paper and labels out in the world, on a printer the person picks
+  // (IC-986).
+  "device.printer",
   // Acts on the desktop outside its own window.
   "ui.open-url",
   "ui.notify",

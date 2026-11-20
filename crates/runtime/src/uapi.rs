@@ -43,12 +43,15 @@ pub enum UapiCall {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceCall {
     Serial,
+    /// A printer (IC-986), picked from the system's list the same way.
+    Printer,
 }
 
 impl fmt::Display for DeviceCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Serial => "serial",
+            Self::Printer => "printer",
         })
     }
 }
@@ -853,6 +856,7 @@ mod tests {
             }),
             UapiCall::Process(ProcessCall::Terminal),
             UapiCall::Device(DeviceCall::Serial),
+            UapiCall::Device(DeviceCall::Printer),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

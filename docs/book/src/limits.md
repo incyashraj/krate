@@ -19,12 +19,12 @@ written from memory.
 | System | Clipboard, dialogs, notifications (macOS, Windows and Linux; Windows says so when the person has switched an app's off), open-a-URL, locale, time, random |
 | Input | Keyboard, pointer, wheel |
 | Devices | A serial device the person picks: an instrument, a sensor, an Arduino (macOS, Windows and Linux) |
+| Printing | The print dialog for what a window shows, and documents and labels (PDF, PNG, ZPL, EPL, ESC/POS) to a printer the person picks once (macOS, Windows and Linux) |
 
 ## Not yet
 
 | Missing | What it blocks |
 |---|---|
-| Printing | Invoices, labels, anything a business prints |
 | Multiple windows | A dashboard with a separate controls window |
 | File watching | Folder-driven tools that react to changes |
 | Raw USB and HID | USB radio dongles, security keys |

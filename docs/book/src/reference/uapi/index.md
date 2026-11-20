@@ -33,6 +33,7 @@ The current world imports these interfaces:
 - `krate:random/bytes@0.1.0`
 - `krate:process/processes@0.1.0`
 - `krate:serial/ports@0.1.0`
+- `krate:print/printers@0.1.0`
 
 The app exports:
 
@@ -1007,6 +1008,167 @@ Accepted capability strings for this module, generated from the runtime manifest
 > Never opened, or already closed, cancelled, or retired.
 
 - `unknown-handle`
+
+
+## `krate:print/printers@0.1.0`
+
+### Functions
+
+> The printer the person picked for this app before, if it is still
+> set up on this computer. Never asks anyone: none when nothing was
+> picked, the pick was forgotten, or the printer is gone.
+
+- `remembered() -> result<option<printer>, print-error>`
+> Ask the person to choose a printer. `title` is a short line for the
+> list ("Choose the label printer"), at most 200 characters.
+> 
+> Some(printer) when they chose one, which is remembered for this app
+> in place of any earlier pick. None when they cancelled or no person
+> is there to choose (a run with no window and no display); an earlier
+> pick is then kept.
+
+- `pick(title: string) -> result<option<printer>, print-error>`
+> Print a document on a printer the person picked.
+
+- `print-document(printer: printer-handle, document: document) -> result<print-outcome, print-error>`
+> Send raw printer language -- ZPL, EPL, ESC/POS -- to a printer the
+> person picked, byte for byte, with no conversion: what a label or
+> receipt printer reads. `bytes` is at most 16 MiB; `copies` from 1 to
+> 100 sends it that many times; `title` names the job as for a
+> document.
+
+- `print-raw(printer: printer-handle, bytes: list<u8>, copies: u32, title: string) -> result<print-outcome, print-error>`
+
+### Types
+
+#### `printer-handle` type
+
+> A printer the person picked. Numbers are never reused within a run
+> and mean nothing to another run.
+
+`u64`
+
+#### `printer` record
+
+> A printer the person picked, now or on an earlier run.
+
+> The handle the app uses for this printer from now on.
+
+- `handle`: `printer-handle`
+> The printer's name as the computer shows it, to show the person:
+> "Zebra ZD421", "Office LaserJet".
+
+- `name`: `string`
+
+#### `document-format` enum
+
+> What a document's bytes are.
+
+> A PDF file, any number of pages.
+
+- `pdf`
+> One page as a PNG picture, scaled to fit the paper.
+
+- `png`
+
+#### `paper-mm` record
+
+> A paper or label size in millimetres.
+
+> Across, from 10 to 1000 millimetres.
+
+- `width`: `u32`
+> Down, from 10 to 1000 millimetres.
+
+- `height`: `u32`
+
+#### `paper-size` variant
+
+> The paper to print on.
+
+> Whatever the printer is set up with.
+
+- `printer-default`
+> A4, 210 by 297 millimetres.
+
+- `a4`
+> A5, 148 by 210 millimetres.
+
+- `a5`
+> A6, 105 by 148 millimetres.
+
+- `a6`
+> US Letter, 8.5 by 11 inches.
+
+- `letter`
+> US Legal, 8.5 by 14 inches.
+
+- `legal`
+> Any other size, such as a 100 by 150 millimetre label.
+
+- `custom`: `paper-mm`
+
+#### `document` record
+
+> A document to print.
+
+> What `bytes` are: they must start the way that format starts.
+
+- `format`: `document-format`
+> The document, at most 16 MiB.
+
+- `bytes`: `list<u8>`
+> How many copies, from 1 to 100.
+
+- `copies`: `u32`
+> The paper to print on.
+
+- `paper`: `paper-size`
+> The job's name in the printer's queue, at most 200 characters:
+> "Traveller WO-1042". Empty names it after the app.
+
+- `title`: `string`
+
+#### `print-outcome` variant
+
+> What became of a job the app sent.
+
+> The computer took the job into the printer's queue. The words are
+> the job as the computer names it ("Zebra_ZD421-42"), to show or log.
+
+- `queued`: `string`
+> The computer would not take the job, with its own words: the
+> printer is paused, out of paper, or refused the format.
+
+- `failed`: `string`
+> The printer is no longer set up on this computer: removed, renamed,
+> or its driver uninstalled. Offer to pick again. The words say which
+> printer.
+
+- `gone`: `string`
+
+#### `print-error` variant
+
+> Why a call was refused before any job was sent.
+
+> The app did not declare `device.printer`, the person did not allow
+> it, or the organisation that manages the computer does not allow
+> printing. The words say which and name the capability.
+
+- `not-allowed`: `string`
+> No printer is set up on this computer, or this place cannot print:
+> a browser tab, a phone.
+
+- `unavailable`: `string`
+> No printer has this handle in this run: never picked, or the app
+> made it up.
+
+- `unknown-handle`
+> A job Krate does not accept, with words: empty, larger than 16 MiB,
+> copies out of range, a paper size out of range, or bytes that are
+> not the format they claim.
+
+- `bad-job`: `string`
 
 
 ## `krate:process/processes@0.1.0`

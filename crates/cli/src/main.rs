@@ -7121,6 +7121,14 @@ fn revoke_command(
     Ok(0)
 }
 
+/// The app id a remembered-grants file is for, from its name: the storage
+/// key before the separator that names whose app it is -- `@` a publisher,
+/// `+` this computer's own developer, `~` a hub account (K-1296). A
+/// sanitised id never holds any of the three.
+fn app_id_of_grants_file(stem: &str) -> &str {
+    stem.split(['@', '+', '~']).next().unwrap_or_default()
+}
+
 /// `krate permissions`: what apps have been allowed, and taking it back.
 ///
 /// A remembered grant with no way to see or withdraw it is a wall that
@@ -7140,21 +7148,35 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
         return Ok(0);
     }
 
-    let mut entries: Vec<PathBuf> = match fs::read_dir(&dir) {
-        Ok(read) => read.flatten().map(|e| e.path()).collect(),
-        Err(_) => Vec::new(),
+    let files_in = |dir: &Path| -> Vec<PathBuf> {
+        let mut entries: Vec<PathBuf> = match fs::read_dir(dir) {
+            Ok(read) => read
+                .flatten()
+                .map(|e| e.path())
+                .filter(|path| path.is_file())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        entries.sort();
+        entries
     };
-    entries.sort();
+    let entries = files_in(&dir);
+    // The printer each app was given (krate:print, IC-986), kept beside its
+    // grants under the same file name.
+    let printers = files_in(&dir.join(PRINTERS_DIR));
 
     if let Some(app_id) = forget {
         // The file name is "<app id>@<publisher>", and one app id can have
         // more than one publisher. Forgetting by id forgets every one of
-        // them, which is what a person asking to forget an app means.
+        // them, which is what a person asking to forget an app means -- and
+        // the printer it was given goes with its grants, so its next print
+        // asks again.
         let mut forgotten = 0;
-        for path in &entries {
+        for path in entries.iter().chain(&printers) {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
-            let id = name.split('@').next().unwrap_or_default();
-            if id == sanitize_storage_name(app_id) && fs::remove_file(path).is_ok() {
+            if app_id_of_grants_file(&name) == sanitize_storage_name(app_id)
+                && fs::remove_file(path).is_ok()
+            {
                 forgotten += 1;
             }
         }
@@ -7185,6 +7207,13 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
         }
         for cap in &record.granted {
             println!("  - {cap}");
+        }
+        let printer = path
+            .file_name()
+            .map(|file| dir.join(PRINTERS_DIR).join(file))
+            .and_then(|memory| krate_runtime::printer_host::remembered_in(&memory));
+        if let Some((_, name)) = printer {
+            println!("  - prints to {name} without asking (device.printer)");
         }
     }
     if shown == 0 {
@@ -19311,6 +19340,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // What the manifest names, so a program it does not name is refused
         // as never asked for (krate:process, IC-977).
         declared_capabilities: declared_set(manifest),
+        // The printer the person picked for this app, remembered beside its
+        // grants (krate:print, IC-986) on the grants' own terms: a lineage
+        // that can be checked again, and a person deciding -- an
+        // --auto-grant run's pick lasts for that run alone.
+        printer_memory: storage
+            .as_ref()
+            .filter(|_| !request.auto_grant)
+            .and_then(|principal| remembered_printer_path(&store_home, principal)),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -23064,6 +23101,20 @@ fn remembered_grants_path(home: &Path, principal: &StoragePrincipal) -> Option<P
     }
 }
 
+/// Where the printer the person picked for this app is remembered
+/// (krate:print, IC-986): beside its remembered grants, on the same terms --
+/// none for an unverified id -- so `krate permissions --forget` takes both
+/// back together.
+fn remembered_printer_path(home: &Path, principal: &StoragePrincipal) -> Option<PathBuf> {
+    remembered_grants_path(home, principal).map(|grants| {
+        let file = grants.file_name().map(PathBuf::from).unwrap_or_default();
+        home.join("grants").join(PRINTERS_DIR).join(file)
+    })
+}
+
+/// The folder under `grants/` that holds remembered printers.
+const PRINTERS_DIR: &str = "printers";
+
 /// What this person has already granted this app, as a policy.
 ///
 /// A file that does not parse, or that names a different principal, is
@@ -24430,6 +24481,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "ui.clipboard" => Some(":ui/clipboard"),
             "process.run" | "process.terminal" => Some(":process/"),
             "device.serial" => Some(":serial/"),
+            "device.printer" => Some(":print/"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -24461,6 +24513,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
                 | "location.read"
                 | "bluetooth.connect"
                 | "device.serial"
+                | "device.printer"
         );
         if defining && !request.required {
             return Some(format!(
@@ -31415,6 +31468,23 @@ again: {} -> {}",
         let problem = manifest_overreach(&serial(false), &serial_imports)
             .expect("must refuse an optional serial ask");
         assert!(problem.contains("marks it optional"), "{problem}");
+
+        // A printer (IC-986): asked for with the import, clean; without it,
+        // refused; and never optional -- an optional ask is never put to
+        // anyone, so the app would never print.
+        let printer = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.printer\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let print_imports = vec!["krate:print/printers@0.1.0".to_string()];
+        assert!(manifest_overreach(&printer(true), &print_imports).is_none());
+        let problem = manifest_overreach(&printer(true), &dialog_imports)
+            .expect("must refuse a printer ask with no print import");
+        assert!(problem.contains(":print/"), "{problem}");
+        let problem = manifest_overreach(&printer(false), &print_imports)
+            .expect("must refuse an optional printer ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
     }
 
     /// The install loop must stop when a pass changes nothing.
@@ -31957,6 +32027,30 @@ mod check_app_tests {
             "\n[[capabilities]]\ncap = \"io.stdout\"\nrationale = \"t\"\nrequired = true\n",
         );
         assert!(!manifest_is_gui(&cli));
+    }
+}
+
+#[cfg(test)]
+mod grants_file_tests {
+    use super::*;
+
+    /// `--forget <id>` reaches every kind of principal's file: a signed
+    /// app's, this computer's own, and a hub account's (K-1296).
+    #[test]
+    fn every_kind_of_grants_file_names_its_app() {
+        for stem in [
+            "dev.krate.notes@0123456789abcdef",
+            "dev.krate.notes+0123456789abcdef",
+            "dev.krate.notes~k0123456789abcdef",
+            "dev.krate.notes",
+        ] {
+            assert_eq!(app_id_of_grants_file(stem), "dev.krate.notes", "{stem}");
+        }
+        assert_eq!(
+            sanitize_storage_name("a@b+c~d"),
+            "a_b_c_d",
+            "an id never carries a separator"
+        );
     }
 }
 

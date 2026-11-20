@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     phase2_bindings::krate::{
-        fs, io, locale, net, process, random, resources, serial, store, time,
+        fs, io, locale, net, print, process, random, resources, serial, store, time,
     },
     phase2_bridge as bridge,
     uapi::UapiGuard,
@@ -89,6 +89,16 @@ pub struct Phase2Host<'a> {
     /// Dropped with the run, which closes every one.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     serial: crate::serial_host::SerialPorts,
+    /// Printers the person picked (`krate:print`, IC-986), and where a pick
+    /// is remembered for this app.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    printers: crate::printer_host::Printers,
+    /// The app's name, for a print job that names itself nothing.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    app_name: String,
     /// Nobody is there to pick a serial device: a headless windowed run.
     /// A pick then answers "cancelled" rather than wait on a dialog nobody
     /// can see.
@@ -149,6 +159,9 @@ impl<'a> Phase2Host<'a> {
             processes: crate::process_host::Processes::new(),
             #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
             serial: crate::serial_host::SerialPorts::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            printers: crate::printer_host::Printers::new(crate::printer_host::system_backend()),
+            app_name: String::new(),
             nobody_to_ask: std::cell::Cell::new(false),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
             async_ws: crate::async_ws::AsyncWs::new(),
@@ -372,6 +385,92 @@ impl<'a> Phase2Host<'a> {
             Some(GroupGrant::Member(path)) => {
                 Ok(crate::store_host::AppStore::open(path.clone(), true))
             }
+        }
+    }
+
+    /// Where this app's printer pick is remembered (IC-986): the CLI's file
+    /// for the app's principal, or `None` -- a pick then lasts for the run --
+    /// and the app's name, for a job that names itself nothing.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(unused_mut)
+    )]
+    pub fn with_printers(mut self, memory: Option<PathBuf>, app_name: Option<&str>) -> Self {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            self.printers =
+                crate::printer_host::Printers::new(crate::printer_host::system_backend())
+                    .with_memory(memory);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        let _ = memory;
+        self.app_name = app_name.unwrap_or_default().to_string();
+        self
+    }
+
+    /// Print through `backend` instead of the system: a test's fake.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_print_backend(
+        mut self,
+        backend: Box<dyn crate::printer_host::Backend>,
+        memory: Option<PathBuf>,
+    ) -> Self {
+        self.printers = crate::printer_host::Printers::new(backend).with_memory(memory);
+        self
+    }
+
+    /// May this run print (`device.printer`, IC-986)? Only when the manifest
+    /// declares it, the person allowed it, and the organisation that manages
+    /// the computer has not said no printing for this app. The words name
+    /// the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_printer(&self) -> Result<(), print::printers::PrintError> {
+        use krate_policy::{Decision, Refusal};
+        use print::printers::PrintError;
+        let cap = krate_manifest::Capability::new("device", "printer", None)
+            .expect("device.printer is a capability");
+        let undeclared = || {
+            PrintError::NotAllowed(
+                "this app did not ask for device.printer, so it cannot print".to_string(),
+            )
+        };
+        let organisation = || {
+            PrintError::NotAllowed(
+                "the organisation that manages this computer does not allow this app to print \
+                 (device.printer)"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        match self.guard.policy().decide(&cap, Some(declared)) {
+            // `[apps] printing = false` (G17) stops this kind of printing
+            // too, not only the print dialog.
+            Decision::Granted { .. }
+                if self
+                    .guard
+                    .policy()
+                    .organisation_blocks_call(krate_policy::PRINT_CALL) =>
+            {
+                Err(organisation())
+            }
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(organisation()),
+            Decision::Refused { .. } => Err(PrintError::NotAllowed(
+                "you did not allow this app to print (device.printer)".to_string(),
+            )),
         }
     }
 
@@ -1021,6 +1120,175 @@ impl serial::ports::Host for Phase2Host<'_> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn serial_not_here() -> serial::ports::SerialError {
     serial::ports::SerialError::Unavailable(SERIAL_ON_A_COMPUTER.to_string())
+}
+
+/// Printers the person picks (`krate:print`, IC-986).
+///
+/// Every call is admitted here -- the manifest declares `device.printer`,
+/// the person allowed it, the organisation allows printing -- before
+/// `printer_host` shows a list or sends a job. The app holds handles only;
+/// no call takes a printer's name.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl print::printers::Host for Phase2Host<'_> {
+    fn remembered(
+        &mut self,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .printers
+            .remembered()
+            .map(|found| found.map(|(handle, name)| print::printers::Printer { handle, name }))
+            .map_err(print_fault_to_wit))
+    }
+
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        let nobody = self.nobody_to_ask.get();
+        Ok(self
+            .printers
+            .pick(&title, nobody)
+            .map(|found| found.map(|(handle, name)| print::printers::Printer { handle, name }))
+            .map_err(print_fault_to_wit))
+    }
+
+    fn print_document(
+        &mut self,
+        printer: u64,
+        document: print::printers::Document,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        use crate::printer_host::{Job, JobKind, Paper};
+        use print::printers::{DocumentFormat, PaperSize};
+        let job = Job {
+            kind: match document.format {
+                DocumentFormat::Pdf => JobKind::Pdf,
+                DocumentFormat::Png => JobKind::Png,
+            },
+            bytes: document.bytes,
+            copies: document.copies,
+            paper: match document.paper {
+                PaperSize::PrinterDefault => Paper::PrinterDefault,
+                PaperSize::A4 => Paper::A4,
+                PaperSize::A5 => Paper::A5,
+                PaperSize::A6 => Paper::A6,
+                PaperSize::Letter => Paper::Letter,
+                PaperSize::Legal => Paper::Legal,
+                PaperSize::Custom(mm) => Paper::Custom {
+                    width_mm: mm.width,
+                    height_mm: mm.height,
+                },
+            },
+            title: document.title,
+        };
+        Ok(self
+            .printers
+            .print(printer, job, &self.app_name)
+            .map(print_outcome_to_wit)
+            .map_err(print_fault_to_wit))
+    }
+
+    fn print_raw(
+        &mut self,
+        printer: u64,
+        bytes: Vec<u8>,
+        copies: u32,
+        title: String,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        let job = crate::printer_host::Job {
+            kind: crate::printer_host::JobKind::Raw,
+            bytes,
+            copies,
+            paper: crate::printer_host::Paper::PrinterDefault,
+            title,
+        };
+        Ok(self
+            .printers
+            .print(printer, job, &self.app_name)
+            .map(print_outcome_to_wit)
+            .map_err(print_fault_to_wit))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn print_fault_to_wit(fault: crate::printer_host::Fault) -> print::printers::PrintError {
+    use crate::printer_host::Fault;
+    use print::printers::PrintError;
+    match fault {
+        Fault::Unavailable(words) => PrintError::Unavailable(words),
+        Fault::UnknownHandle => PrintError::UnknownHandle,
+        Fault::BadJob(words) => PrintError::BadJob(words),
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn print_outcome_to_wit(outcome: crate::printer_host::Outcome) -> print::printers::PrintOutcome {
+    use crate::printer_host::Outcome;
+    use print::printers::PrintOutcome;
+    match outcome {
+        Outcome::Queued(words) => PrintOutcome::Queued(words),
+        Outcome::Failed(words) => PrintOutcome::Failed(words),
+        Outcome::Gone(words) => PrintOutcome::Gone(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:print` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const PRINT_ON_A_COMPUTER: &str =
+    "Printing to a printer you pick works in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn print_not_here() -> print::printers::PrintError {
+    print::printers::PrintError::Unavailable(PRINT_ON_A_COMPUTER.to_string())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl print::printers::Host for Phase2Host<'_> {
+    fn remembered(
+        &mut self,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        Ok(Err(print_not_here()))
+    }
+
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        Ok(Err(print_not_here()))
+    }
+
+    fn print_document(
+        &mut self,
+        _printer: u64,
+        _document: print::printers::Document,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        Ok(Err(print_not_here()))
+    }
+
+    fn print_raw(
+        &mut self,
+        _printer: u64,
+        _bytes: Vec<u8>,
+        _copies: u32,
+        _title: String,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        Ok(Err(print_not_here()))
+    }
 }
 
 impl random::bytes::Host for Phase2Host<'_> {

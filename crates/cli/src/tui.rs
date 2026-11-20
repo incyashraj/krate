@@ -1377,6 +1377,8 @@ fn plain_capability(cap: &str) -> Option<String> {
         "speech.transcribe" => "turn speech into text, on this computer",
         // A serial device the person picks (IC-985).
         "device.serial" => "talk to a serial device you choose",
+        // A printer the person picks (IC-986).
+        "device.printer" => "print to a printer you choose",
         // A program or a terminal (IC-977): the card's own words, which say
         // what a program can do.
         "process.run" | "process.terminal" => {
@@ -1806,6 +1808,18 @@ mod tests {
                 "device.serial"
                     .parse::<krate_manifest::Capability>()
                     .expect("device.serial")
+                    .plain()
+                    .as_str()
+            )
+        );
+        // A printer is the one the person picks (IC-986), and the line is
+        // the manifest crate's own words.
+        assert_eq!(
+            plain_capability("device.printer").as_deref(),
+            Some(
+                "device.printer"
+                    .parse::<krate_manifest::Capability>()
+                    .expect("device.printer")
                     .plain()
                     .as_str()
             )

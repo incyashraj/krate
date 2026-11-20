@@ -139,6 +139,13 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // list, and that pick is the grant, for that port, for that run. Never
     // default-granted, never in a tab or on a phone.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "serial", false),
+    // A printer the person picks (IC-986): a label printer on the packing
+    // bench, the office laser for job travellers. Resource-free: the app
+    // never names a printer -- it asks, the person chooses one from the
+    // system's list, and that pick is remembered for the app so the next
+    // label prints with no dialog. Never default-granted, never in a tab or
+    // on a phone.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "printer", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",
@@ -864,6 +871,8 @@ impl Capability {
             ("bluetooth", "connect") => "connect to Bluetooth devices".to_string(),
             // IC-985: the person picks the device; the line says so.
             ("device", "serial") => "talk to a serial device you choose".to_string(),
+            // IC-986: the person picks the printer; the line says so.
+            ("device", "printer") => "print to a printer you choose".to_string(),
             ("photos", "add") => "add pictures to your photo library".to_string(),
             // IC-977: what a program can do, said plainly. A build runs the
             // project's own code (build scripts, macros, tests), so cargo
@@ -1684,6 +1693,32 @@ mod tests {
             "device.serial:/dev/ttyUSB0",
             "device.serial:COM3",
             "device.usb",
+        ] {
+            assert!(named.parse::<Capability>().is_err(), "{named}");
+        }
+    }
+
+    /// `device.printer` (IC-986) is one plain line, never granted without
+    /// asking, never in a tab, and names no printer: the person picks it.
+    #[test]
+    fn a_printer_is_asked_for_and_names_no_printer() {
+        let cap: Capability = "device.printer".parse().expect("device.printer");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(
+            !cap.works_in_a_tab(),
+            "a tab cannot print to a picked printer"
+        );
+        assert_eq!(cap.plain(), "print to a printer you choose");
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.printer")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for named in [
+            "device.printer:Zebra_ZD421",
+            "device.printer:*",
+            "device.printers",
         ] {
             assert!(named.parse::<Capability>().is_err(), "{named}");
         }

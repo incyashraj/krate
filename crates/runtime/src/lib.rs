@@ -109,6 +109,12 @@ mod print_host;
     any(target_os = "macos", target_os = "linux", target_os = "windows")
 ))]
 pub mod process_host;
+// Printers the person picks (krate:print, IC-986): desktop only.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod printer_host;
 pub mod random_host;
 // Serial devices the person picks (krate:serial, IC-985): desktop only.
 pub mod scene3d;
@@ -286,6 +292,12 @@ pub struct Config {
     /// `process.run` and `process.terminal` need the manifest to name them
     /// as well as the person to allow them (IC-977).
     pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
+    /// Where the printer the person picked for this app is remembered
+    /// (krate:print, IC-986), so the next run prints with no dialog. The CLI
+    /// sets it only for an app whose lineage it can check again and only
+    /// when a person, not `--auto-grant`, is deciding; `None` keeps a pick
+    /// for the run alone.
+    pub printer_memory: Option<PathBuf>,
 }
 
 impl Config {
@@ -337,6 +349,7 @@ impl Default for Config {
             usability_plan: None,
             interpreter: false,
             declared_capabilities: None,
+            printer_memory: None,
         }
     }
 }
@@ -1500,7 +1513,8 @@ impl Runtime {
         // (which adapts) held a wide app upright on a phone, shrunk into a
         // band across the middle (K-1209).
         gui_host.set_adapts(false);
-        // A headless run has nobody to pick a serial device (IC-985).
+        // A headless run has nobody to pick a serial device (IC-985) or a
+        // printer (IC-986).
         store
             .data()
             .phase2
@@ -1561,7 +1575,8 @@ impl Runtime {
             .imports(&self.engine)
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
-        // A headless run has nobody to pick a serial device (IC-985).
+        // A headless run has nobody to pick a serial device (IC-985) or a
+        // printer (IC-986).
         store
             .data()
             .phase2
@@ -1739,6 +1754,9 @@ impl Runtime {
         // Serial devices the person picks (IC-985); a phone or a tab answers
         // `unavailable`, so the import always links.
         link_phase2!(phase2_bindings::krate::serial::ports);
+        // Printers the person picks (IC-986); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::print::printers);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -2059,7 +2077,10 @@ impl HostState {
             )
             // What the manifest names, for krate:process (IC-977): a program
             // runs only when it is named there AND the person allowed it.
-            .with_declared(config.declared_capabilities.clone()),
+            .with_declared(config.declared_capabilities.clone())
+            // Where the person's printer pick is remembered for this app
+            // (IC-986), as the CLI decided it.
+            .with_printers(config.printer_memory.clone(), config.app_name.as_deref()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
@@ -6296,6 +6317,222 @@ mod tests {
             host.open(1, settings).expect("no trap"),
             Err(SerialError::UnknownHandle)
         ));
+    }
+
+    /// Printing reaches a printer only when the manifest declares
+    /// `device.printer`, the person allowed it, and the organisation allows
+    /// printing (krate:print, IC-986). Refused, no list is shown and no job
+    /// is sent, and the words name the capability. Admitted, a job reaches
+    /// the backend with its bytes and options, a raw label stream byte for
+    /// byte, a cancelled pick answers none, and a remembered pick is found
+    /// again by the next run without asking.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn printing_needs_the_declaration_the_persons_yes_and_the_organisation() {
+        use phase2_bindings::krate::print::printers::{
+            Document, DocumentFormat, Host, PaperMm, PaperSize, PrintError, PrintOutcome,
+        };
+        use printer_host::{FakeBackend, JobKind, Paper};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let memory = sandbox
+            .path()
+            .join("grants")
+            .join("printers")
+            .join("app@k.json");
+        let fake = FakeBackend::with_printers(&["Office_Laser", "Zebra_ZD421"]);
+        let host_with = |policy: SessionPolicy, declared: Option<&[&str]>| {
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(policy),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+            .with_printers(None, Some("Travellers"))
+            .with_print_backend(Box::new(fake.clone()), Some(memory.clone()))
+        };
+        let grants = |list: &[&str]| {
+            SessionPolicy::from_cli_grants(&list.iter().map(|g| g.to_string()).collect::<Vec<_>>())
+                .expect("grants")
+        };
+        let label = |copies: u32| Document {
+            format: DocumentFormat::Pdf,
+            bytes: b"%PDF-1.7\n".to_vec(),
+            copies,
+            paper: PaperSize::Custom(PaperMm {
+                width: 100,
+                height: 150,
+            }),
+            title: "Traveller WO-1042".to_string(),
+        };
+        let zpl = b"^XA^FO50,50^ADN,36,20^FDWO-1042\x00\xff^FS^XZ".to_vec();
+
+        let undeclared = "this app did not ask for device.printer, so it cannot print";
+        let refused = "you did not allow this app to print (device.printer)";
+        let organisation = "the organisation that manages this computer does not allow this \
+                            app to print (device.printer)";
+        let no_printing = krate_policy::OrgCeiling {
+            deny: Vec::new(),
+            network: None,
+            calls: vec![krate_policy::PRINT_CALL.to_string()],
+        };
+        for (mut host, words) in [
+            // Allowed on the command line, never declared.
+            (
+                host_with(grants(&["device.printer"]), Some(&[])),
+                undeclared,
+            ),
+            // No manifest at all names nothing.
+            (host_with(grants(&["device.printer"]), None), undeclared),
+            // Declared, and the person said no.
+            (host_with(grants(&[]), Some(&["device.printer"])), refused),
+            // Declared and allowed, and the organisation says no printing.
+            (
+                host_with(
+                    grants(&["device.printer"]).with_organisation(no_printing.clone()),
+                    Some(&["device.printer"]),
+                ),
+                organisation,
+            ),
+        ] {
+            let said = |err: PrintError| match err {
+                PrintError::NotAllowed(said) => said,
+                other => panic!("refused by name, got {other:?}"),
+            };
+            assert_eq!(
+                said(host.remembered().expect("no trap").expect_err("remembered")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.pick("Choose".into())
+                        .expect("no trap")
+                        .expect_err("pick")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.print_document(1, label(1))
+                        .expect("no trap")
+                        .expect_err("document")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.print_raw(1, zpl.clone(), 1, "Label".into())
+                        .expect("no trap")
+                        .expect_err("raw")
+                ),
+                words
+            );
+        }
+        assert!(fake.jobs.lock().unwrap().is_empty(), "nothing was sent");
+        assert!(!memory.exists(), "nothing was remembered");
+
+        // Declared and allowed. A handle the person never gave is no printer.
+        let allowed = || host_with(grants(&["device.printer"]), Some(&["device.printer"]));
+        let mut host = allowed();
+        assert!(matches!(
+            host.print_raw(1, zpl.clone(), 1, String::new())
+                .expect("no trap"),
+            Err(PrintError::UnknownHandle)
+        ));
+        // Nothing picked yet: nothing remembered, and nobody asked.
+        assert!(matches!(host.remembered().expect("no trap"), Ok(None)));
+        // Nobody there to choose (a headless run): none, and no memory.
+        host.set_nobody_to_ask(true);
+        assert!(matches!(
+            host.pick("Choose".into()).expect("no trap"),
+            Ok(None)
+        ));
+        assert!(!memory.exists());
+        drop(host);
+
+        // The person picks the label printer; it is remembered for the app.
+        let printers = || {
+            printer_host::Printers::new(Box::new(fake.clone())).with_memory(Some(memory.clone()))
+        };
+        let mut first = printers();
+        assert_eq!(
+            first.pick_scripted("Zebra_ZD421"),
+            Ok(Some((1, "Zebra ZD421".to_string())))
+        );
+        // A printer that is not set up is no pick, and a cancel keeps the
+        // earlier one.
+        assert!(matches!(
+            first.pick_scripted("Nowhere"),
+            Err(printer_host::Fault::Unavailable(words)) if words.contains("not a printer set up")
+        ));
+        assert_eq!(first.pick_scripted("cancel"), Ok(None));
+        assert_eq!(
+            printer_host::remembered_in(&memory),
+            Some(("Zebra_ZD421".into(), "Zebra ZD421".into()))
+        );
+
+        // The next run finds it with no dialog, and prints to it.
+        let mut host = allowed();
+        let printer = host
+            .remembered()
+            .expect("no trap")
+            .expect("allowed")
+            .expect("remembered");
+        assert_eq!(printer.name, "Zebra ZD421");
+        assert!(matches!(
+            host.print_document(printer.handle, label(2)).expect("no trap"),
+            Ok(PrintOutcome::Queued(job)) if job == "Zebra_ZD421-1"
+        ));
+        assert!(matches!(
+            host.print_raw(printer.handle, zpl.clone(), 1, String::new())
+                .expect("no trap"),
+            Ok(PrintOutcome::Queued(job)) if job == "Zebra_ZD421-2"
+        ));
+        {
+            let jobs = fake.jobs.lock().unwrap();
+            assert_eq!(jobs[0].0, "Zebra_ZD421");
+            assert_eq!(jobs[0].1.kind, JobKind::Pdf);
+            assert_eq!(jobs[0].1.copies, 2);
+            assert_eq!(
+                jobs[0].1.paper,
+                Paper::Custom {
+                    width_mm: 100,
+                    height_mm: 150
+                }
+            );
+            assert_eq!(jobs[0].1.title, "Traveller WO-1042");
+            assert_eq!(jobs[0].1.bytes, b"%PDF-1.7\n");
+            assert_eq!(jobs[1].1.kind, JobKind::Raw);
+            assert_eq!(jobs[1].1.bytes, zpl, "byte for byte");
+            assert_eq!(jobs[1].1.title, "Travellers", "named after the app");
+        }
+        // A job out of bounds is refused before the backend sees it.
+        assert!(matches!(
+            host.print_document(printer.handle, label(0)).expect("no trap"),
+            Err(PrintError::BadJob(words)) if words.contains("copies")
+        ));
+        assert_eq!(fake.jobs.lock().unwrap().len(), 2);
+
+        // Forgotten (the file deleted, as `krate permissions --forget`
+        // does): the next run has nothing remembered and must ask.
+        std::fs::remove_file(&memory).expect("forget");
+        let mut host = allowed();
+        assert!(matches!(host.remembered().expect("no trap"), Ok(None)));
     }
 
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing

@@ -201,6 +201,12 @@ windows-sys = { version = "0.61", features = [
     # the app, even if Krate itself is killed.
     "Win32_Security",
     "Win32_System_JobObjects",
+    # krate:print (IC-986): the print spooler for raw label language
+    # (OpenPrinter, WritePrinter with the RAW data type) and GDI for a PNG
+    # page (CreateDC, StartDoc, StretchDIBits).
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Printing",
+    "Win32_Storage_Xps",
 ] }
 # Camera capture through Media Foundation. macOS has its own AVFoundation
 # backend because it needs the platform permission dance; Windows and Linux do

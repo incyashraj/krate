@@ -1761,6 +1761,160 @@ pub mod serial {
     }
 }
 
+/// Printers the person picks (IC-986): documents and labels, without a
+/// dialog every time.
+///
+/// Declare `device.printer` with a rationale (required: the person is only
+/// asked about required capabilities). The app never lists printers and
+/// never names one: [`printer`] answers the printer the person picked for
+/// this app before, and asks them to pick one only when there is none, so
+/// a label after a label prints with no dialog. [`pick`] always asks (a
+/// "Change printer" button). The pick is remembered for the app until the
+/// person takes it back with `krate permissions --forget <app id>`.
+///
+/// ```ignore
+/// use krate::print::{self, PaperSize, PrintOutcome};
+/// if let Some(printer) = print::printer("Choose the label printer")? {
+///     match printer.raw(b"^XA^FO50,50^ADN,36,20^FDWO-1042^FS^XZ", 1, "WO-1042")? {
+///         PrintOutcome::Queued(_) => { /* printed */ }
+///         PrintOutcome::Failed(words) | PrintOutcome::Gone(words) => { /* show words */ }
+///     }
+///     printer.pdf(&traveller_pdf, 1, PaperSize::A4, "Traveller WO-1042")?;
+/// }
+/// ```
+///
+/// A computer only (macOS and Linux through CUPS, Windows through its print
+/// spooler; Windows prints PNG pages and raw label language, not PDF). In a
+/// browser tab and on a phone every call answers `PrintError::Unavailable`
+/// with words saying so.
+pub mod print {
+    use crate::bindings::krate::print::printers as host;
+    pub use crate::bindings::krate::print::printers::{
+        Document, DocumentFormat, PaperMm, PaperSize, PrintError, PrintOutcome,
+    };
+    use alloc::string::String;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &PrintError) -> &str {
+        match err {
+            PrintError::NotAllowed(w) | PrintError::Unavailable(w) | PrintError::BadJob(w) => w,
+            PrintError::UnknownHandle => "that printer was not picked in this app",
+        }
+    }
+
+    /// The words of an outcome: the job's name when queued, the system's
+    /// reason otherwise.
+    pub fn outcome_words(outcome: &PrintOutcome) -> &str {
+        match outcome {
+            PrintOutcome::Queued(w) | PrintOutcome::Failed(w) | PrintOutcome::Gone(w) => w,
+        }
+    }
+
+    /// A printer the person picked, now or on an earlier run.
+    #[derive(Debug, Clone)]
+    pub struct Printer {
+        handle: u64,
+        name: String,
+    }
+
+    impl From<host::Printer> for Printer {
+        fn from(printer: host::Printer) -> Self {
+            Printer {
+                handle: printer.handle,
+                name: printer.name,
+            }
+        }
+    }
+
+    /// The printer the person picked for this app before, if it is still
+    /// set up. Never asks anyone.
+    pub fn remembered() -> Result<Option<Printer>, PrintError> {
+        Ok(host::remembered()?.map(Printer::from))
+    }
+
+    /// Ask the person to choose a printer, remembered for this app in place
+    /// of any earlier pick. `title` is a short line for the list ("Choose
+    /// the label printer"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Printer>, PrintError> {
+        Ok(host::pick(title)?.map(Printer::from))
+    }
+
+    /// The printer to use: the one remembered for this app, or, when there
+    /// is none, the one the person picks now. `None` when they cancelled.
+    pub fn printer(title: &str) -> Result<Option<Printer>, PrintError> {
+        match remembered()? {
+            Some(printer) => Ok(Some(printer)),
+            None => pick(title),
+        }
+    }
+
+    impl Printer {
+        /// The printer's name as the computer shows it, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Print a PDF (at most 16 MiB), `copies` from 1 to 100, on `paper`;
+        /// `title` names the job in the printer's queue.
+        pub fn pdf(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            self.document(DocumentFormat::Pdf, bytes, copies, paper, title)
+        }
+
+        /// Print one PNG page, scaled to fit `paper`.
+        pub fn png(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            self.document(DocumentFormat::Png, bytes, copies, paper, title)
+        }
+
+        fn document(
+            &self,
+            format: DocumentFormat,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            host::print_document(
+                self.handle,
+                &Document {
+                    format,
+                    bytes: bytes.to_vec(),
+                    copies,
+                    paper,
+                    title: title.into(),
+                },
+            )
+        }
+
+        /// Send raw printer language -- ZPL, EPL, ESC/POS -- byte for byte
+        /// to a label or receipt printer, `copies` times.
+        pub fn raw(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            host::print_raw(self.handle, bytes, copies, title)
+        }
+    }
+}
+
 pub mod random {
     pub use crate::bindings::krate::random::bytes::RandomError;
     use alloc::vec::Vec;

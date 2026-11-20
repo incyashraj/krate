@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.printer-probe"
+name = "printer-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_printer_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what each print answered"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read which check to run"
+required = true
+
+[[capabilities]]
+cap = "device.printer"
+rationale = "Print labels and job travellers to the printer you choose"
+required = true

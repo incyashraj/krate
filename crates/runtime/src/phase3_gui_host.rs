@@ -1609,7 +1609,8 @@ impl Phase3GuiHost {
     }
 
     /// Whether this run has no window and nobody at it: a pick (a serial
-    /// device, IC-985) then answers cancelled instead of waiting on a list.
+    /// device, IC-985; a printer, IC-986) then answers cancelled instead of
+    /// waiting on a list.
     pub(crate) fn is_headless(&self) -> bool {
         self.headless
     }

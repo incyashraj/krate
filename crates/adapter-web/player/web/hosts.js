@@ -813,6 +813,17 @@ export function buildImports(ctx) {
     available: () => false,
     check: () => ({ tag: 'unavailable', val: 'This device cannot check it is you.' }),
   };
+  // A printer the person picks (krate:print, IC-986): a tab reaches no
+  // printer without the browser's own dialog each time, so every call
+  // answers unavailable, in words, rather than pretend.
+  const PRINT_HERE = 'Printing to a printer you pick works in Krate on a computer, not in a browser tab. Open the app in Krate to print.';
+  const noPrinter = () => { throw new HostError({ tag: 'unavailable', val: PRINT_HERE }, PRINT_HERE); };
+  impl['krate:print/printers'] = {
+    remembered: noPrinter,
+    pick: noPrinter,
+    printDocument: noPrinter,
+    printRaw: noPrinter,
+  };
 
   // Every interface the component imports: what this file implements,
   // and the hub's refusal for anything else -- including whole interfaces.

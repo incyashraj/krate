@@ -10261,6 +10261,254 @@ fn what_was_allowed_can_be_seen_and_taken_back() {
     );
 }
 
+/// An app prints to the printer the person picks, and the pick is remembered
+/// so the next label prints without asking (krate:print, IC-986).
+///
+/// `printer-probe.wasm` is apps/krate-printer-probe built. The printers are
+/// folders under KRATE_PRINTER_SPOOL, each job landing in its folder as its
+/// bytes and a note of its options; the person's pick is scripted with
+/// KRATE_PRINTER_PICK, as a test or a script drives it.
+#[test]
+fn an_app_prints_to_the_printer_the_person_picks_and_it_is_remembered() {
+    const ZPL: &[u8] = b"^XA\r\n^FO50,50^ADN,36,20^FDWO-1042\x00\xff^FS\r\n^XZ\r\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let spool = dir.path().join("printers");
+    for printer in ["Office_Laser", "Zebra_ZD421"] {
+        std::fs::create_dir_all(spool.join(printer)).expect("printer");
+    }
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/printer-probe.wasm")).expect("probe");
+    // `printer`: None never declares device.printer; Some(required) does.
+    let pack = |name: &str, printer: Option<bool>| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{}",
+                match printer {
+                    Some(required) => format!(
+                        "\n[[capabilities]]\ncap = \"device.printer\"\nrationale = \"labels\"\n\
+                         required = {required}\n"
+                    ),
+                    None => String::new(),
+                }
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    // One run: its grants, the scripted pick (None: no pick variable at
+    // all), what is typed at the consent prompt, and the check.
+    let run = |bundle: &std::path::Path,
+               grants: &[&str],
+               pick: Option<&str>,
+               answer: &str,
+               check: &str|
+     -> String {
+        use std::io::Write;
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_krate"));
+        command
+            .current_dir(dir.path())
+            .env("HOME", home.path())
+            .env("KRATE_PRINTER_SPOOL", &spool)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        match pick {
+            Some(pick) => command.env("KRATE_PRINTER_PICK", pick),
+            None => command.env_remove("KRATE_PRINTER_PICK"),
+        };
+        let mut child = command.spawn().expect("spawn");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(answer.as_bytes())
+            .expect("answer");
+        let out = child.wait_with_output().expect("run");
+        assert!(
+            out.status.success(),
+            "{check}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let jobs = |printer: &str| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(spool.join(printer))
+            .map(|read| {
+                read.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    let note = |printer: &str, n: u32| -> serde_json::Value {
+        serde_json::from_slice(
+            &std::fs::read(spool.join(printer).join(format!("job-{n}.json"))).expect("note"),
+        )
+        .expect("json")
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability: refused by name, no list, nothing printed.
+    let never_asked = pack("printer-quiet", None);
+    assert_eq!(
+        run(&never_asked, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: not-allowed: this app did not ask for device.printer, so it cannot print"
+    );
+    let optional = pack("printer-optional", Some(false));
+    assert_eq!(
+        run(&optional, &basics, Some("Zebra_ZD421"), "", "label"),
+        "label: not-allowed: you did not allow this app to print (device.printer)"
+    );
+    assert!(jobs("Zebra_ZD421").is_empty(), "nothing reached a printer");
+
+    let asks = pack("printer-probe", Some(true));
+    // The person cancels at the pick: no printer, nothing printed.
+    assert_eq!(run(&asks, &all, Some("cancel"), "", "label"), "label: none");
+    // A pick names a printer that is set up, never anything else.
+    assert_eq!(
+        run(&asks, &all, Some("Nowhere"), "", "label"),
+        "label: unavailable: KRATE_PRINTER_PICK names `Nowhere`, which is not a printer set up \
+         on this computer"
+    );
+    // Handles nobody gave reach no printer.
+    assert_eq!(
+        run(&asks, &all, None, "", "forge"),
+        "forge: zero=unknown-handle: that printer was not picked in this app \
+         next=unknown-handle: that printer was not picked in this app"
+    );
+    assert!(jobs("Zebra_ZD421").is_empty() && jobs("Office_Laser").is_empty());
+
+    // Picked: the raw ZPL reaches the printer byte for byte, with its copies
+    // and its name; the PDF with its copies and its label size.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: Zebra ZD421: queued Zebra_ZD421-1"
+    );
+    assert_eq!(
+        std::fs::read(spool.join("Zebra_ZD421").join("job-1.raw")).expect("job"),
+        ZPL
+    );
+    assert_eq!(note("Zebra_ZD421", 1)["copies"], 2);
+    assert_eq!(note("Zebra_ZD421", 1)["title"], "WO-1042");
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "document"),
+        "document: Zebra ZD421: queued Zebra_ZD421-2"
+    );
+    assert!(std::fs::read(spool.join("Zebra_ZD421").join("job-2.pdf"))
+        .expect("pdf")
+        .starts_with(b"%PDF-"));
+    assert_eq!(note("Zebra_ZD421", 2)["copies"], 3);
+    assert_eq!(note("Zebra_ZD421", 2)["paper"], "Custom.100x150mm");
+    // A job past the bound is refused in words and never sent.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "big"),
+        "big: Zebra ZD421: bad-job: a print job is at most 16 MiB (16777216 bytes), not 16777217 \
+         bytes"
+    );
+    assert_eq!(jobs("Zebra_ZD421").len(), 4, "two jobs, each with its note");
+
+    // A signed app, a person at the prompt: the pick is remembered.
+    let key = dir.path().join("key.pkcs8");
+    assert!(krate()
+        .arg("sign")
+        .arg(&asks)
+        .arg("--key")
+        .arg(&key)
+        .args(["--generate-key", "--namespace", "printer/probe"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign")
+        .status
+        .success());
+    let prompted = ["--prompt"];
+    // An --auto-grant run is Krate deciding, not a person: its pick is for
+    // that run alone, so the next run, with a person, is asked.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: Zebra ZD421: queued Zebra_ZD421-3"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "A\n", "label"),
+        "label: none"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("Office_Laser"), "", "label"),
+        "label: Office Laser: queued Office_Laser-1"
+    );
+    // The next run asks nothing -- a scripted cancel would answer none if
+    // it did -- and prints to the remembered printer.
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "", "label"),
+        "label: Office Laser: queued Office_Laser-2"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "", "remembered"),
+        "remembered: Office Laser"
+    );
+    assert_eq!(
+        std::fs::read(spool.join("Office_Laser").join("job-2.raw")).expect("job"),
+        ZPL
+    );
+
+    // The person sees it, and takes it back.
+    let permissions = |args: &[&str]| -> String {
+        let out = krate()
+            .arg("permissions")
+            .args(args)
+            .env("HOME", home.path())
+            .output()
+            .expect("permissions");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let listed = permissions(&[]);
+    assert!(
+        listed.contains("com.acme.printer-probe")
+            && listed.contains("prints to Office Laser without asking (device.printer)"),
+        "{listed}"
+    );
+    assert!(permissions(&["--forget", "com.acme.printer-probe"]).contains("will ask again"));
+    assert!(
+        !permissions(&[]).contains("Office Laser"),
+        "gone from the list"
+    );
+    // Forgotten: the app is asked about again, and so is the printer -- a
+    // cancel at the pick now prints nothing.
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "A\n", "label"),
+        "label: none"
+    );
+    assert_eq!(jobs("Office_Laser").len(), 4, "nothing more was printed");
+}
+
 /// A data profile is named on the trust screen, a bad name is refused before
 /// anything runs, and a screenshot run is a preview by default (IC-245).
 #[test]

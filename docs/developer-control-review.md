@@ -15,9 +15,9 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 80 boundaries reviewed, 71 of them WIT interfaces (71 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 43 optional.
-- 6 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
+- 81 boundaries reviewed, 72 of them WIT interfaces (72 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 44 optional.
+- 7 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
 
@@ -52,6 +52,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:net@0.1.0/types` | wit | request, response and error shapes every host lowers to | what is sent and how it is interpreted | none needed: a type carries no authority | yes | portability |
 | `krate:net@0.1.0/ws` | wit | the same boundary for a live connection: a net.connect grant to that host and port, checked at open | the protocol over the socket, the framing, the server | raw message frames; krate:net/sockets for a transport of the app's own | yes | recipient-permission |
 | `krate:phase1@0.0.1/host` | wit | the first-generation host world, kept for the bundles that use it | none new: this world is superseded and not for new apps | the Phase 2 and Phase 3 worlds | no | -- |
+| `krate:print@0.1.0/printers` | wit | that an app prints only when it declared device.printer, the person allowed it, and the organisation allows printing; that it reaches only a printer the person picked from the computer's own list, never listing or naming one; that the pick is remembered only for an app whose lineage can be checked again and only when a person decided, and is taken back with krate permissions --forget; and that a job is bounded (16 MiB, 1 to 100 copies) and a document's bytes are the format they claim | what to print and when, the document (PDF or a PNG page) or the printer language (ZPL, EPL, ESC/POS) and everything in it, copies, paper and label size, when to offer a different printer | none needed: an app that does not print loses nothing else, and ui/print still hands any page to the system's print dialog | no | -- |
 | `krate:process@0.1.0/processes` | wit | that a program runs only when the manifest names it by its bare name and the person allowed it, is found on the person's PATH or in ~/.cargo/bin without the app learning where, runs in the app's own folder or one the person picked, gets the person's environment without Krate's, and ends with the app, its whole process group with it | which programs, their arguments and input, how output is read and shown, whether to offer a terminal | none needed: a program is the person's own tool, and not running one costs the app nothing else | no | -- |
 | `krate:random@0.1.0/bytes` | wit | where operating-system randomness comes from | any PRNG or crate over it (rand, uuid, getrandom route here) | seed the app's own generator from it, or use none | no | -- |
 | `krate:resources@0.1.0/assets` | wit | that the app's own bundled files are readable with no grant, because they are the app's | what is bundled and in what format | embed bytes in the component itself | no | -- |
@@ -110,6 +111,7 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 
 - `krate:gfx@0.1.0/canvas2d`: a developer's own GPU renderer goes through krate:gpu, which presents by copying each frame into the canvas through the CPU until the presenter shares its device (K-407); scene3d is software
 - `krate:net@0.1.0/sockets`: listening for incoming connections is not offered yet, so an app cannot host a server (IC-935)
+- `krate:print@0.1.0/printers`: Windows prints PNG pages and raw printer language, not PDF, and uses the printer's own paper setting for a PNG; a browser tab and a phone answer unavailable
 - `krate:serial@0.1.0/ports`: USB bulk transfers and HID devices are not offered yet; a browser tab and a phone answer unavailable
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
 - `krate:ui@0.1.0/menu`: set-items answers unsupported on every host (IC-745)

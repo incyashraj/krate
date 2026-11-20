@@ -1710,6 +1710,27 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     );
     detect_pattern(
         analysis,
+        "printing",
+        &[
+            "win32print",
+            "import cups",
+            "pycups",
+            "python-escpos",
+            "from escpos",
+            "zebra.printer",
+            "printjob",
+            "javax.print",
+            "system.drawing.printing",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Printing",
+        "Print through Krate device.printer: the app never lists or names a printer -- krate::print::printer(title) answers the printer the person picked for this app before, or asks them to pick one, and remembers it so later prints need no dialog. Send a PDF or a PNG page with printer.pdf / printer.png (copies, paper size) or ZPL, EPL and ESC/POS byte for byte with printer.raw. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.printer"),
+    );
+    detect_pattern(
+        analysis,
         "serial",
         &[
             "serialport",
@@ -2925,6 +2946,22 @@ dependencies = [
             .contains(&"device.serial".to_string()));
         assert!(plan.findings.iter().any(|finding| finding.id == "serial"));
         assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// Printing code maps to device.printer (IC-986).
+    #[test]
+    fn printing_code_maps_to_device_printer() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("labels.py"),
+            "import cups\nconn = cups.Connection()\nconn.printFile('Zebra', 'l.zpl', 'l', {'raw': ''})\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"device.printer".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "printing"));
     }
 
     #[test]

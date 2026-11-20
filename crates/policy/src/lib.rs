@@ -601,6 +601,9 @@ pub fn reaches_outside_the_run(cap: &Capability) -> bool {
         // A serial device (IC-985): an instrument or a machine on a wire,
         // and a pick nobody in an automated run can make.
         "device.serial",
+        // A printer (IC-986): paper and labels out in the world, and a pick
+        // nobody in an automated run can make.
+        "device.printer",
         // The person's attention, data, and machine outside the sandbox.
         "ui.notify",
         "ui.open-url",
@@ -1765,6 +1768,7 @@ mod tests {
             "process.run:cargo",
             "process.terminal",
             "device.serial",
+            "device.printer",
         ] {
             let cap = outside.parse().expect("parse capability");
             assert!(
@@ -1817,6 +1821,7 @@ mod tests {
             "process.run",
             "process.terminal",
             "device.serial",
+            "device.printer",
         ] {
             assert!(
                 known.contains(entry),

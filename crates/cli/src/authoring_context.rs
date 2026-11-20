@@ -1000,6 +1000,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
         "process.terminal" => "the person's own shell in a terminal the app draws",
         "device.serial" => "a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable",
+        "device.printer" => "print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing",
         _ => "",
     }
 }
@@ -1260,7 +1261,29 @@ and waits for the person. For several pages, draw each one and call \
 answer is `Printed`, `Cancelled`, or `OpenedInViewer` (Windows and Linux \
 open the pages in the PDF viewer to print from there) -- say which in the \
 window, and never claim it printed on `OpenedInViewer`. Draw the page on a \
-white background: paper is white, and a dark theme wastes ink.\n\n";
+white background: paper is white, and a dark theme wastes ink.\n\n\
+**Printing to a printer the person picks, no dialog each time** \
+(`device.printer`, declared required, with a rationale) -- labels on a \
+packing bench, a job traveller with every work order, receipts: \
+`krate::print::printer(\"Choose the label printer\")?` answers the printer \
+the person picked for this app before, and shows the system's list only \
+when there is none; the pick is remembered, so every later print goes \
+straight out. `None` is a cancel. Offer a \"Change printer\" button that \
+calls `krate::print::pick(title)?`, and show `printer.name()` beside it. \
+Then `printer.raw(zpl_bytes, 1, \"WO-1042\")?` sends ZPL, EPL or ESC/POS \
+to a label or receipt printer byte for byte, and \
+`printer.pdf(&pdf_bytes, copies, krate::print::PaperSize::A4, title)?` or \
+`printer.png(&png_bytes, ...)` prints a document \
+(`PaperSize::Custom(krate::print::PaperMm { width: 100, height: 150 })` for \
+label stock). Build the PDF or PNG in the app (a PDF crate, or a canvas \
+picture). A job is at most 16 MiB and 1 to 100 copies; PDF bytes must start \
+`%PDF-`. The answer is `PrintOutcome::Queued(job)`, `Failed(words)` (the \
+system's reason: paused, out of paper) or `Gone(words)` (the printer was \
+removed: offer the pick again) -- show `krate::print::outcome_words`, and \
+`krate::print::words(&err)` on an `Err` (`NotAllowed` names \
+`device.printer`). The app never lists or names printers. A computer only: \
+Windows prints PNG and raw label language, not PDF; a browser tab and a \
+phone answer `Unavailable` in words.\n\n";
 
 /// Section 2f: game feel. The Ice Climber A/B (one request, two agents)
 /// showed the runtime treats every agent the same and the results still
