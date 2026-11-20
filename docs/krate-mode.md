@@ -31,10 +31,8 @@ rest stays the same". A Krate app directory is exactly:
     manifest.toml
 
 The build tool checks for all three before it does anything else, and a missing
-one fails immediately. Give the person the full contents of every file, all in
-ONE fenced code block, each file starting with a line `--- FILE: <path> ---` and
-the block ending with `--- END ---` -- the handoff at the end shows it. One block
-is one copy for the person, and Krate's build page reads it back as files.
+one fails immediately. Give the person the full contents of each, in its own
+fenced code block, labelled with its filename.
 
 **Never invent a capability name.** The manifest may only declare names from the
 capability table below. Anything else is refused when the app is packed. If the
@@ -2541,50 +2539,9 @@ required = true
 compiles, and you cannot check its imports. Do not tell the person their app
 works, is tested, or is ready. Say what you wrote and hand it to them to build.
 
-## If you have no Krate tool
+After the three files, end with the build instructions, adapted to their name:
 
-If you can call a Krate tool (`build_app`), use it: it builds and checks the app
-for you. Otherwise the person builds it in their browser, with nothing to
-install, at https://hub.krate.tech/build. That page reads your answer back into
-files, so the format is exact. Put every file in ONE code block, each file
-starting with its own `--- FILE: <path> ---` line, and end the block with
-`--- END ---`:
-
-    ```text
-    --- FILE: Cargo.toml ---
-    [package]
-    name = "tip-split"
-    ...the whole file...
-    --- FILE: manifest.toml ---
-    [app]
-    ...the whole file...
-    --- FILE: src/lib.rs ---
-    use krate::prelude::*;
-    ...the whole file...
-    --- END ---
-    ```
-
-- Paths are relative to the app folder: `Cargo.toml`, `manifest.toml`,
-  `src/lib.rs`, `src/other.rs`. Text files only.
-- No other code fences inside the block, and no words between the files.
-- Keep `PREFIX` in `Cargo.toml` exactly as the template writes it: Krate's
-  builder puts its own SDK there.
-- Every file, in full, every time -- including when you fix one.
-
-After the block, tell the person, in your own words:
-
-> Copy the whole block, open https://hub.krate.tech/build, paste it there, sign
-> in and press Build. Krate compiles it, checks it and gives you a link that
-> opens the app on any device. If the check fails, the page shows a box of
-> text: paste it back here and I will fix the code.
-
-When they paste that box back, it holds the stage that failed, the compiler's
-words and the fix. Fix the code against this document and send every file
-again in the same block.
-
-## If they have Krate on their computer
-
-> Save these files into a folder, then run:
+> Save these three files into a folder, then run:
 >
 >     krate check-app .
 >
