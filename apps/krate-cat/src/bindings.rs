@@ -8695,6 +8695,1078 @@ pub mod krate {
             }
         }
     }
+    pub mod serial {
+        /// Serial devices the person picks (IC-985): a lab instrument, a field
+        /// sensor, a microcontroller board, a drone or robot on a USB serial line.
+        ///
+        /// The app never lists the computer's ports and never names one. It asks to
+        /// `pick`; Krate shows the person the system's list of serial devices, and
+        /// the one they choose is the app's for this run, and nothing else is. The
+        /// pick is the grant: one handle, one port, until the app closes it or the
+        /// run ends. A second device needs a second pick.
+        ///
+        /// Behind `device.serial`, which the manifest declares (with a rationale)
+        /// and the person allows. Without it `pick` answers `not-allowed` with words
+        /// that name the capability, and no list is shown.
+        ///
+        /// Every port closes when the run ends: when the app returns, stops with an
+        /// error, or its window closes. Reads and writes are bounded: at most 65536
+        /// bytes a call, and a wait of at most 60 seconds.
+        ///
+        /// Desktop only (macOS, Windows, Linux). In a browser tab and on a phone
+        /// every call answers `unavailable` with words that say so.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod ports {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// A port the person picked. Numbers are never reused within a run and
+            /// mean nothing to another run.
+            pub type PortHandle = u64;
+            /// A port the person picked.
+            #[derive(Clone)]
+            pub struct Port {
+                /// The handle the app uses for this port from now on.
+                pub handle: PortHandle,
+                /// The device's name as the computer gives it, to show the person:
+                /// "USB Serial (FTDI)", "COM3", "/dev/cu.usbmodem1101".
+                pub name: _rt::String,
+            }
+            impl ::core::fmt::Debug for Port {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Port")
+                        .field("handle", &self.handle)
+                        .field("name", &self.name)
+                        .finish()
+                }
+            }
+            /// Parity, the check bit after each character.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum Parity {
+                /// No parity bit. The usual setting (8N1).
+                None,
+                /// An odd parity bit.
+                Odd,
+                /// An even parity bit.
+                Even,
+            }
+            impl ::core::fmt::Debug for Parity {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        Parity::None => f.debug_tuple("Parity::None").finish(),
+                        Parity::Odd => f.debug_tuple("Parity::Odd").finish(),
+                        Parity::Even => f.debug_tuple("Parity::Even").finish(),
+                    }
+                }
+            }
+            impl Parity {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> Parity {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => Parity::None,
+                        1 => Parity::Odd,
+                        2 => Parity::Even,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// Stop bits after each character.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum StopBits {
+                /// One stop bit. The usual setting (8N1).
+                One,
+                /// Two stop bits.
+                Two,
+            }
+            impl ::core::fmt::Debug for StopBits {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        StopBits::One => f.debug_tuple("StopBits::One").finish(),
+                        StopBits::Two => f.debug_tuple("StopBits::Two").finish(),
+                    }
+                }
+            }
+            impl StopBits {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> StopBits {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => StopBits::One,
+                        1 => StopBits::Two,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// How to talk to the device. 9600 or 115200 baud, 8 data bits, no
+            /// parity and one stop bit (8N1) is what most devices expect.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct Settings {
+                /// Bits a second, from 50 to 4000000: 9600, 115200 and so on.
+                pub baud_rate: u32,
+                /// Bits in a character: 5, 6, 7 or 8.
+                pub data_bits: u8,
+                /// The parity bit.
+                pub parity: Parity,
+                /// The stop bits.
+                pub stop_bits: StopBits,
+                /// How long a `read` that names no wait of its own waits for the first
+                /// byte, in milliseconds, at most 60000. 0 answers at once with what
+                /// has already arrived.
+                pub read_timeout_ms: u32,
+            }
+            impl ::core::fmt::Debug for Settings {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Settings")
+                        .field("baud-rate", &self.baud_rate)
+                        .field("data-bits", &self.data_bits)
+                        .field("parity", &self.parity)
+                        .field("stop-bits", &self.stop_bits)
+                        .field("read-timeout-ms", &self.read_timeout_ms)
+                        .finish()
+                }
+            }
+            /// Why a call was refused or failed. Each case carries words to show a
+            /// person, except `unknown-handle` and `not-open`, which are the app's own
+            /// mistakes.
+            #[derive(Clone)]
+            pub enum SerialError {
+                /// The app did not declare `device.serial`, or the person did not allow
+                /// it. The words say which and name the capability.
+                NotAllowed(_rt::String),
+                /// No serial device is connected to this computer, or this place has
+                /// none: a browser tab, a phone.
+                Unavailable(_rt::String),
+                /// No port has this handle in this run: never picked, or closed.
+                UnknownHandle,
+                /// The port was picked and not opened yet: `open` it first.
+                NotOpen,
+                /// A setting Krate does not accept, with words: a baud rate, data bits
+                /// or a wait out of range, or a write longer than 65536 bytes.
+                BadSettings(_rt::String),
+                /// Another program has the device open.
+                Busy(_rt::String),
+                /// The device went away: unplugged, or switched off.
+                Disconnected(_rt::String),
+                /// The app already holds 8 ports; close one first.
+                TooMany(_rt::String),
+                /// The computer refused, with its words.
+                Failed(_rt::String),
+            }
+            impl ::core::fmt::Debug for SerialError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        SerialError::NotAllowed(e) => {
+                            f.debug_tuple("SerialError::NotAllowed").field(e).finish()
+                        }
+                        SerialError::Unavailable(e) => {
+                            f.debug_tuple("SerialError::Unavailable").field(e).finish()
+                        }
+                        SerialError::UnknownHandle => {
+                            f.debug_tuple("SerialError::UnknownHandle").finish()
+                        }
+                        SerialError::NotOpen => {
+                            f.debug_tuple("SerialError::NotOpen").finish()
+                        }
+                        SerialError::BadSettings(e) => {
+                            f.debug_tuple("SerialError::BadSettings").field(e).finish()
+                        }
+                        SerialError::Busy(e) => {
+                            f.debug_tuple("SerialError::Busy").field(e).finish()
+                        }
+                        SerialError::Disconnected(e) => {
+                            f.debug_tuple("SerialError::Disconnected").field(e).finish()
+                        }
+                        SerialError::TooMany(e) => {
+                            f.debug_tuple("SerialError::TooMany").field(e).finish()
+                        }
+                        SerialError::Failed(e) => {
+                            f.debug_tuple("SerialError::Failed").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SerialError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            impl std::error::Error for SerialError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask the person to choose one serial device. `title` is a short line
+            /// for the list ("Choose the plate reader"), at most 200 characters.
+            ///
+            /// Some(port) when they chose one, none when they cancelled or no person
+            /// is there to choose (a run with no window and no display). Picking
+            /// does not open the port: call `open` with the settings the device
+            /// expects.
+            pub fn pick(title: &str) -> Result<Option<Port>, SerialError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 24 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 24
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "pick"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result32 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(*ptr1.add(8).cast::<u8>());
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1.add(16).cast::<i64>();
+                                            let l6 = *ptr1.add(24).cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(24 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            Port {
+                                                handle: l5 as u64,
+                                                name: _rt::string_lift(bytes8),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(*ptr1.add(8).cast::<u8>());
+                                let v31 = match l9 {
+                                    0 => {
+                                        let e31 = {
+                                            let l10 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SerialError::NotAllowed(e31)
+                                    }
+                                    1 => {
+                                        let e31 = {
+                                            let l13 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        SerialError::Unavailable(e31)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e31 = {
+                                            let l16 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        SerialError::BadSettings(e31)
+                                    }
+                                    5 => {
+                                        let e31 = {
+                                            let l19 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        SerialError::Busy(e31)
+                                    }
+                                    6 => {
+                                        let e31 = {
+                                            let l22 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        SerialError::Disconnected(e31)
+                                    }
+                                    7 => {
+                                        let e31 = {
+                                            let l25 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        SerialError::TooMany(e31)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e31 = {
+                                            let l28 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 = _rt::Vec::from_raw_parts(
+                                                l28.cast(),
+                                                len30,
+                                                len30,
+                                            );
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        SerialError::Failed(e31)
+                                    }
+                                };
+                                v31
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result32
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a picked port with `settings`. Called again on an open port, it
+            /// changes the settings in place.
+            pub fn open(
+                port: PortHandle,
+                settings: Settings,
+            ) -> Result<(), SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let Settings {
+                        baud_rate: baud_rate0,
+                        data_bits: data_bits0,
+                        parity: parity0,
+                        stop_bits: stop_bits0,
+                        read_timeout_ms: read_timeout_ms0,
+                    } = settings;
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open"]
+                        fn wit_import2(
+                            _: i64,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(port),
+                            _rt::as_i32(baud_rate0),
+                            _rt::as_i32(data_bits0),
+                            parity0.clone() as i32,
+                            stop_bits0.clone() as i32,
+                            _rt::as_i32(read_timeout_ms0),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result27 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l4 {
+                                    0 => {
+                                        let e26 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SerialError::NotAllowed(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::Unavailable(e26)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e26 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::BadSettings(e26)
+                                    }
+                                    5 => {
+                                        let e26 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::Busy(e26)
+                                    }
+                                    6 => {
+                                        let e26 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Disconnected(e26)
+                                    }
+                                    7 => {
+                                        let e26 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::TooMany(e26)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::Failed(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read at most `max` bytes (at most 65536): wait up to `timeout-ms`
+            /// (none: the `read-timeout-ms` the port was opened with; at most 60000)
+            /// for the first byte, then answer with what has arrived. Empty when the
+            /// wait ran out with nothing.
+            pub fn read(
+                port: PortHandle,
+                max: u32,
+                timeout_ms: Option<u32>,
+            ) -> Result<_rt::Vec<u8>, SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let (result0_0, result0_1) = match timeout_ms {
+                        Some(e) => (1i32, _rt::as_i32(e)),
+                        None => (0i32, 0i32),
+                    };
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "read"]
+                        fn wit_import2(_: i64, _: i32, _: i32, _: i32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(port),
+                            _rt::as_i32(&max),
+                            result0_0,
+                            result0_1,
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result30 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v29 = match l7 {
+                                    0 => {
+                                        let e29 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::NotAllowed(e29)
+                                    }
+                                    1 => {
+                                        let e29 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::Unavailable(e29)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e29 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::BadSettings(e29)
+                                    }
+                                    5 => {
+                                        let e29 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Busy(e29)
+                                    }
+                                    6 => {
+                                        let e29 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::Disconnected(e29)
+                                    }
+                                    7 => {
+                                        let e29 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::TooMany(e29)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e29 = {
+                                            let l26 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        SerialError::Failed(e29)
+                                    }
+                                };
+                                v29
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result30
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write every byte of `bytes` (at most 65536) to the device. Returns once
+            /// the device has taken them, waiting at most the port's
+            /// `read-timeout-ms` (at least one second) plus the time the bytes take on
+            /// the wire at its baud rate; past that, `failed`.
+            pub fn write(port: PortHandle, bytes: &[u8]) -> Result<(), SerialError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = bytes;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "write"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(port), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result27 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v26 = match l4 {
+                                    0 => {
+                                        let e26 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SerialError::NotAllowed(e26)
+                                    }
+                                    1 => {
+                                        let e26 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SerialError::Unavailable(e26)
+                                    }
+                                    2 => SerialError::UnknownHandle,
+                                    3 => SerialError::NotOpen,
+                                    4 => {
+                                        let e26 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        SerialError::BadSettings(e26)
+                                    }
+                                    5 => {
+                                        let e26 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        SerialError::Busy(e26)
+                                    }
+                                    6 => {
+                                        let e26 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        SerialError::Disconnected(e26)
+                                    }
+                                    7 => {
+                                        let e26 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        SerialError::TooMany(e26)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e26 = {
+                                            let l23 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        SerialError::Failed(e26)
+                                    }
+                                };
+                                v26
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result27
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Close the port and give up the pick: the handle is spent, and talking
+            /// to the device again needs a new pick. Closing an unknown handle does
+            /// nothing.
+            pub fn close(port: PortHandle) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:serial/ports@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(port)) };
+                }
+            }
+        }
+    }
     pub mod store {
         /// Durable key-value storage scoped to one application.
         ///
@@ -14116,8 +15188,8 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 7354] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc08\x01A\x02\x01AD\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 7866] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc0<\x01A\x02\x01AF\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -14289,9 +15361,21 @@ maxy\0\x13\x04\0\x0bread-stdout\x01\x14\x04\0\x0bread-stderr\x01\x14\x01k\x06\x0
 j\x01\x15\x01\x03\x01@\x02\x06handle\x01\x0atimeout-msy\0\x16\x04\0\x04wait\x01\x17\
 \x04\0\x04kill\x01\x12\x01@\x03\x06handle\x01\x04cols{\x04rows{\0\x10\x04\0\x06r\
 esize\x01\x18\x01@\x01\x06handle\x01\x01\0\x04\0\x07release\x01\x19\x03\0\x1dkra\
-te:process/processes@0.1.0\x05'\x01@\0\0z\x04\0\x03run\x01(\x04\0\x13krate:app/c\
-li@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
-\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+te:process/processes@0.1.0\x05'\x01B\x1c\x01w\x04\0\x0bport-handle\x03\0\0\x01r\x02\
+\x06handle\x01\x04names\x04\0\x04port\x03\0\x02\x01m\x03\x04none\x03odd\x04even\x04\
+\0\x06parity\x03\0\x04\x01m\x02\x03one\x03two\x04\0\x09stop-bits\x03\0\x06\x01r\x05\
+\x09baud-ratey\x09data-bits}\x06parity\x05\x09stop-bits\x07\x0fread-timeout-msy\x04\
+\0\x08settings\x03\0\x08\x01q\x09\x0bnot-allowed\x01s\0\x0bunavailable\x01s\0\x0e\
+unknown-handle\0\0\x08not-open\0\0\x0cbad-settings\x01s\0\x04busy\x01s\0\x0cdisc\
+onnected\x01s\0\x08too-many\x01s\0\x06failed\x01s\0\x04\0\x0cserial-error\x03\0\x0a\
+\x01k\x03\x01j\x01\x0c\x01\x0b\x01@\x01\x05titles\0\x0d\x04\0\x04pick\x01\x0e\x01\
+j\0\x01\x0b\x01@\x02\x04port\x01\x08settings\x09\0\x0f\x04\0\x04open\x01\x10\x01\
+ky\x01p}\x01j\x01\x12\x01\x0b\x01@\x03\x04port\x01\x03maxy\x0atimeout-ms\x11\0\x13\
+\x04\0\x04read\x01\x14\x01@\x02\x04port\x01\x05bytes\x12\0\x0f\x04\0\x05write\x01\
+\x15\x01@\x01\x04port\x01\x01\0\x04\0\x05close\x01\x16\x03\0\x18krate:serial/por\
+ts@0.1.0\x05(\x01@\0\0z\x04\0\x03run\x01)\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\
+\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compone\
+nt\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
