@@ -24957,26 +24957,43 @@ fn link_notes(dir: &Path) -> Vec<String> {
         return Vec::new();
     };
     let mut missing: Vec<String> = Vec::new();
+    // What a link reaches only in a browser that has the API (IC-992).
+    let mut chromium: Vec<String> = Vec::new();
     for request in &manifest.capabilities {
         let Ok(cap) = request.cap.parse::<krate_manifest::Capability>() else {
             continue;
         };
-        if cap.is_default_granted() || cap.works_in_a_tab() {
+        if cap.is_default_granted() {
             continue;
         }
         let words = format!("{} ({cap})", cap.plain());
-        if !missing.contains(&words) {
-            missing.push(words);
+        let list = if !cap.works_in_a_tab() {
+            &mut missing
+        } else if cap.tab_needs().is_some() {
+            &mut chromium
+        } else {
+            continue;
+        };
+        if !list.contains(&words) {
+            list.push(words);
         }
     }
-    if missing.is_empty() {
-        return Vec::new();
+    let mut notes = Vec::new();
+    if !missing.is_empty() {
+        notes.push(format!(
+            "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a \
+             link the app still opens, and says so when it reaches one",
+            missing.join(", ")
+        ));
     }
-    vec![format!(
-        "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a link \
-         the app still opens, and says so when it reaches one",
-        missing.join(", ")
-    )]
+    if !chromium.is_empty() {
+        notes.push(format!(
+            "from a link, {} works in Chrome and Edge (the browser's own device list); Safari \
+             and Firefox say to open the app there or in Krate",
+            chromium.join(", ")
+        ));
+    }
+    notes
 }
 
 struct CheckSummary {
@@ -34627,6 +34644,16 @@ mod link_note_tests {
             "{notes:?}"
         );
         assert!(!notes[0].contains("store.sql"), "{notes:?}");
+        // A serial or USB device works from a link in Chrome and Edge only
+        // (IC-992): said as such, not as needing a computer.
+        manifest(&["ui.window:create", "device.serial", "device.usb:1915:7777"]);
+        let notes = link_notes(dir.path());
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].starts_with("from a link, talk to a serial device you choose (device.serial)")
+                && notes[0].contains("(device.usb:1915:7777) works in Chrome and Edge"),
+            "{notes:?}"
+        );
     }
 }
 

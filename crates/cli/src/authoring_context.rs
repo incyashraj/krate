@@ -341,8 +341,10 @@ a windowed app and collect lines yourself. At most 65536 bytes a call and a \
 wait of at most 60000 ms. `Err(NotAllowed)` names `device.serial` (not \
 declared, or the person said no); `Err(Busy)` is another program holding \
 the device; `Err(Disconnected)` is the cable pulled: offer to pick again. \
-Show `krate::serial::words(&err)`. A computer only (macOS, Windows, Linux): \
-a browser tab and a phone answer `Err(Unavailable)` in words.\n\n\
+Show `krate::serial::words(&err)`. On a computer (macOS, Windows, Linux), \
+and from a link in Chrome or Edge, where the browser's own device list is the \
+pick (Web Serial); Safari, Firefox and a phone answer `Err(Unavailable)` with \
+words that say to open the app in Chrome or Edge, or in Krate.\n\n\
 To talk raw USB to a device the computer has no driver for -- a radio \
 dongle (Crazyradio), an instrument with its own protocol, a board -- \
 declare each model the app is for by its vendor and product ids in hex, \
@@ -367,10 +369,13 @@ waits of 1 to 60000 ms; keep waits short in a windowed app and poll from \
 the event loop. Keyboards, mice and other HID, storage, audio, video and \
 hubs answer `Err(NotForApps)` even when named. `Err(NotAllowed)` names the \
 capability; `Err(Busy)` is another program or a driver holding it; \
-`Err(Disconnected)`: offer to pick again. Show `krate::usb::words(&err)`. A \
-computer only (macOS, Windows, Linux; Linux needs a udev rule, which the \
-words give, and Windows the WinUSB driver): a browser tab and a phone \
-answer `Err(Unavailable)`.\n\n\
+`Err(Disconnected)`: offer to pick again. Show `krate::usb::words(&err)`. On \
+a computer (macOS, Windows, Linux; Linux needs a udev rule, which the words \
+give, and Windows the WinUSB driver), and from a link in Chrome or Edge \
+(WebUSB): the browser's own device list shows only the models the manifest \
+names, and its pick is the person's. That is also how a tab prints raw ZPL or \
+ESC/POS: name the label printer's ids and `bulk_out` to it. Safari, Firefox \
+and a phone answer `Err(Unavailable)` in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -965,8 +970,12 @@ fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
         Ok(cap) if !pattern.contains('<') => cap.works_in_a_tab(),
         _ => krate_manifest::works_in_a_tab(spec.module(), spec.action()),
     };
+    // Serial and USB from a link need the browser's Web Serial and WebUSB,
+    // which Chrome and Edge have (IC-992).
+    let chromium = krate_manifest::tab_needs(spec.module(), spec.action()).is_some();
     let link = match (tab, pattern.as_str()) {
         (true, "ui.dialog:*") => "yes, except `open-folder`",
+        (true, _) if chromium => "in Chrome and Edge",
         (true, _) => "yes",
         (false, _) => "computer only",
     };
@@ -1337,8 +1346,11 @@ and waits for the person. For several pages, draw each one and call \
 `ui::print::add_page(win)`, then `ui::print::finish(win, title)`. The \
 answer is `Printed`, `Cancelled`, or `OpenedInViewer` (Windows and Linux \
 open the pages in the PDF viewer to print from there) -- say which in the \
-window, and never claim it printed on `OpenedInViewer`. Draw the page on a \
-white background: paper is white, and a dark theme wastes ink.\n\n\
+window, and never claim it printed on `OpenedInViewer`. From a link it is \
+the browser's own print dialog, in every browser; a browser does not say \
+whether the person cancelled, so a tab answers `Printed` once its dialog \
+closes. Draw the page on a white background: paper is white, and a dark \
+theme wastes ink.\n\n\
 **Printing to a printer the person picks, no dialog each time** \
 (`device.printer`, declared required, with a rationale) -- labels on a \
 packing bench, a job traveller with every work order, receipts: \
@@ -1360,7 +1372,9 @@ removed: offer the pick again) -- show `krate::print::outcome_words`, and \
 `krate::print::words(&err)` on an `Err` (`NotAllowed` names \
 `device.printer`). The app never lists or names printers. A computer only: \
 Windows prints PNG and raw label language, not PDF; a browser tab and a \
-phone answer `Unavailable` in words.\n\n";
+phone answer `Unavailable` in words. From a link, print what the window \
+shows (`krate:ui/print`), and send raw label language to a USB label printer \
+named as `device.usb:<vendor>:<product>` (Chrome and Edge).\n\n";
 
 /// Section 2f: game feel. The Ice Climber A/B (one request, two agents)
 /// showed the runtime treats every agent the same and the results still

@@ -52,6 +52,7 @@ pub fn generate() -> String {
     out.push_str(API_PREAMBLE);
     out.push_str(&authoring_context::sdk_surface_section());
     out.push_str(&authoring_context::capability_catalog_section());
+    out.push_str(DEVICES_FROM_A_LINK);
     out.push_str(&authoring_context::gui_world_section());
     // The design guidance, which this prompt shipped without.
     //
@@ -388,6 +389,20 @@ capability names that exist.**
 The three sections keep the numbering they have in Krate's own reference file, so
 you will see 1, 2, and 4 -- their 3 and 5 are the `no_std` rules and the example
 index, which this document has already covered in its own words.
+
+";
+
+/// Serial and USB from a link (IC-992): most people open a Krate app from a
+/// link, so a device app has to know where it works there.
+const DEVICES_FROM_A_LINK: &str = "\
+**Devices from a link.** `device.serial` and `device.usb:<vendor>:<product>` work
+in Krate on a computer and also from a link in Chrome or Edge: the browser's own
+device list is the person's pick, and for USB it shows only the models the
+manifest names. Call `serial::pick` or `usb::pick` from a button the person taps
+(a browser shows its list only inside a tap; otherwise Krate asks for one more).
+Safari and Firefox answer `Err(Unavailable)` with words that say to open the app
+in Chrome or Edge, or in Krate: show `serial::words(&err)` or `usb::words(&err)`.
+Printing what the window shows (`ui::print`) uses the browser's print dialog.
 
 ";
 
