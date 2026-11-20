@@ -7510,6 +7510,7 @@ fn an_app_serves_only_the_port_it_declares_and_stops_with_the_run() {
 fn an_app_talks_only_to_the_usb_device_the_person_picks() {
     if !cfg!(debug_assertions) {
         // A release build never reads KRATE_USB_FAKE, by design.
+        eprintln!("skipping: a release build has no fake USB backend to script");
         return;
     }
     let dir = tempfile::tempdir().expect("tempdir");
