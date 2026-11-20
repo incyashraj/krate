@@ -570,6 +570,15 @@ let timezone = krate::locale::timezone();
 - `timezone() -> string`
   - Returns the host timezone name.
   - Expected form is an IANA name such as `Asia/Singapore` when the host can provide one.
+> Minutes east of UTC in the person's own timezone (the one `timezone`
+> names) at the instant `millis` (Unix epoch milliseconds), daylight
+> saving included: 60 in Zurich in January, 120 in July, -300 in New
+> York in January, 330 in India. Local time is `millis + offset * 60000`;
+> "today" for a person is the local day, never the UTC day.
+
+- `utc-offset(millis: u64) -> s32`
+  - Returns minutes east of UTC in the person's timezone at a Unix-millisecond instant, daylight saving included.
+  - Local time is `millis + offset * 60000`; use it for "today", streaks and schedules, never the UTC day.
 
 
 ## `krate:locale/types@0.1.0`

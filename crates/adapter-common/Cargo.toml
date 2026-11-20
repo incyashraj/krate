@@ -14,6 +14,17 @@ thiserror.workspace = true
 # controls, does not pay for the font stack.
 parley = { version = "0.11.0", optional = true }
 vello_cpu = { version = "0.0.9", features = ["text"], optional = true }
+# The time zone database behind `utc_offset_minutes` (IC-991): the system's
+# zoneinfo first, the bundled tzdb where there is none (Windows, a bare
+# container), and the system zone on Windows, which has no TZ to read.
+# Optional so crates that only validate manifests -- the hub's validator
+# wasm among them -- do not carry the database; the runtime turns it on.
+jiff = { version = "0.2.39", default-features = false, features = [
+    "std",
+    "tz-system",
+    "tzdb-zoneinfo",
+    "tzdb-bundle-always",
+], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # fontique (parley's font backend) links fontconfig at build time by
@@ -26,3 +37,6 @@ fontique = { version = "0.11.0", features = [
 
 [features]
 vector-text = ["dep:parley", "dep:vello_cpu", "dep:fontique"]
+# Real time zone offsets (IC-991). Without it only fixed `UTC+hh:mm` zones
+# have an offset and every named zone reads as UTC.
+tzdb = ["dep:jiff"]

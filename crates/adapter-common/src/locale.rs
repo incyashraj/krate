@@ -133,10 +133,18 @@ impl HostLocale {
         self.timezone.clone()
     }
 
+    /// Minutes east of UTC in this host's timezone at `millis` (IC-991).
+    pub fn utc_offset_minutes(&self, millis: u64) -> i32 {
+        utc_offset_minutes(millis, &self.timezone)
+    }
+
     pub fn format_date(millis: u64, timezone: &str, style: DateStyle, locale: &LocaleId) -> String {
         let timezone = normalize_timezone(Some(timezone));
-        let shifted_millis = i128::from(millis)
-            + i128::from(timezone_offset_minutes(&timezone).unwrap_or_default()) * 60 * 1_000;
+        // The same offset `utc-offset` answers, so a date an app formats and
+        // the local day it computes never disagree. Before IC-991 only fixed
+        // `UTC+hh:mm` zones shifted, and "Europe/Zurich" formatted as UTC.
+        let shifted_millis =
+            i128::from(millis) + i128::from(utc_offset_minutes(millis, &timezone)) * 60 * 1_000;
         let parts = utc_parts_from_unix_millis(shifted_millis);
         let locale = normalize_locale_tag(Some(&locale.bcp47));
 
@@ -186,13 +194,63 @@ impl HostLocale {
 fn system_timezone_fallback() -> Option<String> {
     #[cfg(unix)]
     {
-        infer_unix_timezone_from_localtime()
+        infer_unix_timezone_from_localtime().or_else(system_zone_from_tzdb)
     }
 
+    // Windows has no TZ and no /etc/localtime: before IC-991 every Windows
+    // person was in "UTC". The system zone, mapped to its IANA name.
     #[cfg(not(unix))]
     {
-        None
+        system_zone_from_tzdb()
     }
+}
+
+#[cfg(feature = "tzdb")]
+fn system_zone_from_tzdb() -> Option<String> {
+    let zone = jiff::tz::TimeZone::try_system().ok()?;
+    let name = zone.iana_name()?;
+    // jiff names a zone it could not identify "Etc/Unknown"; that is not
+    // the person's zone, so fall through to UTC as before.
+    if name.is_empty() || name == "Etc/Unknown" {
+        return None;
+    }
+    let normalized = normalize_timezone(Some(name));
+    (normalized != "UTC" || name.eq_ignore_ascii_case("UTC")).then_some(normalized)
+}
+
+#[cfg(not(feature = "tzdb"))]
+fn system_zone_from_tzdb() -> Option<String> {
+    None
+}
+
+/// Minutes east of UTC in `timezone` at the instant `millis` (Unix epoch
+/// milliseconds), daylight saving included (IC-991): 60 for Europe/Zurich in
+/// January and 120 in July, -300 / -240 for America/New_York, 330 for
+/// Asia/Kolkata. A fixed `UTC+hh:mm` zone is its own offset. A name no
+/// database knows answers 0 -- the same UTC the rest of the host falls back to.
+pub fn utc_offset_minutes(millis: u64, timezone: &str) -> i32 {
+    let timezone = normalize_timezone(Some(timezone));
+    if let Some(fixed) = timezone_offset_minutes(&timezone) {
+        return fixed;
+    }
+    named_zone_offset_minutes(millis, &timezone).unwrap_or(0)
+}
+
+#[cfg(feature = "tzdb")]
+fn named_zone_offset_minutes(millis: u64, zone: &str) -> Option<i32> {
+    let at = jiff::Timestamp::from_millisecond(i64::try_from(millis).ok()?).ok()?;
+    // The system's zoneinfo first (kept current by the OS), the bundled
+    // database when the system has none or lacks this zone.
+    let tz = jiff::tz::db()
+        .get(zone)
+        .or_else(|_| jiff::tz::TimeZoneDatabase::bundled().get(zone))
+        .ok()?;
+    Some(tz.to_offset(at).seconds().div_euclid(60))
+}
+
+#[cfg(not(feature = "tzdb"))]
+fn named_zone_offset_minutes(_millis: u64, _zone: &str) -> Option<i32> {
+    None
 }
 
 #[cfg(unix)]
@@ -656,6 +714,133 @@ mod tests {
             HostLocale::format_date(0, "UTC-01:00", DateStyle::Short, &locale),
             "1969-12-31"
         );
+    }
+
+    /// Unix millis for a UTC wall-clock time, so each instant below reads as
+    /// the date it is rather than a magic number.
+    fn utc(year: i32, month: u8, day: u8, hour: u8, minute: u8) -> u64 {
+        let y = i64::from(year) - i64::from(month <= 2);
+        let era = y.div_euclid(400);
+        let yoe = y - era * 400;
+        let mp = (i64::from(month) + 9) % 12;
+        let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        let days = era * 146_097 + doe - 719_468;
+        let secs = days * 86_400 + i64::from(hour) * 3_600 + i64::from(minute) * 60;
+        u64::try_from(secs * 1_000).expect("after 1970")
+    }
+
+    #[test]
+    fn the_utc_helper_names_real_instants() {
+        assert_eq!(utc(1970, 1, 1, 0, 0), 0);
+        assert_eq!(utc(2026, 3, 29, 1, 0), 1_774_746_000_000);
+    }
+
+    /// IC-991: the offset follows daylight saving to the minute it changes.
+    /// Zurich springs forward at 01:00 UTC on the last Sunday of March and
+    /// falls back at 01:00 UTC on the last Sunday of October.
+    #[cfg(feature = "tzdb")]
+    #[test]
+    fn zurich_offset_changes_at_the_dst_instant() {
+        let z = "Europe/Zurich";
+        let spring = utc(2026, 3, 29, 1, 0);
+        assert_eq!(utc_offset_minutes(spring - 60_000, z), 60);
+        assert_eq!(utc_offset_minutes(spring, z), 120);
+        let autumn = utc(2026, 10, 25, 1, 0);
+        assert_eq!(utc_offset_minutes(autumn - 60_000, z), 120);
+        assert_eq!(utc_offset_minutes(autumn, z), 60);
+        assert_eq!(utc_offset_minutes(utc(2026, 1, 15, 12, 0), z), 60);
+        assert_eq!(utc_offset_minutes(utc(2026, 7, 15, 12, 0), z), 120);
+    }
+
+    /// New York changes at 02:00 local: 07:00 UTC in March (second Sunday),
+    /// 06:00 UTC in November (first Sunday).
+    #[cfg(feature = "tzdb")]
+    #[test]
+    fn new_york_offset_changes_at_the_dst_instant() {
+        let ny = "America/New_York";
+        let spring = utc(2026, 3, 8, 7, 0);
+        assert_eq!(utc_offset_minutes(spring - 1, ny), -300);
+        assert_eq!(utc_offset_minutes(spring, ny), -240);
+        let autumn = utc(2026, 11, 1, 6, 0);
+        assert_eq!(utc_offset_minutes(autumn - 1, ny), -240);
+        assert_eq!(utc_offset_minutes(autumn, ny), -300);
+    }
+
+    /// Half-hour zones: India all year, Adelaide with daylight saving
+    /// (+10:30 in January, its summer; +09:30 in July).
+    #[cfg(feature = "tzdb")]
+    #[test]
+    fn half_hour_zones_keep_their_half_hour() {
+        assert_eq!(
+            utc_offset_minutes(utc(2026, 1, 15, 12, 0), "Asia/Kolkata"),
+            330
+        );
+        assert_eq!(
+            utc_offset_minutes(utc(2026, 7, 15, 12, 0), "Asia/Kolkata"),
+            330
+        );
+        assert_eq!(
+            utc_offset_minutes(utc(2026, 1, 15, 12, 0), "Australia/Adelaide"),
+            630
+        );
+        assert_eq!(
+            utc_offset_minutes(utc(2026, 7, 15, 12, 0), "Australia/Adelaide"),
+            570
+        );
+        assert_eq!(
+            utc_offset_minutes(utc(2026, 7, 15, 12, 0), "Asia/Kathmandu"),
+            345
+        );
+    }
+
+    /// A machine with no zoneinfo (Windows, a bare container) answers from
+    /// the bundled database: the same offsets with the system's files gone.
+    #[cfg(feature = "tzdb")]
+    #[test]
+    fn the_bundled_database_alone_knows_the_zones() {
+        let bundled = jiff::tz::TimeZoneDatabase::bundled();
+        let at = |ms: u64| jiff::Timestamp::from_millisecond(ms as i64).unwrap();
+        let zurich = bundled.get("Europe/Zurich").expect("bundled Zurich");
+        let spring = utc(2026, 3, 29, 1, 0);
+        assert_eq!(zurich.to_offset(at(spring - 1)).seconds(), 3_600);
+        assert_eq!(zurich.to_offset(at(spring)).seconds(), 7_200);
+        let kolkata = bundled.get("Asia/Kolkata").expect("bundled Kolkata");
+        assert_eq!(kolkata.to_offset(at(spring)).seconds(), 19_800);
+    }
+
+    /// Fixed forms are their own offset; a name nobody knows, garbage, and
+    /// an instant past any database answer UTC rather than failing.
+    #[test]
+    fn fixed_and_unknown_zones_have_a_plain_answer() {
+        assert_eq!(utc_offset_minutes(0, "UTC"), 0);
+        assert_eq!(utc_offset_minutes(0, "UTC+05:30"), 330);
+        assert_eq!(utc_offset_minutes(0, "-0330"), -210);
+        assert_eq!(utc_offset_minutes(0, "Mars/Olympus_Mons"), 0);
+        assert_eq!(utc_offset_minutes(0, "../etc/passwd"), 0);
+        assert_eq!(utc_offset_minutes(u64::MAX, "Europe/Zurich"), 0);
+    }
+
+    /// `format-date` uses the same offset, so a formatted date and the local
+    /// day an app computes agree. 23:30 UTC on 14 January is already the
+    /// 15th in Zurich.
+    #[cfg(feature = "tzdb")]
+    #[test]
+    fn format_date_shifts_a_named_zone() {
+        let locale = LocaleId {
+            bcp47: "en-US".to_string(),
+        };
+        let late = utc(2026, 1, 14, 23, 30);
+        assert_eq!(
+            HostLocale::format_date(late, "Europe/Zurich", DateStyle::Medium, &locale),
+            "2026-01-15 00:30"
+        );
+        assert_eq!(
+            HostLocale::format_date(late, "America/New_York", DateStyle::Short, &locale),
+            "2026-01-14"
+        );
+        let host = HostLocale::from_env_pairs([("TZ", "Asia/Kolkata")]);
+        assert_eq!(host.utc_offset_minutes(late), 330);
     }
 
     #[test]

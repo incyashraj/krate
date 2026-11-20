@@ -7229,6 +7229,92 @@ fn an_app_talks_only_to_the_serial_device_the_person_picks() {
     }
 }
 
+/// An app's "today" is the person's day, not the UTC day (IC-991, K-1300).
+///
+/// `local-time-probe.wasm` is apps/krate-local-time-probe built: it prints
+/// `krate::locale::local_now()` -- the offset, the local date and time, the
+/// weekday and the local day number -- through the binary a person runs.
+#[test]
+fn an_app_reads_the_persons_local_time_daylight_saving_included() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/local-time-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.local-time-probe\"\nname = \"local-time-probe\"\n\
+         version = \"1.0.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"time.clock\"\nrationale = \"now\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"locale.info\"\nrationale = \"zone\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("local-time-probe.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let at = |zone: &str, millis: u64| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .args(["--auto-grant", "--test-timezone", zone, "--test-time"])
+            .arg(millis.to_string())
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // 2026-03-29 01:00 UTC: Zurich springs from +01:00 to +02:00, so one
+    // second apart is an hour and a second apart on the wall.
+    let spring = 1_774_746_000_000;
+    assert_eq!(
+        at("Europe/Zurich", spring - 1_000),
+        "tz=Europe/Zurich offset=60 local=2026-03-29 01:59:59 weekday=7 day=20541"
+    );
+    assert_eq!(
+        at("Europe/Zurich", spring),
+        "tz=Europe/Zurich offset=120 local=2026-03-29 03:00:00 weekday=7 day=20541"
+    );
+
+    // 23:30 UTC on Wednesday 14 January 2026: Thursday the 15th in Zurich
+    // and India, still the 14th in New York. The UTC day is 20467 for all.
+    let late = 1_768_433_400_000;
+    assert_eq!(
+        at("Europe/Zurich", late),
+        "tz=Europe/Zurich offset=60 local=2026-01-15 00:30:00 weekday=4 day=20468"
+    );
+    assert_eq!(
+        at("America/New_York", late),
+        "tz=America/New_York offset=-300 local=2026-01-14 18:30:00 weekday=3 day=20467"
+    );
+    assert_eq!(
+        at("Asia/Kolkata", late),
+        "tz=Asia/Kolkata offset=330 local=2026-01-15 05:00:00 weekday=4 day=20468"
+    );
+    assert_eq!(
+        at("Australia/Adelaide", late),
+        "tz=Australia/Adelaide offset=630 local=2026-01-15 10:00:00 weekday=4 day=20468"
+    );
+    // A zone no database knows is UTC, as the rest of the host treats it.
+    assert_eq!(
+        at("Mars/Olympus_Mons", late),
+        "tz=Mars/Olympus_Mons offset=0 local=2026-01-14 23:30:00 weekday=3 day=20467"
+    );
+}
+
 /// An app serves the people on its network on the one port it declares,
 /// and stops when the run does (krate:net/sockets listening, IC-987).
 ///
