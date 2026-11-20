@@ -125,6 +125,13 @@ pub mod secret_host;
     any(target_os = "macos", target_os = "linux", target_os = "windows")
 ))]
 pub mod serial_host;
+// Where a listener for the network is reached, and announcing it there
+// (IC-990): desktop only, as listening is.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+mod serve_discovery;
 pub mod shared_host;
 #[cfg(target_os = "macos")]
 mod speech_apple;
@@ -6647,6 +6654,165 @@ mod tests {
             std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
             "the host gone, its listener is gone"
         );
+    }
+
+    /// A listener for the network says where it is reached and announces
+    /// itself (IC-990); one for this computer alone does neither, so the
+    /// person's yes for the port is what opens both. An announcement goes
+    /// when its listener closes, and the rest when the run ends.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_network_listener_says_where_it_is_and_announces_itself_until_it_closes() {
+        use phase2_bindings::krate::net::sockets::{Host, ListenError, ListenScope};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let heard = serve_discovery::tests::Heard::default();
+        let host_with = |grants: &[&str], declared: &[&str]| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(Some(
+                declared
+                    .iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect(),
+            ))
+            .with_printers(None, Some("Shop Floor"))
+            .with_announcer(Box::new(heard.clone()))
+        };
+        let free_port = || {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+            l.local_addr().expect("addr").port()
+        };
+        let (port, second) = (free_port(), free_port());
+        let cap = format!("net.listen:{port}");
+        let cap2 = format!("net.listen:{second}");
+
+        // Declared, never allowed: this computer alone. Neither call says
+        // anything about the network.
+        let mut host = host_with(&[], &[cap.as_str()]);
+        let alone = host
+            .tcp_listen(port, ListenScope::ThisComputer)
+            .expect("no trap")
+            .expect("this computer needs only the declaration");
+        let refused = format!(
+            "this app listens on port {port} for this computer only, so other devices on your \
+             network cannot open it"
+        );
+        assert!(matches!(
+            host.tcp_addresses(alone).expect("no trap"),
+            Err(ListenError::NotAllowed(words)) if words == refused
+        ));
+        assert!(matches!(
+            host.tcp_announce(alone, "_http._tcp".into()).expect("no trap"),
+            Err(ListenError::NotAllowed(words)) if words == refused
+        ));
+        // Not a listener at all.
+        assert!(matches!(
+            host.tcp_addresses(9_999).expect("no trap"),
+            Err(ListenError::UnknownHandle)
+        ));
+        drop(host);
+        assert!(heard.0.lock().unwrap().is_empty(), "nothing announced");
+
+        // Declared and allowed: the network.
+        let mut host = host_with(
+            &[cap.as_str(), cap2.as_str()],
+            &[cap.as_str(), cap2.as_str()],
+        );
+        let listener = host
+            .tcp_listen(port, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("declared and allowed");
+        let found = host
+            .tcp_addresses(listener)
+            .expect("no trap")
+            .expect("where it is reached");
+        let expected: Vec<String> = serve_discovery::local_network_addresses()
+            .iter()
+            .map(|ip| ip.to_string())
+            .collect();
+        assert_eq!(
+            found.iter().map(|a| a.ip.clone()).collect::<Vec<_>>(),
+            expected,
+            "this computer's own local-network addresses"
+        );
+        for a in &found {
+            let ip: std::net::Ipv4Addr = a.ip.parse().expect("an IPv4 address");
+            assert!(ip.is_private() || ip.is_link_local(), "{ip} is private");
+            assert_eq!(a.port, port);
+            assert_eq!(a.url, format!("http://{ip}:{port}/"));
+        }
+
+        // A service type that is not one: refused in words, nothing sent.
+        assert!(matches!(
+            host.tcp_announce(listener, "web pages".into()).expect("no trap"),
+            Err(ListenError::Failed(words)) if words.contains("_http._tcp for web pages")
+        ));
+        assert!(heard.0.lock().unwrap().is_empty());
+
+        let announced = host
+            .tcp_announce(listener, "_http._tcp".into())
+            .expect("no trap");
+        if expected.is_empty() {
+            // A computer on no local network has nothing to announce on.
+            assert!(matches!(
+                announced,
+                Err(ListenError::Failed(words)) if words.contains("not on a local network")
+            ));
+            return;
+        }
+        let announced = announced.expect("announced");
+        assert_eq!(announced.name, "Shop Floor");
+        assert_eq!(announced.host, "shop-floor.local");
+        assert_eq!(announced.url, format!("http://shop-floor.local:{port}/"));
+        let other = host
+            .tcp_listen(second, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("a second listener");
+        host.tcp_announce(other, "_shopfloor._tcp".into())
+            .expect("no trap")
+            .expect("announced");
+        let ips = format!(
+            "{:?}",
+            expected
+                .iter()
+                .map(|ip| ip.parse::<std::net::Ipv4Addr>().unwrap())
+                .collect::<Vec<_>>()
+        );
+        // The listener closes: its announcement goes, the other stays.
+        host.close(listener).expect("no trap");
+        assert_eq!(
+            *heard.0.lock().unwrap(),
+            [
+                format!("announce Shop Floor._http._tcp.local. shop-floor.local {port} {ips}"),
+                format!(
+                    "announce Shop Floor._shopfloor._tcp.local. shop-floor.local {second} {ips}"
+                ),
+                "withdraw Shop Floor._http._tcp.local.".to_string(),
+            ]
+        );
+        // The run ends: the rest go.
+        drop(host);
+        assert_eq!(
+            heard.0.lock().unwrap().last().map(String::as_str),
+            Some("withdraw Shop Floor._shopfloor._tcp.local.")
+        );
+        assert_eq!(heard.0.lock().unwrap().len(), 4);
     }
 
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing

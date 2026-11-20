@@ -1389,9 +1389,10 @@ pub mod net {
     /// ```
     pub mod sockets {
         pub use crate::bindings::krate::net::sockets::{
-            close, lookup, poll_lookup, tcp_accept, tcp_connect, tcp_listen, tcp_local_port,
-            tcp_read, tcp_status, tcp_write, udp_bind, udp_local_port, udp_receive, udp_send,
-            ConnectStatus, Datagram, ListenError, ListenScope, LookupStatus, ReadResult,
+            close, lookup, poll_lookup, tcp_accept, tcp_addresses, tcp_announce, tcp_connect,
+            tcp_listen, tcp_local_port, tcp_read, tcp_status, tcp_write, udp_bind, udp_local_port,
+            udp_receive, udp_send, Announcement, ConnectStatus, Datagram, ListenAddress,
+            ListenError, ListenScope, LookupStatus, ReadResult,
         };
     }
 
@@ -1408,9 +1409,20 @@ pub mod net {
     /// way. Dropping either closes it, and every one closes when the app
     /// ends.
     ///
+    /// A listener for the network says where it is reached (IC-990):
+    /// [`Listener::addresses`] gives this computer's addresses on the local
+    /// network with the port and a link to show the person ("open
+    /// http://192.168.1.20:8080/ on the tablet"), and [`Listener::announce`]
+    /// lets the network's devices find it by the app's name, as printers are
+    /// found, at `http://<app-name>.local:<port>/`, until it closes.
+    ///
     /// ```ignore
     /// use krate::net::listen::{Listener, Scope};
     /// let server = Listener::open(8080, Scope::LocalNetwork)?;
+    /// for at in server.addresses()? {
+    ///     show(&at.url); // "http://192.168.1.20:8080/"
+    /// }
+    /// let named = server.announce("_http._tcp")?; // named.url: "http://shop-floor.local:8080/"
     /// // each turn of the loop:
     /// while let Some(conn) = server.accept()? {
     ///     clients.push(conn);
@@ -1423,9 +1435,11 @@ pub mod net {
         use super::NetError;
         use crate::bindings::krate::net::sockets as host;
         pub use crate::bindings::krate::net::sockets::{
-            ConnectStatus, ListenError, ListenScope as Scope, ReadResult,
+            Announcement, ConnectStatus, ListenAddress, ListenError, ListenScope as Scope,
+            ReadResult,
         };
         use alloc::string::String;
+        use alloc::vec::Vec;
 
         /// A port this app listens on. Dropped, it is closed: the
         /// connections it accepted stay open until each is dropped.
@@ -1448,6 +1462,28 @@ pub mod net {
             /// The port it listens on.
             pub fn port(&self) -> Result<u16, ListenError> {
                 host::tcp_local_port(self.handle)
+            }
+
+            /// Where other devices on the local network reach it: this
+            /// computer's private addresses with the port, the main
+            /// connection first, each with a `url` to show the person. Only
+            /// for a [`Scope::LocalNetwork`] listener (`NotAllowed`
+            /// otherwise); empty when the computer is on no network. Ask
+            /// again when showing it later: an address changes when the
+            /// computer joins another network.
+            pub fn addresses(&self) -> Result<Vec<ListenAddress>, ListenError> {
+                host::tcp_addresses(self.handle)
+            }
+
+            /// Let devices on the local network find it by the app's name
+            /// (DNS-SD over multicast DNS, as printers are found):
+            /// `"_http._tcp"` for web pages, or the app's own type
+            /// (`"_shopfloor._tcp"`). Returns the name devices list, the
+            /// `<app-name>.local` host and a `url` to show. Withdrawn when the
+            /// listener is dropped or the app ends. A [`Scope::LocalNetwork`]
+            /// listener only.
+            pub fn announce(&self, service_type: &str) -> Result<Announcement, ListenError> {
+                host::tcp_announce(self.handle, service_type)
             }
 
             /// The raw handle, for the `sockets` calls.

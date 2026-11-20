@@ -7496,6 +7496,174 @@ fn an_app_serves_only_the_port_it_declares_and_stops_with_the_run() {
     drop(busy);
 }
 
+/// An app serving the network says where it is reached and announces itself
+/// by name, and only when the person let the network open it (IC-990).
+///
+/// `announce-probe.wasm` is apps/krate-announce-probe built. Its manifest
+/// name here is "Shop Floor". `KRATE_ANNOUNCE_TO` stands in for the network:
+/// the run writes what it would announce and withdraw to a file and sends
+/// nothing, so this needs no permission to use the network.
+#[test]
+fn an_app_says_where_it_is_reached_and_announces_itself_by_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/announce-probe.wasm")).expect("probe");
+    let port = {
+        let l = TcpListener::bind("127.0.0.1:0").expect("a free port");
+        l.local_addr().expect("addr").port()
+    };
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "[app]\nid = \"com.acme.announce-probe\"\nname = \"Shop Floor\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+             [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"net.listen:{port}\"\nrationale = \"the floor's tablets\"\n\
+             required = false\n"
+        ),
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("announce-probe.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let heard = dir.path().join("announced.txt");
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+    let run = |grants: &[&str], args: &[&str]| {
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_ANNOUNCE_TO", &heard)
+            .arg("run")
+            .arg(&bundle)
+            .args(grants)
+            .arg("--")
+            .args(args)
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let told = || std::fs::read_to_string(&heard).unwrap_or_default();
+    let p = port.to_string();
+
+    // For this computer alone (the declaration, no yes): neither call.
+    let alone = format!(
+        "not-allowed: this app listens on port {port} for this computer only, so other devices \
+         on your network cannot open it"
+    );
+    assert_eq!(
+        run(&basics, &["where", &p, "this-computer"]),
+        format!("where: {alone}")
+    );
+    assert_eq!(
+        run(&basics, &["announce", &p, "this-computer"]),
+        format!("announce: {alone}")
+    );
+    // The network without the person's yes: it never listens at all.
+    assert!(run(&basics, &["announce", &p, "local-network"])
+        .starts_with("announce: not-allowed: you did not let other devices on your network"));
+    assert_eq!(told(), "", "nothing announced without the person's yes");
+
+    // The network, allowed: this computer's private addresses, the main
+    // connection first. The address a UDP socket would leave from is the
+    // main connection; connecting one sends nothing.
+    let main = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| s.connect("192.0.2.1:9").map(|_| s))
+        .and_then(|s| s.local_addr())
+        .ok()
+        .and_then(|a| match a.ip() {
+            std::net::IpAddr::V4(ip) if ip.is_private() || ip.is_link_local() => Some(ip),
+            _ => None,
+        });
+    let said = run(&all, &["where", &p, "local-network"]);
+    let listed = said
+        .strip_prefix("where: [")
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or_else(|| panic!("a list of addresses: {said}"));
+    let ips: Vec<std::net::Ipv4Addr> = listed
+        .split(", ")
+        .filter(|a| !a.is_empty())
+        .map(|entry| {
+            let (at, url) = entry.split_once(' ').expect("ip:port url");
+            let (ip, at_port) = at.split_once(':').expect("ip:port");
+            let ip: std::net::Ipv4Addr = ip.parse().expect("an IPv4 address");
+            assert!(ip.is_private() || ip.is_link_local(), "{ip} is not private");
+            assert_eq!(at_port, p);
+            assert_eq!(url, format!("http://{ip}:{port}/"));
+            ip
+        })
+        .collect();
+    if let Some(main) = main {
+        assert_eq!(
+            ips.first(),
+            Some(&main),
+            "the main connection's address comes first: {said}"
+        );
+    }
+
+    // Announced by the app's name, and withdrawn when the listener closes.
+    let addresses = ips
+        .iter()
+        .map(|ip| ip.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let said = run(&all, &["announce", &p, "local-network"]);
+    if ips.is_empty() {
+        assert!(
+            said.starts_with("announce: failed: this computer is not on a local network"),
+            "{said}"
+        );
+        assert_eq!(told(), "");
+        return;
+    }
+    assert_eq!(
+        said,
+        format!("announce: Shop Floor at shop-floor.local http://shop-floor.local:{port}/")
+    );
+    assert_eq!(
+        told(),
+        format!(
+            "announce\tShop Floor._http._tcp.local.\tshop-floor.local\t{port}\t{addresses}\n\
+             withdraw\tShop Floor._http._tcp.local.\n"
+        )
+    );
+    // The app's own service type, left open: the run ending withdraws it.
+    std::fs::remove_file(&heard).expect("start over");
+    assert_eq!(
+        run(&all, &["hold", &p, "local-network", "_shopfloor._tcp"]),
+        format!("hold: Shop Floor at shop-floor.local http://shop-floor.local:{port}/")
+    );
+    assert_eq!(
+        told(),
+        format!(
+            "announce\tShop Floor._shopfloor._tcp.local.\tshop-floor.local\t{port}\t{addresses}\n\
+             withdraw\tShop Floor._shopfloor._tcp.local.\n"
+        )
+    );
+    // Not a service type: refused in words, nothing announced.
+    std::fs::remove_file(&heard).expect("start over");
+    assert!(
+        run(&all, &["announce", &p, "local-network", "web"]).starts_with(
+            "announce: failed: `web` is not a service type: use _http._tcp for web pages"
+        )
+    );
+    assert_eq!(told(), "");
+}
+
 /// The far end of a pseudo-terminal: the stand-in serial device.
 #[cfg(unix)]
 struct Pty {

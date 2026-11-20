@@ -596,6 +596,20 @@ impl AsyncSockets {
         }
     }
 
+    /// A listener's port, and whether it is for this computer alone
+    /// (IC-990): what the host judges before saying where it is reached or
+    /// announcing it. Any other handle is unknown here.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    pub fn listener(&self, handle: u64) -> Result<(u16, bool), ListenFault> {
+        match self.sockets.get(&handle) {
+            Some(Socket::Listener(listener)) => Ok((listener.port, listener.this_computer)),
+            _ => Err(ListenFault::UnknownHandle),
+        }
+    }
+
     /// How many listeners are open: what a test asks after a run.
     #[cfg(test)]
     pub fn listeners(&self) -> usize {
