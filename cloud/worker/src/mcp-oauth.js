@@ -5,6 +5,7 @@
 //   GET  /.well-known/oauth-protected-resource[/mcp]   RFC 9728
 //   GET  /.well-known/oauth-authorization-server       RFC 8414
 //   POST /oauth/register                                RFC 7591, open
+//   (a client_id that is an https address)              Client ID Metadata Documents
 //   GET  /oauth/authorize                               the consent page
 //   GET  /oauth/authorize/done                          where sign-in lands
 //   POST /oauth/approve                                 the person's yes/no
@@ -159,6 +160,7 @@ function authorizationServer(base) {
       token_endpoint: `${base}/oauth/token`,
       registration_endpoint: `${base}/oauth/register`,
       revocation_endpoint: `${base}/oauth/revoke`,
+      client_id_metadata_document_supported: true,
       response_types_supported: ["code"],
       response_modes_supported: ["query"],
       grant_types_supported: ["authorization_code", "refresh_token"],
@@ -182,6 +184,18 @@ function redirectOk(uri) {
     if (u.hash) return false;
     if (u.protocol === "https:") return true;
     return u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+/** A client's name as a page may show it: no control characters, at most 80 characters. */
+const cleanName = (v) => String(v || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+
+/** An address on this computer: a redirect there can be claimed by any program running on it. */
+function loopback(uri) {
+  try {
+    return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(uri).hostname);
   } catch (_) {
     return false;
   }
@@ -218,7 +232,7 @@ async function register(request, env) {
   const method = ["none", "client_secret_post", "client_secret_basic"].includes(body.token_endpoint_auth_method)
     ? body.token_endpoint_auth_method
     : "none";
-  const name = String(body.client_name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80) || "An MCP client";
+  const name = cleanName(body.client_name) || "An MCP client";
   const issued = now();
   const clientId = await seal(env, "c", { r: uris, n: name, m: method, t: issued });
   const answer = {
@@ -238,8 +252,233 @@ async function register(request, env) {
   return jsonOut(answer, 201);
 }
 
-/** The registered client a request names, checking its secret when it registered one. */
-async function clientFrom(env, request, body) {
+// ------------------------------------------ client ID metadata documents
+//
+// A client may name itself by an https address instead of registering:
+// OAuth Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-
+// document), which MCP 2025-11-25 recommends and claude.ai offers as "Use
+// Claude's published identity". The hub fetches that address and trusts
+// the JSON there only when its client_id is the address byte for byte, so
+// a document can speak only for the host that serves it.
+//
+// Only public clients: PKCE is the proof, there is no secret to hold, and
+// a document that carries a secret or asks for any other way of signing in
+// at the token endpoint is refused. A good document is kept for a while
+// (its own Cache-Control, five minutes when it says nothing, a day at most)
+// in this isolate and in the Cache API -- never KV, whose writes are
+// counted. A failed fetch or a bad document is never kept.
+
+const CIMD_MAX_BYTES = 5 * 1024;
+const CIMD_TIMEOUT_MS = 5000;
+const CIMD_DEFAULT_TTL = 5 * 60;
+const CIMD_MAX_TTL = 24 * 60 * 60;
+const CIMD_MEMORY_MAX = 200;
+/** address -> { client, until (ms) } */
+const cimdMemory = new Map();
+
+/** A client_id that is an address rather than a sealed registration. */
+const isAddressId = (id) => typeof id === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(id);
+
+/** Why an address cannot be a client_id, in plain words, or null when it can. */
+export function clientIdAddressProblem(id) {
+  if (id.length > 1024) return "the address is too long";
+  let u;
+  try {
+    u = new URL(id);
+  } catch (_) {
+    return "the address is not a valid URL";
+  }
+  if (u.protocol !== "https:") return "the address must start with https://";
+  if (u.username || u.password) return "the address must not carry a user name or password";
+  if (id.includes("#")) return "the address must not have a #fragment";
+  if (u.pathname === "/") return "the address needs a path, like https://example.com/client.json";
+  // The plain form, compared byte for byte: no dot segments, a lower-case
+  // host, no default port. The document must name exactly this string.
+  if (u.href !== id) return `the address is not in its plain form (${u.href})`;
+  const host = u.hostname;
+  if (host.startsWith("[") || /^[\d.]+$/.test(host) || !host.includes(".") || /\.(local|localhost|internal|lan|home|arpa|invalid|test)$/i.test(host)) {
+    return "the address must be on a public host name, not an IP address or a local name";
+  }
+  return null;
+}
+
+/** How long a document may be kept, from its Cache-Control: 0 means not at all. */
+function keepSeconds(header) {
+  const cc = String(header || "").toLowerCase();
+  if (/(^|[\s,])(no-store|no-cache)([\s,=]|$)/.test(cc)) return 0;
+  const m = /(^|[\s,])max-age\s*=\s*"?(\d+)/.exec(cc);
+  if (m) return Math.min(Number(m[2]), CIMD_MAX_TTL);
+  return CIMD_DEFAULT_TTL;
+}
+
+/** At most `max` bytes of a response body, or null when it is longer. */
+async function readCapped(res, max) {
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      try {
+        await reader.cancel();
+      } catch (_) {}
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
+  }
+  return out;
+}
+
+/** The client a fetched document describes, or { error } in plain words. */
+function clientOfDocument(id, doc) {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { error: "its document is not a JSON object" };
+  if (doc.client_id !== id) return { error: "its document's client_id is not the address it was fetched from" };
+  if ("client_secret" in doc || "client_secret_expires_at" in doc) {
+    return { error: "its document carries a client secret, which a published identity must never do" };
+  }
+  const method = doc.token_endpoint_auth_method === undefined ? "none" : doc.token_endpoint_auth_method;
+  if (method !== "none") {
+    return {
+      error: `it asks to sign in at the token endpoint with "${String(method).slice(0, 40)}"; Krate takes only public clients ("none"), which prove themselves with PKCE`,
+    };
+  }
+  const uris = doc.redirect_uris;
+  if (!Array.isArray(uris) || !uris.length || uris.length > 10 || !uris.every((u) => typeof u === "string" && u.length <= 512 && redirectOk(u))) {
+    return { error: "its document's redirect_uris must be one to ten https addresses (or a loopback http address)" };
+  }
+  if (doc.grant_types !== undefined && !(Array.isArray(doc.grant_types) && doc.grant_types.includes("authorization_code"))) {
+    return { error: "its document's grant_types do not include authorization_code" };
+  }
+  if (doc.response_types !== undefined && !(Array.isArray(doc.response_types) && doc.response_types.includes("code"))) {
+    return { error: "its document's response_types do not include code" };
+  }
+  const name = typeof doc.client_name === "string" ? cleanName(doc.client_name) : "";
+  if (!name) return { error: "its document has no client_name" };
+  let logo = null;
+  if (typeof doc.logo_uri === "string" && doc.logo_uri.length <= 512) {
+    try {
+      const l = new URL(doc.logo_uri);
+      if (l.protocol === "https:" && !l.username && !l.password) logo = l.href;
+    } catch (_) {}
+  }
+  return { client: { id, r: uris, n: name, m: "none", h: new URL(id).host, l: logo, cimd: true } };
+}
+
+/** Fetch and check the document at `id`: { client, ttl } or { error, transient }. */
+async function fetchClientDocument(id) {
+  let res;
+  let bytes;
+  try {
+    res = await fetch(id, {
+      method: "GET",
+      redirect: "manual",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(CIMD_TIMEOUT_MS),
+    });
+    if (res.status >= 300 && res.status < 400) {
+      return { error: "its address redirects somewhere else; the document must be served at the address itself" };
+    }
+    if (res.status >= 500 || res.status === 429) return { error: `its address answered ${res.status}; try again shortly`, transient: true };
+    if (res.status !== 200) return { error: `its address answered ${res.status} instead of the document` };
+    const type = (res.headers.get("content-type") || "").toLowerCase();
+    if (!/^application\/([a-z0-9.-]+\+)?json(\s*;|$)/.test(type)) return { error: "its address did not answer with JSON" };
+    if (Number(res.headers.get("content-length")) > CIMD_MAX_BYTES) return { error: "its document is larger than 5 KB" };
+    bytes = await readCapped(res, CIMD_MAX_BYTES);
+  } catch (_) {
+    return { error: "its address did not answer in time", transient: true };
+  }
+  if (!bytes) return { error: "its document is larger than 5 KB" };
+  let doc;
+  try {
+    doc = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch (_) {
+    return { error: "its document is not valid JSON" };
+  }
+  const got = clientOfDocument(id, doc);
+  if (got.error) return got;
+  return { client: got.client, ttl: keepSeconds(res.headers.get("cache-control")) };
+}
+
+const cimdCacheKey = (base, id) => `${base || "https://hub.invalid"}/__client-metadata/${encodeURIComponent(id)}`;
+const edgeCache = () => (typeof caches !== "undefined" && caches.default ? caches.default : null);
+
+/** The client a metadata document at `id` describes: kept copy, or a fresh fetch. */
+async function clientOfAddress(id, base) {
+  const t = Date.now();
+  const held = cimdMemory.get(id);
+  if (held && held.until > t) return { client: held.client };
+  if (held) cimdMemory.delete(id);
+  const cache = edgeCache();
+  if (cache) {
+    try {
+      const hit = await cache.match(cimdCacheKey(base, id));
+      if (hit) {
+        const kept = await hit.json();
+        if (kept && kept.client && kept.client.id === id && kept.until > t) {
+          remember(id, kept.client, kept.until);
+          return { client: kept.client };
+        }
+      }
+    } catch (_) {}
+  }
+  const got = await fetchClientDocument(id);
+  if (!got.client) return got;
+  if (got.ttl > 0) {
+    const until = t + got.ttl * 1000;
+    remember(id, got.client, until);
+    if (cache) {
+      try {
+        await cache.put(
+          cimdCacheKey(base, id),
+          new Response(JSON.stringify({ client: got.client, until }), {
+            headers: { "content-type": "application/json", "cache-control": `max-age=${got.ttl}` },
+          }),
+        );
+      } catch (_) {}
+    }
+  }
+  return { client: got.client };
+}
+
+function remember(id, client, until) {
+  if (cimdMemory.size >= CIMD_MEMORY_MAX) cimdMemory.delete(cimdMemory.keys().next().value);
+  cimdMemory.set(id, { client, until });
+}
+
+/** Tests: forget every kept document. */
+export function __forgetClientDocuments() {
+  cimdMemory.clear();
+}
+
+/**
+ * The client an id names: a sealed registration, or the metadata document at
+ * an https address. { client } or { error, transient } -- error is null for
+ * an id that is simply not ours.
+ */
+async function clientById(env, base, id) {
+  if (isAddressId(id)) {
+    const problem = clientIdAddressProblem(id);
+    if (problem) return { error: problem };
+    return clientOfAddress(id, base);
+  }
+  const c = await open(env, "c", id);
+  return c ? { client: { id, ...c } } : { error: null };
+}
+
+/**
+ * The client a token or revoke request names, checking its secret when it
+ * registered one: { client } or { error, transient }.
+ */
+async function clientFrom(env, base, request, body) {
   let id = body.client_id || "";
   let secret = body.client_secret || "";
   const basic = /^Basic\s+(.+)$/i.exec(request.headers.get("authorization") || "");
@@ -249,16 +488,28 @@ async function clientFrom(env, request, body) {
       id = decodeURIComponent(u || "");
       secret = decodeURIComponent(p || "");
     } catch (_) {
-      return null;
+      return { error: null };
     }
   }
-  const client = await open(env, "c", id);
-  if (!client) return null;
+  const found = await clientById(env, base, id);
+  if (!found.client) return found;
+  const client = found.client;
+  // A published identity is a public client; nothing it sends as a secret
+  // means anything, and the sealed registrations below hold the only secrets.
   if (client.m !== "none") {
     const want = await clientSecretOf(env, id);
-    if (!secret || secret !== want) return null;
+    if (!secret || secret !== want) return { error: null };
   }
-  return { id, ...client };
+  return { client };
+}
+
+/** The token endpoint's answer for a client it cannot use. */
+function clientRefused(found, fallback) {
+  if (found.transient) {
+    return oauthError("temporarily_unavailable", `The app's published identity could not be read: ${found.error}.`, 503);
+  }
+  if (found.error) return oauthError("invalid_client", `The app's published identity cannot be used: ${found.error}.`, 401);
+  return oauthError("invalid_client", fallback, 401);
 }
 
 const clientTag = async (clientId) => b64url((await sha256(clientId)).subarray(0, 12));
@@ -277,7 +528,8 @@ main{width:100%;max-width:400px;background:var(--card);border:1px solid var(--li
 h1{font-size:20px;margin:0 0 6px;letter-spacing:-.01em}p{margin:0 0 14px;color:var(--muted)}.may{color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 18px}
 button,.btn{display:block;width:100%;padding:12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:600 15px system-ui,sans-serif;cursor:pointer;margin:0 0 10px;text-align:center;text-decoration:none}
 .primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;margin:0 0 10px}
-small{color:var(--muted);display:block;margin-top:6px;overflow-wrap:anywhere}
+small{color:var(--muted);display:block;margin-top:6px;overflow-wrap:anywhere}b{overflow-wrap:anywhere}
+.warn{color:var(--fg);border:1px solid #d97706;border-radius:12px;padding:10px 14px}.logo{width:40px;height:40px;border-radius:8px;display:block;margin:0 0 10px;object-fit:contain}
 </style></head><body><main>${body}</main>${script ? `<script>${script}</script>` : ""}</body></html>`,
     {
       status: 200,
@@ -286,7 +538,7 @@ small{color:var(--muted);display:block;margin-top:6px;overflow-wrap:anywhere}
         "cache-control": "no-store",
         "referrer-policy": "no-referrer",
         "x-frame-options": "DENY",
-        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'",
       },
     },
   );
@@ -303,16 +555,33 @@ function redirectWith(uri, params) {
   return u.toString();
 }
 
-async function authorize(url, env, base) {
+async function authorize(request, url, env, base, deps) {
   const q = url.searchParams;
-  const client = await open(env, "c", q.get("client_id") || "");
+  const clientId = q.get("client_id") || "";
+  // An address makes the hub fetch something; that has its own ceiling.
+  if (isAddressId(clientId)) {
+    const over = await deps.rateLimited(request, "oauth");
+    if (over) return over;
+  }
+  const found = await clientById(env, base, clientId);
+  const client = found.client;
   // A client or a redirect that cannot be trusted gets a page, never a
   // redirect: sending the browser to an address nobody registered is how
   // an authorization server becomes an open redirector.
-  if (!client) return errorPage("The app asking to sign you in is not registered with Krate. Connect it again from the app.");
+  if (!client) {
+    if (found.transient) return errorPage(`The app's published identity at ${clientId} could not be read: ${found.error}. Try again in a moment.`);
+    if (found.error) return errorPage(`The app's published identity at ${clientId} cannot be used: ${found.error}.`);
+    return errorPage("The app asking to sign you in is not registered with Krate. Connect it again from the app.");
+  }
   let redirect = q.get("redirect_uri") || "";
   if (!redirect && client.r.length === 1) redirect = client.r[0];
-  if (!client.r.includes(redirect)) return errorPage("The app asked to come back to an address it did not register.");
+  if (!client.r.includes(redirect)) {
+    return errorPage(
+      client.cimd
+        ? `The app asked to come back to ${redirect || "an address it did not name"}, which its published identity at ${client.h} does not list.`
+        : "The app asked to come back to an address it did not register.",
+    );
+  }
   const state = q.get("state") || "";
   const fail = (error, description) =>
     Response.redirect(redirectWith(redirect, { error, error_description: description, state, iss: base }), 302);
@@ -325,13 +594,29 @@ async function authorize(url, env, base) {
   if (resource && resource.replace(/\/$/, "") !== resourceOf(base)) return fail("invalid_target", `the resource is ${resourceOf(base)}`);
   const scope = q.get("scope");
   if (scope && !scope.split(/\s+/).every((s) => s === MCP_SCOPE)) return fail("invalid_scope", `the scope is ${MCP_SCOPE}`);
-  const req = await seal(env, "r", {
-    c: q.get("client_id"), u: redirect, ch: challenge, s: state, n: client.n, e: now() + REQUEST_TTL,
-  });
   const host = new URL(redirect).host;
+  // Who is asking, as the person must see it: a name is only a claim, so a
+  // published identity shows the host that vouches for it beside the name,
+  // and the host the browser goes back to whenever that is a different one.
+  const who = { n: client.n, h: client.cimd ? client.h : null, back: host, local: loopback(redirect) };
+  const req = await seal(env, "r", {
+    c: clientId, u: redirect, ch: challenge, s: state, n: client.n, h: who.h, e: now() + REQUEST_TTL,
+  });
+  const lines = [];
+  if (client.cimd) {
+    lines.push(
+      `<p>${client.l ? `<img class="logo" src="${esc(client.l)}" alt="" width="40" height="40">` : ""}<b>${esc(client.n)}</b>, from <b>${esc(client.h)}</b>, wants to use your Krate account.</p>`,
+    );
+    if (host !== client.h) lines.push(`<p>It will send you back to <b>${esc(host)}</b>.</p>`);
+  } else {
+    lines.push(`<p><b>${esc(client.n)}</b> (${esc(host)}) wants to use your Krate account.</p>`);
+  }
+  if (who.local) {
+    lines.push(`<p class="warn">It sends you back to a program on this computer (${esc(host)}). Go on only if you started this from an app on this computer.</p>`);
+  }
   const body = `
 <h1>Sign in to Krate</h1>
-<p><b>${esc(client.n)}</b> (${esc(host)}) wants to use your Krate account.</p>
+${lines.join("\n")}
 <p class="may">It may: ${esc(CONSENT_WORDS)}.</p>
 <a class="btn primary" id="gh" href="#">Continue with GitHub</a>
 <a class="btn" id="gg" href="#">Continue with Google</a>
@@ -339,9 +624,9 @@ async function authorize(url, env, base) {
 <p id="sent" hidden>Check your inbox and open the link on this device.</p>
 <small>You will see this again and can say no before anything is allowed.</small>`;
   const script = `
-const REQ=${JSON.stringify(req)};
+const REQ=${JSON.stringify(req)};const WHO=${JSON.stringify(who).replace(/</g, "\\u003c")};
 function begin(){const n=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,"0")).join("");
-try{localStorage.setItem("krate-oauth:"+n,JSON.stringify({req:REQ,at:Date.now()}));}catch(e){}return n;}
+try{localStorage.setItem("krate-oauth:"+n,JSON.stringify({req:REQ,who:WHO,at:Date.now()}));}catch(e){}return n;}
 document.getElementById("gh").onclick=e=>{e.preventDefault();location.href="/login/start?from=oauth&nonce="+begin();};
 document.getElementById("gg").onclick=e=>{e.preventDefault();location.href="/login/google/start?from=oauth&nonce="+begin();};
 document.getElementById("em").onsubmit=async e=>{e.preventDefault();const n=begin();
@@ -354,6 +639,8 @@ if(r.ok){document.getElementById("em").hidden=true;document.getElementById("sent
 function authorizeDone() {
   const body = `
 <h1 id="h">Allow access?</h1>
+<p id="app" hidden></p>
+<p class="warn" id="local" hidden></p>
 <p id="who"></p>
 <p class="may" id="may" hidden>It may: ${esc(CONSENT_WORDS)}.</p>
 <button class="primary" id="yes" hidden>Allow</button>
@@ -364,6 +651,8 @@ const n=f.get("nonce")||"";let held=null;try{held=JSON.parse(localStorage.getIte
 const h=document.getElementById("h"),who=document.getElementById("who");
 if(!n||!held||!f.get("token")||Date.now()-held.at>30*60*1000){h.textContent="This sign-in did not start here";who.textContent="Go back to the app and connect Krate again.";}
 else{who.textContent="Signed in as "+(f.get("login")||"you")+".";for(const id of ["may","yes","no"])document.getElementById(id).hidden=false;
+const w=held.who;if(w&&w.n){const app=document.getElementById("app");app.textContent=w.n+(w.h?", from "+w.h+",":" ("+w.back+")")+" wants to use your Krate account."+(w.h&&w.back!==w.h?" It will send you back to "+w.back+".":"");app.hidden=false;
+if(w.local){const l=document.getElementById("local");l.textContent="It sends you back to a program on this computer ("+w.back+"). Allow it only if you started this from an app on this computer.";l.hidden=false;}}
 const go=async ok=>{for(const id of ["yes","no"])document.getElementById(id).disabled=true;
 const r=await fetch("/oauth/approve",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+f.get("token")},body:JSON.stringify({req:held.req,approve:ok})});
 try{localStorage.removeItem("krate-oauth:"+n);}catch(e){}
@@ -389,7 +678,7 @@ async function approve(request, env, base, deps) {
   if (!who || !who.owner || !who.uid) return oauthError("access_denied", "Sign in first.", 401);
   const grant = randomHex(16);
   const code = await seal(env, "k", {
-    g: grant, c: await clientTag(req.c), u: req.u, ch: req.ch, n: req.n, id: who, e: now() + CODE_TTL,
+    g: grant, c: await clientTag(req.c), u: req.u, ch: req.ch, n: req.n, h: req.h || null, id: who, e: now() + CODE_TTL,
   });
   return jsonOut({ redirect: redirectWith(req.u, { code, state: req.s, iss: base }) });
 }
@@ -413,8 +702,9 @@ async function revokeGrant(env, g) {
 async function token(request, env, base) {
   const body = await readBody(request);
   if (!body) return oauthError("invalid_request", "expected a form body");
-  const client = await clientFrom(env, request, body);
-  if (!client) return oauthError("invalid_client", "unknown client, or a wrong client secret", 401);
+  const found = await clientFrom(env, base, request, body);
+  if (!found.client) return clientRefused(found, "unknown client, or a wrong client secret");
+  const client = found.client;
   const tag = await clientTag(client.id);
 
   if (body.grant_type === "authorization_code") {
@@ -436,7 +726,7 @@ async function token(request, env, base) {
     try {
       const listKey = `mcpgrants:${code.id.uid}`;
       const held = JSON.parse((await env.APPS.get(listKey)) || "[]").filter((g) => g && g.at > now() - REFRESH_TTL);
-      held.unshift({ g: code.g, client: code.n, at: record.at });
+      held.unshift({ g: code.g, client: code.n, ...(code.h ? { from: code.h } : {}), at: record.at });
       await env.APPS.put(listKey, JSON.stringify(held.slice(0, 50)));
     } catch (_) {}
     return issue(env, base, { grant: code.g, gen: 1, clientTag: tag, who: code.id });
@@ -469,12 +759,12 @@ async function token(request, env, base) {
   return oauthError("unsupported_grant_type", "authorization_code or refresh_token");
 }
 
-async function revoke(request, env) {
+async function revoke(request, env, base) {
   const body = await readBody(request);
   if (!body) return oauthError("invalid_request", "expected a form body");
-  const client = await clientFrom(env, request, body);
-  if (!client) return oauthError("invalid_client", "unknown client", 401);
-  const tag = await clientTag(client.id);
+  const found = await clientFrom(env, base, request, body);
+  if (!found.client) return clientRefused(found, "unknown client");
+  const tag = await clientTag(found.client.id);
   const t = (await open(env, "a", body.token)) || (await open(env, "f", body.token));
   // RFC 7009: an unknown token is not an error.
   if (t && t.c === tag) await revokeGrant(env, t.g);
@@ -505,7 +795,7 @@ export async function connectorsRoute(request, env, user, grant) {
     for (const g of held) {
       if (!g || g.at <= now() - REFRESH_TTL) continue;
       if (await env.APPS.get(revokedKey(g.g))) continue;
-      live.push({ id: g.g, client: g.client, allowed_at: g.at, may: CONSENT_WORDS });
+      live.push({ id: g.g, client: g.client, ...(g.from ? { from: g.from } : {}), allowed_at: g.at, may: CONSENT_WORDS });
     }
     return jsonOut({ connectors: live });
   }
@@ -534,7 +824,7 @@ export async function oauthRoute(request, url, env, deps) {
   }
   if (!pathname.startsWith("/oauth/")) return null;
   if (!(await sealKey(env))) return oauthError("temporarily_unavailable", "Sign-in for connectors is not set up on this hub yet.", 503);
-  if (method === "GET" && pathname === "/oauth/authorize") return authorize(url, env, base);
+  if (method === "GET" && pathname === "/oauth/authorize") return authorize(request, url, env, base, deps);
   if (method === "GET" && pathname === "/oauth/authorize/done") return authorizeDone();
   if (method === "POST") {
     const over = await deps.rateLimited(request, "oauth");
@@ -542,7 +832,7 @@ export async function oauthRoute(request, url, env, deps) {
     if (pathname === "/oauth/register") return register(request, env);
     if (pathname === "/oauth/approve") return approve(request, env, base, deps);
     if (pathname === "/oauth/token") return token(request, env, base);
-    if (pathname === "/oauth/revoke") return revoke(request, env);
+    if (pathname === "/oauth/revoke") return revoke(request, env, base);
   }
   return oauthError("invalid_request", "not an OAuth endpoint", 404);
 }
