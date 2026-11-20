@@ -352,6 +352,32 @@ middle.
 frame.png` writes the app's first frame to a PNG so output can be looked at
 rather than guessed about.
 
+## Next release, on `main` now
+
+Not in `v0.5.5-rc9` yet; built, tested and merged:
+
+- **Every app you make is signed as you, from its first file.** One
+  publisher key per person per computer, made with no account and no
+  question. Your app keeps its data through every rebuild, and no other app
+  claiming its id can reach it.
+- **A new key without losing anything.** `krate identity --new-key` hands
+  over from your old key to a new one, signed by both; each app moves its
+  data across the first time it opens. `--report-compromised` tells Krate
+  Cloud first: releases the old key signed since a date are blocked, and
+  each app goes back to its last safe version.
+- **Changing an app with AI is a transaction.** The app you have is
+  replaced only by a build that passed every check, and never over a file
+  something else changed while the AI worked; that change is kept beside
+  it instead.
+- **Installed apps are themselves.** Finder, Spotlight, Launchpad and the
+  Windows Start menu show the app's own name, and a Start menu entry opens
+  with no console window.
+- **Krate Cloud** keeps an update with its publisher (another key is
+  refused unless the old one handed over), treats a re-packed release as
+  the version it already is, ranks gallery search by relevance with the
+  publisher's verified identity shown on every result (no placement is
+  sold), and sends a blocked update's link back to the last safe version.
+
 ## Where things stand
 
 One `.krate` runs on Mac, Windows, and Linux, GPU-rendered with a CPU
