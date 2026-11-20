@@ -263,6 +263,9 @@ capability. Believe this table over your instinct:
   person to every device they use, end-to-end encrypted, with no code.
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
+- **Excel files ARE real.** `krate::sheets` (the `sheets` feature) reads
+  the .xlsx, .ods or .csv a person opens into sheets, rows and typed
+  cells, and writes the .xlsx or .csv they save.
 
 If you catch yourself writing \"Krate apps cannot ...\" about anything in
 this file, stop and re-read the section instead. The true wall list is
@@ -859,8 +862,97 @@ pub(crate) fn sdk_surface_section() -> String {
     // render_reference carries its own "if it is not here, do not invent it"
     // preamble and the widget-kind list, so it follows directly.
     out.push_str(&sdk_reference::render_reference(&functions));
+    out.push_str(SHEETS_SECTION);
     out
 }
+
+/// `krate::sheets` (IC-993), by hand: the generated reference reads only
+/// `lib.rs`, and this module lives in its own directory behind a feature.
+/// A test holds every name below to the module's source.
+const SHEETS_SECTION: &str = "\n\
+## Spreadsheets: `krate::sheets` (Excel, LibreOffice, CSV)\n\n\
+An app reads the workbook a person opens and writes the one they save. Turn \
+on the `sheets` feature of the `krate` dependency -- `features = [\"gui\", \
+\"sheets\"]` (a CLI app: `features = [\"sheets\"]`). It runs inside the app, \
+`no_std`, with no capability of its own: the bytes come from \
+`ui.dialog:file-open` (or a drop) and go back through `ui.dialog:file-save`, \
+the same in a browser tab as on a desktop.\n\n\
+- `sheets::read(&bytes) -> Result<Workbook, SheetError>` -- an `.xlsx`/`.xlsm` \
+(Excel's own, or one another program exported), an `.ods` (LibreOffice) or a `.csv`, \
+recognised from the bytes. An old binary `.xls` is `Err(SheetError::OldExcel)`; \
+show `e.message()`, which tells the person to save it as `.xlsx`.\n\
+- `Workbook { sheets: Vec<Sheet> }`, `book.sheet(\"Orders\")` (ignores case).\n\
+- `Sheet { name: String, rows: Vec<Vec<Cell>> }`: `sheet.get(row, col) -> &Cell` \
+(from 0; `Cell::Empty` past the end -- never index `rows[r][c]`), \
+`sheet.height()`, `sheet.width()`, `sheet.set(row, col, cell)`, \
+`sheet.push_row(vec![..])`, `Sheet::new(\"name\")`, \
+`Sheet::column_name(27)` -> `\"AB\"`.\n\
+- `Cell::{Empty, Text(String), Number(f64), Bool(bool), Date(DateTime), \
+Error(String)}`. A formula comes through as the value it last calculated; \
+dates are recognised from the cell's format. `cell.to_text()` is what the \
+cell shows (`0.1 + 0.2` shows `0.3`, dates `2024-03-15`), `cell.as_number()` \
+reads a number or numeric text, `cell.as_str()`, `cell.is_empty()`. Build \
+cells with `Cell::from(\"text\")`, `Cell::from(12.5)`, `Cell::from(3)`, \
+`Cell::from(true)`.\n\
+- `DateTime { year, month, day, hour, minute, second }`: `DateTime::date(2024, \
+3, 15).at(9, 30, 0)`, `.to_text()`, `.to_iso()`, `DateTime::parse_iso(s)`, \
+`.day_number()` (the same count as `krate::locale::today()`, so \"overdue\" is \
+`d.day_number() < krate::locale::today()`), `DateTime::from_serial(45366.0)` / \
+`.to_serial()` for Excel's date numbers.\n\
+- `sheets::write_xlsx(&workbook) -> Vec<u8>` -- a standard `.xlsx` workbook, \
+every type kept, dates as dates, sheet names made acceptable to Excel. \
+`sheets::write_csv(&sheet) -> String` and `sheets::read_csv(&text) -> Sheet` \
+(cells from CSV are text; `as_number()` reads them).\n\n\
+Formatting, merged-cell layout, charts and the formulas themselves are not \
+read or written; values are. A value hidden under a merged range is dropped, \
+as the sheet shows it.\n\n\
+Open a workbook, show it as a table, export a summary:\n\n\
+```rust\n\
+use alloc::vec;\n\
+use krate::gfx::{canvas2d, types as gfx};\n\
+use krate::sheets::{self, Cell, Sheet, Workbook};\n\
+use krate::ui::dialog;\n\
+\n\
+// Open: the person's pick is the permission (`ui.dialog:file-open`).\n\
+fn open_workbook(win: u64) -> Result<Option<Workbook>, &'static str> {\n\
+\x20   let Ok(Some(chosen)) = dialog::open_file(win, \"Open a workbook\", \"xlsx,xlsm,ods,csv\") else {\n\
+\x20       return Ok(None); // they cancelled\n\
+\x20   };\n\
+\x20   let bytes = krate::fs::read_chosen(&chosen.token).map_err(|_| \"That file could not be read.\")?;\n\
+\x20   sheets::read(&bytes).map(Some).map_err(|e| e.message())\n\
+}\n\
+\n\
+// Show: a grid of `to_text()`, a page at a time.\n\
+fn draw_table(canvas: u64, sheet: &Sheet, first_row: usize, ink: gfx::Color) {\n\
+\x20   for r in first_row..sheet.height().min(first_row + 30) {\n\
+\x20       let y = 28.0 + (r - first_row) as f32 * 22.0;\n\
+\x20       for c in 0..sheet.width().min(8) {\n\
+\x20           let text = sheet.get(r, c).to_text();\n\
+\x20           let at = gfx::Point { x: 16.0 + c as f32 * 120.0, y };\n\
+\x20           let _ = canvas2d::draw_text(canvas, &text, at, 14.0, ink);\n\
+\x20       }\n\
+\x20   }\n\
+}\n\
+\n\
+// Export: a new sheet, saved where the person says (`ui.dialog:file-save`).\n\
+fn export_totals(win: u64, sheet: &Sheet) {\n\
+\x20   let mut out = Sheet::new(\"Totals\");\n\
+\x20   out.push_row(vec![Cell::from(\"Item\"), Cell::from(\"Total\")]);\n\
+\x20   for row in sheet.rows.iter().skip(1) {\n\
+\x20       let name = row.first().map(Cell::to_text).unwrap_or_default();\n\
+\x20       let total: f64 = row.iter().skip(1).filter_map(Cell::as_number).sum();\n\
+\x20       out.push_row(vec![Cell::from(name), Cell::from(total)]);\n\
+\x20   }\n\
+\x20   let bytes = sheets::write_xlsx(&Workbook { sheets: vec![out] });\n\
+\x20   if let Ok(Some(chosen)) = dialog::save_file(win, \"Save the totals\", \"totals.xlsx\", \"xlsx\") {\n\
+\x20       let _ = krate::fs::write_chosen(&chosen.token, &bytes);\n\
+\x20   }\n\
+}\n\
+```\n\n\
+`apps/krate-sheets-probe` reads an Excel file and a LibreOffice file, \
+writes both back, and checks every value. An app that turns a team's \
+workbook into an app keeps the data in `store.sql` or `store.kv` after the \
+first import, and offers Export so the spreadsheet is never a dead end.\n";
 
 /// Section 2: the capability catalog, from the runtime's own registry. Richer
 /// than the bare name list the old contract used: it names each capability's
@@ -3569,5 +3661,73 @@ interface api {
             inlined.contains("If a tool draws a region on a canvas, it obeys those four"),
             "the canvas craft rules are still written as piece-only"
         );
+    }
+
+    /// The spreadsheet section is hand-written, so every call it teaches is
+    /// held to the module's source: a rename there fails here, not in a
+    /// generated app (IC-993).
+    #[test]
+    fn the_sheets_section_names_only_real_calls() {
+        let source = [
+            include_str!("../../bindings-rust/src/sheets/mod.rs"),
+            include_str!("../../bindings-rust/src/sheets/xlsx.rs"),
+            include_str!("../../bindings-rust/src/sheets/csv.rs"),
+        ]
+        .concat();
+        let manifest = include_str!("../../bindings-rust/Cargo.toml");
+        assert!(
+            manifest.contains("\nsheets = ["),
+            "the `sheets` feature is gone"
+        );
+        let pack = sdk_surface_section();
+        assert!(pack.contains("## Spreadsheets: `krate::sheets`"));
+        for name in [
+            "read",
+            "read_csv",
+            "write_xlsx",
+            "write_csv",
+            "sheet",
+            "get",
+            "height",
+            "width",
+            "set",
+            "push_row",
+            "new",
+            "column_name",
+            "to_text",
+            "as_number",
+            "as_str",
+            "is_empty",
+            "date",
+            "at",
+            "to_iso",
+            "parse_iso",
+            "day_number",
+            "from_serial",
+            "to_serial",
+            "message",
+        ] {
+            assert!(
+                pack.contains(&format!("{name}(")),
+                "the section no longer teaches `{name}`; drop it from this list"
+            );
+            assert!(
+                source.contains(&format!("pub fn {name}(")),
+                "the guide teaches `{name}(` but krate::sheets has no such function"
+            );
+        }
+        for variant in [
+            "Empty",
+            "Text(String)",
+            "Number(f64)",
+            "Bool(bool)",
+            "Date(DateTime)",
+            "Error(String)",
+            "OldExcel",
+        ] {
+            assert!(source.contains(variant), "{variant}");
+        }
+        // Both prompts carry it: the pack and the published krate-mode.
+        assert!(crate::krate_mode::generate().contains("## Spreadsheets: `krate::sheets`"));
     }
 }
