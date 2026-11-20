@@ -108,6 +108,13 @@ test("tools/list: every tool is titled, named within 64 characters, with both sc
     // The directory's submission check reads the listing name from here.
     assert.equal(t.annotations.title, t.title, `${t.name} carries its title in annotations`);
     assert.ok(t.description.length > 40, `${t.name} says what it does`);
+    // Directory policy: a description says what the tool does. It names no
+    // other tool and tells the model nothing; the workflow lives in the
+    // server's instructions and in tool results.
+    for (const other of tools) {
+      if (other.name !== t.name) assert.ok(!t.description.includes(other.name), `${t.name}'s description names ${other.name}`);
+    }
+    assert.ok(!/\b(call|read it|send|do not|don't|you should|always|never paste)\b/i.test(t.description), `${t.name}'s description instructs: ${t.description}`);
     assert.equal(t.annotations.openWorldHint, false);
     assert.equal(t.inputSchema.type, "object");
     assert.equal(t.outputSchema.type, "object");

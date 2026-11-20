@@ -937,6 +937,17 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/player/")) {
         return await playerAsset(request, url, env);
       }
+      // The hub's own icon. Claude's connector directory and its chat show
+      // the favicon of the MCP server's address (hub.krate.tech), and a 404
+      // here listed Krate with a blank square.
+      if ((request.method === "GET" || request.method === "HEAD") && pathname === "/favicon.ico") {
+        const icon = await playerAsset(request, new URL("/player/krate-favicon.png", url), env);
+        if (!icon.ok) return icon;
+        const headers = new Headers(icon.headers);
+        headers.set("content-type", "image/png");
+        headers.set("cache-control", "public, max-age=86400");
+        return new Response(request.method === "HEAD" ? null : icon.body, { status: 200, headers });
+      }
       if (request.method === "GET" && /^\/a\/[0-9a-f]{64}\/web$/.test(pathname)) {
         const hash = pathname.slice(3, 67);
         return cors(await webPackRoute(env, hash, {

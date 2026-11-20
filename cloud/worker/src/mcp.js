@@ -211,8 +211,8 @@ export const TOOLS = [
     name: "list_featured",
     title: "Featured Krate apps",
     description:
-      "The Krate gallery's front shelves: the apps picked to start with, and the newest apps. A good first look when " +
-      "someone asks what Krate apps exist.",
+      "The Krate gallery's front shelves: the apps picked to start with, and the newest apps, each with its link, " +
+      "what it is allowed to do in plain words, its size and its publisher.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: {
       type: "object",
@@ -229,9 +229,9 @@ export const TOOLS = [
     name: "get_krate_guide",
     title: "Read the Krate app guide",
     description:
-      "Krate's guide to writing a Krate app: the files an app is made of (Cargo.toml, src/lib.rs, manifest.toml), " +
-      "the API it may call, the permissions it may declare, and worked examples. Read it before writing any Krate app. " +
-      "Then send the files to build_app instead of pasting them into the chat. No sign-in needed.",
+      "Krate's reference for writing a Krate app: the files an app is made of (Cargo.toml, src/lib.rs, manifest.toml), " +
+      "the API it may use, the permissions it may declare, the mistakes that fail a first build, and worked examples. " +
+      "No sign-in needed.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     outputSchema: {
       type: "object",
@@ -247,11 +247,10 @@ export const TOOLS = [
     name: "build_app",
     title: "Build and publish a Krate app",
     description:
-      "Compile the Krate app you wrote and check it with Krate's own check: it builds the code, confirms it uses only " +
-      "Krate's API, and runs it once. Send every file each time (Cargo.toml, src/lib.rs, manifest.toml and any assets), " +
-      "written as get_krate_guide says. Answers a build id at once; then call build_status until it is done. When the app " +
-      "passes, Krate publishes it unlisted to the signed-in person's account, with a link that opens it on any device. " +
-      "Needs the person to sign in to Krate.",
+      "Compiles a Krate app from its files and checks it with Krate's own check: it builds the code, confirms it uses " +
+      "only Krate's API, and runs it once. Takes every file of the app (Cargo.toml, src/lib.rs, manifest.toml and any " +
+      "assets) and answers a build id at once; a build takes a few minutes. An app that passes is published unlisted to " +
+      "the signed-in person's Krate account, with a link that opens it on any device. Needs the person to sign in to Krate.",
     inputSchema: {
       type: "object",
       properties: {
@@ -283,10 +282,9 @@ export const TOOLS = [
     name: "build_status",
     title: "Check a Krate build",
     description:
-      "Where a build_app build is. While it runs, call again in about 30 seconds. If it failed, the answer has Krate's " +
-      "check in its own words -- the stage, what went wrong, how to fix it: fix the code and call build_app again with " +
-      "every file. When it passes, the app is published unlisted to the person's Krate account and the answer has its " +
-      "link and a browser link that opens it on any device. Needs the person to sign in to Krate.",
+      "The state of a Krate build, by its build id: still building, failed, or published. A failed build's answer has " +
+      "Krate's check in its own words: the stage, what went wrong and how to fix it. A published build's answer has the " +
+      "app's link and a browser link that opens it on any device, nothing to install. Needs the person to sign in to Krate.",
     inputSchema: {
       type: "object",
       properties: {
