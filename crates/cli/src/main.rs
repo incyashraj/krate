@@ -16549,7 +16549,33 @@ have permission to execute."
 ///   shell that puts `~/.cargo/bin` last still finds it.
 /// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
 ///   that shadows rustup (and lacks the wasm target) does not get used.
+/// Before an app builds: if its Cargo.toml names Krate's SDK copy from
+/// another version, point it at this binary's own (K-1311). Without this an
+/// app made with an older Krate kept building against that version's SDK
+/// forever, and a cleared cache broke it.
+fn repoint_app_sdk(app_dir: &Path) {
+    let cargo = app_dir.join("Cargo.toml");
+    let Ok(text) = std::fs::read_to_string(&cargo) else {
+        return;
+    };
+    if !text.contains("krate") {
+        return;
+    }
+    let Ok(current) = sdk::ensure_materialized() else {
+        return;
+    };
+    if let Some((repointed, old)) = sdk::repoint_cached_sdk(&text, &current) {
+        if std::fs::write(&cargo, repointed).is_ok() {
+            eprintln!(
+                "note: this app was set up with another Krate's SDK ({}); it now builds with this Krate's",
+                old.join(", ")
+            );
+        }
+    }
+}
+
 fn component_build_command(app_dir: &Path) -> ProcessCommand {
+    repoint_app_sdk(app_dir);
     let resolved = resolve_tool("cargo-component");
     let program: std::ffi::OsString = match &resolved {
         Some(path) => path.clone().into_os_string(),
@@ -17190,6 +17216,7 @@ fn build_threaded(app_dir: &Path) -> std::result::Result<PathBuf, String> {
             " -C link-arg=--export=__imported_wasi_snapshot_preview1_{name}"
         ));
     }
+    repoint_app_sdk(app_dir);
     let mut command = ProcessCommand::new("cargo");
     command
         .args(["build", "--release", "--target", "wasm32-wasip1-threads"])
