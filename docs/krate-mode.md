@@ -641,6 +641,82 @@ fn export_totals(win: u64, sheet: &Sheet) {
 
 `apps/krate-sheets-probe` reads an Excel file and a LibreOffice file, writes both back, and checks every value. An app that turns a team's workbook into an app keeps the data in `store.sql` or `store.kv` after the first import, and offers Export so the spreadsheet is never a dead end.
 
+## Machines: `krate::modbus` and `krate::mqtt` (PLCs, instruments, brokers)
+
+An app reads a machine's registers and publishes its readings. Turn on the feature of the `krate` dependency -- `features = ["gui", "modbus"]`, `"mqtt"`, or both (a CLI app leaves out `"gui"`). Neither has a capability of its own: Modbus RTU runs over the serial port the person picked (`device.serial`), Modbus TCP and MQTT over a TCP connection to the host the manifest declares (`net.connect:<host>:502`, `net.connect:<host>:1883`). Every call waits at most its timeout and fails with words (`e.message()`); nothing a device sends can crash the app.
+
+- `modbus::Client::rtu(port, unit)` -- `port` from `krate::serial::pick`, already `open`ed with the device's settings; `unit` 1 to 247 (0 sends a write to every device and waits for nothing). `modbus::Client::tcp(host, 502, unit) -> Result<Client, ModbusError>`.
+- `client.read_holding_registers(address, count)` and `read_input_registers(..) -> Result<Vec<u16>, ModbusError>` (1 to 125), `read_coils(..)` and `read_discrete_inputs(..) -> Vec<bool>` (1 to 2000), exactly as many as asked. `write_register(address, u16)`, `write_registers(address, &[u16])`, `write_coil(address, bool)`, `write_coils(address, &[bool])`. Addresses count from 0: the register a manual calls 40001 is holding register 0, 30001 input register 0. `set_timeout(ms)` (default 1000), `set_unit(unit)`.
+- `ModbusError::{TimedOut, Exception(Exception), BadCrc, BadReply(..), BadRequest(..), Link(..)}`; `Exception::IllegalDataAddress` is the device saying that register does not exist. A value in two registers: `modbus::f32_from(high, low)`, `u32_from`, `i32_from`, `f32_to(value)` (if it reads as nonsense, the device keeps the low word first: swap them).
+- `mqtt::Client::connect(host, 1883, &mqtt::Options::new("client-id"))` -- `.login(user, password)`, `.keep_alive(secs)` (default 60), `.timeout(ms)` (default 5000). Clean sessions, MQTT 3.1.1.
+- `client.publish(topic, payload, QoS::AtLeastOnce)` waits for the broker's receipt (`QoS::AtMostOnce` does not); `publish_retained(..)` keeps it as the topic's last value. `subscribe(filter, qos)` (`+` one level, `#` everything below) returns the QoS granted; `unsubscribe(filter)`.
+- `client.poll() -> Result<Option<Message>, MqttError>` never waits: call it every turn of the event loop -- it also sends the keep-alive pings, so call it at least once a keep-alive period. `client.receive(wait_ms)` waits for one (a CLI app). `Message { topic, payload, qos, retained }`, `message.text()`. `client.disconnect()`.
+- `MqttError::{Refused(Refusal), TimedOut(..), SubscribeRefused, Protocol(..), BadTopic(..), BadOptions(..), TooLarge, Link(..)}`; `Refusal::BadLogin` is a wrong user name or password. After `Link` or `TimedOut` the connection is gone: connect again.
+
+Not there yet, so do not promise it: MQTT over TLS (port 8883) -- an app's sockets are plain TCP; MQTT 5; QoS 2; Modbus ASCII. Keep a broker password in `krate::secret` (`store.secret`), never in the source.
+
+Read a holding register over RTU:
+
+```rust
+use alloc::string::String;
+use krate::{modbus, serial};
+
+// `device.serial` in the manifest; the person picks the controller.
+fn connect_controller() -> Result<Option<modbus::Client>, String> {
+    let picked = serial::pick("Choose the temperature controller");
+    let Some(port) = picked.map_err(|e| String::from(serial::words(&e)))? else {
+        return Ok(None); // they cancelled
+    };
+    port.open(&serial::Settings::baud(9600))
+        .map_err(|e| String::from(serial::words(&e)))?;
+    Ok(Some(modbus::Client::rtu(port, 1))) // unit address 1
+}
+
+// Register 40001 (address 0) holds tenths of a degree.
+fn read_celsius(controller: &mut modbus::Client) -> Result<f32, String> {
+    let regs = controller.read_holding_registers(0, 1).map_err(|e| e.message())?;
+    Ok(f32::from(regs[0]) / 10.0)
+}
+```
+
+Publish a reading over MQTT and hear the set point:
+
+```rust
+use alloc::{format, string::String};
+use krate::mqtt::{self, QoS};
+
+// `net.connect:broker.lab.local:1883` and `store.secret` in the manifest.
+fn open_broker() -> Result<mqtt::Client, String> {
+    let password = krate::secret::get_text("broker").ok().flatten().unwrap_or_default();
+    let options = mqtt::Options::new("oven-7").login("lab", &password);
+    let mut broker =
+        mqtt::Client::connect("broker.lab.local", 1883, &options).map_err(|e| e.message())?;
+    broker
+        .subscribe("lab/oven-7/setpoint", QoS::AtLeastOnce)
+        .map_err(|e| e.message())?;
+    Ok(broker)
+}
+
+fn publish_reading(broker: &mut mqtt::Client, celsius: f32) -> Result<(), String> {
+    let text = format!("{celsius:.1}");
+    broker
+        .publish("lab/oven-7/celsius", text.as_bytes(), QoS::AtLeastOnce)
+        .map_err(|e| e.message())
+}
+
+// Every turn of the event loop.
+fn hear_setpoint(broker: &mut mqtt::Client, setpoint: &mut f32) -> Result<(), String> {
+    while let Some(message) = broker.poll().map_err(|e| e.message())? {
+        if let Some(value) = message.text().and_then(|t| t.trim().parse().ok()) {
+            *setpoint = value;
+        }
+    }
+    Ok(())
+}
+```
+
+`apps/krate-machines-probe` runs both against a device and a broker simulated inside the app. Poll a machine on a timer, not in a tight loop (once a second is plenty for most sensors), and show the last good reading with its time when a read fails.
+
 ---
 
 # 2. Capabilities: what a manifest may declare

@@ -140,16 +140,19 @@ fn embed_sdk() {
         "src/bindings_gui.rs",
         "src/phase3.rs",
         "src/layout.rs",
+        // The byte link `modbus` and `mqtt` run over (IC-994).
+        "src/link.rs",
     ] {
         let path = bindings.join(rel);
         println!("cargo:rerun-if-changed={}", path.display());
         let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         files.push((format!("crates/bindings-rust/{rel}"), bytes));
     }
-    // Feature modules that live in their own directory (`sheets`, IC-993),
-    // discovered so a new file there cannot be left out of the shipped SDK.
-    // `tests.rs` is test-only: it reads fixtures the SDK does not carry.
-    for module in ["src/sheets"] {
+    // Feature modules that live in their own directory (`sheets`, IC-993;
+    // `modbus` and `mqtt`, IC-994), discovered so a new file there cannot be
+    // left out of the shipped SDK. `tests.rs` is test-only: it reads
+    // fixtures the SDK does not carry.
+    for module in ["src/sheets", "src/modbus", "src/mqtt"] {
         let dir = bindings.join(module);
         println!("cargo:rerun-if-changed={}", dir.display());
         let mut names: Vec<String> = fs::read_dir(&dir)
