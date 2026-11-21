@@ -1,9 +1,8 @@
 # Krate in the official MCP Registry
 
-**Not published yet.** `server.json` here is the entry for the hub's remote MCP
+**Published 2026-11-21 as `tech.krate/krate@1.0.0`** (proved by the HTTP key at krate.tech/.well-known/mcp-registry-auth; the private key lives outside the repository, in ~/.krate-mcp-registry). To publish a new version: bump `version` here with `MCP_SERVER_VERSION`, then `mcp-publisher login http --domain krate.tech` and `mcp-publisher publish` from this folder. `server.json` here is the entry for the hub's remote MCP
 server (`https://hub.krate.tech/mcp`, streamable HTTP, OAuth sign-in) in the
-official MCP Registry, https://registry.modelcontextprotocol.io. Nothing in this
-folder has been sent anywhere.
+official MCP Registry, https://registry.modelcontextprotocol.io.
 
 It follows the 2025-12-11 schema
 (https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json)
