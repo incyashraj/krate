@@ -23232,6 +23232,16 @@ fn remember_grants(home: &Path, principal: &StoragePrincipal, granted: &[Capabil
 /// The rich window is macOS-only for now (founder decision, 2026-07-23). On
 /// other platforms this falls back to the terminal prompt, so a `--consent` run
 /// there still works; a portable window is a later P3-OPEN slice.
+/// "save its own settings and data" -> "Save its own settings and data": a
+/// checkbox label is a line of its own, not the end of a sentence.
+fn sentence_case(words: &str) -> String {
+    let mut chars = words.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 fn consent_for_session_grants(
     manifest: &Manifest,
     policy: &SessionPolicy,
@@ -23259,7 +23269,10 @@ fn consent_for_session_grants(
             });
             ConsentCapability {
                 cap: cap.clone(),
-                display: cap.to_string(),
+                // The person's words, as the browser Player's card says them;
+                // `store.kv` and `ui.dialog:file-save` meant nothing to the
+                // person deciding (K-1317).
+                display: sentence_case(&cap.plain()),
                 rationale: request
                     .map(|request| request.rationale.clone())
                     .unwrap_or_default(),

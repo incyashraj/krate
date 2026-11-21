@@ -953,7 +953,17 @@ impl Capability {
             }
             ("gfx", "gpu") => "draw with your graphics card".to_string(),
             ("ui", "menu") => "show its own menus".to_string(),
-            ("ui", "dialog") => "show you dialogs and file pickers".to_string(),
+            // Each dialog in its own words: the consent window lists them one
+            // per line, and five lines of "show you dialogs and file pickers"
+            // told a person nothing about which is the export (K-1317).
+            ("ui", "dialog") => match resource {
+                Some("file-open") => "open a file you choose".to_string(),
+                Some("file-save") => "save a file where you choose".to_string(),
+                Some("open-folder") => "use a folder you choose".to_string(),
+                Some("message") => "show you a message".to_string(),
+                Some("confirm") => "ask you to confirm something".to_string(),
+                _ => "show you dialogs and file pickers".to_string(),
+            },
             // Unknown module/action: the technical form is the honest fallback.
             _ => cap.to_string(),
         }
@@ -2012,6 +2022,18 @@ mod tests {
             words("process.terminal"),
             "open a terminal on this computer: it can do anything you can"
         );
+    }
+
+    /// K-1317: each dialog is named for what it does, so a consent window
+    /// listing three of them tells a person which one is the export.
+    #[test]
+    fn each_dialog_says_what_it_does() {
+        let words = |cap: &str| cap.parse::<Capability>().expect(cap).plain();
+        assert_eq!(words("ui.dialog:file-open"), "open a file you choose");
+        assert_eq!(words("ui.dialog:file-save"), "save a file where you choose");
+        assert_eq!(words("ui.dialog:open-folder"), "use a folder you choose");
+        assert_eq!(words("ui.dialog:confirm"), "ask you to confirm something");
+        assert_eq!(words("ui.dialog:*"), "show you dialogs and file pickers");
     }
 
     /// The check must not become a filter on what an app may call itself.

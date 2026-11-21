@@ -153,8 +153,10 @@ mod platform {
     const RESPONSE_CANCEL: isize = 1001;
 
     // Window geometry. Fixed width, height grows with the row count up to a cap.
-    const WINDOW_WIDTH: f64 = 460.0;
-    const ROW_HEIGHT: f64 = 52.0;
+    const WINDOW_WIDTH: f64 = 500.0;
+    // Room for a reason on two lines: one line cut a sentence mid-word at
+    // the window's edge ("so closing th", K-1317).
+    const ROW_HEIGHT: f64 = 66.0;
     const HEADER_HEIGHT: f64 = 72.0;
     const FOOTER_HEIGHT: f64 = 64.0;
     const MAX_LIST_HEIGHT: f64 = 360.0;
@@ -281,9 +283,12 @@ mod platform {
                 )
             };
             checkbox.setFrame(checkbox_rect);
-            // Required capabilities start checked; optional ones start off so
-            // the person opts in rather than out.
-            checkbox.setState(if item.required && item.blocked.is_none() {
+            // Everything the app declared starts checked, as the browser
+            // Player grants it (founder, 2026-11-21): an optional ask that
+            // started off left the app's Export failing for everyone who
+            // pressed Open, and nothing asked again (K-1317). The person can
+            // still untick an optional one; a blocked one stays off.
+            checkbox.setState(if item.blocked.is_none() {
                 NSControlStateValueOn
             } else {
                 NSControlStateValueOff
@@ -299,8 +304,8 @@ mod platform {
                     mtm,
                     &item.rationale,
                     NSRect::new(
-                        NSPoint::new(38.0, row_top - 42.0),
-                        NSSize::new(WINDOW_WIDTH - 58.0, 16.0),
+                        NSPoint::new(38.0, row_top - 58.0),
+                        NSSize::new(WINDOW_WIDTH - 58.0, 32.0),
                     ),
                 );
                 content.addSubview(&rationale);
@@ -382,8 +387,11 @@ mod platform {
     }
 
     fn muted_label(mtm: MainThreadMarker, text: &str, frame: NSRect) -> Retained<NSTextField> {
-        let label = NSTextField::labelWithString(&NSString::from_str(text), mtm);
+        // Wraps inside its frame and ends with an ellipsis past two lines,
+        // rather than cutting a word at the window's edge.
+        let label = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
         label.setFrame(frame);
+        label.setMaximumNumberOfLines(2);
         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let small = NSFont::smallSystemFontSize();
         label.setFont(Some(&NSFont::systemFontOfSize(small)));
