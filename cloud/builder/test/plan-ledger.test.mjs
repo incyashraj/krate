@@ -72,6 +72,8 @@ function start(stateDir, extra) {
       KRATE_HUB: `http://127.0.0.1:${HUB_PORT}`,
       KRATE_STATE_DIR: stateDir,
       KRATE_AGENT: "claude",
+      // The fake engine's price, a test hook a child sees only when named.
+      KRATE_BUILD_ENV_PASS: "FAKE_PLAN_USD",
       ...extra,
     },
     stdio: ["ignore", "ignore", "pipe"],

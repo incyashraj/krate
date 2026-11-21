@@ -1157,8 +1157,37 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "A protocol over TCP or UDP",
-        "Krate's `krate:net/sockets` covers this: TCP connections and UDP datagrams judged against the same `net.connect:<host>:<port>` grant a fetch uses. In Rust use net-krate's std-like `TcpStream`/`UdpSocket` (and its tokio and quinn adapters) in place of std::net, which wasm32-wasip1 cannot open. Listening for incoming connections is not offered yet.",
+        "Krate's `krate:net/sockets` covers this: TCP connections and UDP datagrams judged against the same `net.connect:<host>:<port>` grant a fetch uses. In Rust use net-krate's std-like `TcpStream`/`UdpSocket` (and its tokio and quinn adapters) in place of std::net, which wasm32-wasip1 cannot open. A server that listens is the `net.listen` finding.",
         Some("net.connect"),
+    );
+    // A program that serves: an HTTP server other devices open, a local API
+    // other programs call. Krate listens on one declared port (IC-987).
+    detect_pattern(
+        analysis,
+        "listen",
+        &[
+            "tcplistener::bind",
+            "tokio::net::tcplistener",
+            "axum::serve",
+            "httpserver::new",
+            "warp::serve",
+            "http.server",
+            "socketserver.",
+            "app.run(host",
+            "uvicorn.run(",
+            "http.createserver",
+            "app.listen(",
+            "server.listen(",
+            "http.listenandserve",
+            "net.listen(",
+            "tcplistener(",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "A server other devices or programs open",
+        "Krate's `krate:net/sockets` listens on one port the manifest declares as `net.listen:<port>` (1024 or above): `krate::net::listen::Listener::open(port, Scope::LocalNetwork)` lets other devices on the network in after the person agrees, `Scope::ThisComputer` serves this computer only and needs just the declaration. Accept from the event loop (`accept()` never waits) and read and write each connection like a dialled one; answer HTTP by hand or with a small parser, since server frameworks that own the socket (axum, actix, express, Flask's server) cannot bind one in an app. A computer only: a browser tab and a phone cannot listen.",
+        Some("net.listen"),
     );
     // Files dragged onto the window. Worth naming because it is the one way an
     // app receives a file without a dialog, and people do not think of a drop
@@ -1710,15 +1739,74 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     );
     detect_pattern(
         analysis,
-        "hardware",
+        "printing",
+        &[
+            "win32print",
+            "import cups",
+            "pycups",
+            "python-escpos",
+            "from escpos",
+            "zebra.printer",
+            "printjob",
+            "javax.print",
+            "system.drawing.printing",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Printing",
+        "Print through Krate device.printer: the app never lists or names a printer -- krate::print::printer(title) answers the printer the person picked for this app before, or asks them to pick one, and remembers it so later prints need no dialog. Send a PDF or a PNG page with printer.pdf / printer.png (copies, paper size) or ZPL, EPL and ESC/POS byte for byte with printer.raw. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.printer"),
+    );
+    detect_pattern(
+        analysis,
+        "serial",
         &[
             "serialport",
-            "libusb",
-            "hidapi",
-            "videocapturedevice",
-            "avcapturevideo",
-            "camera",
+            "serial_port",
+            "tokio-serial",
+            "tokio_serial",
+            "pyserial",
+            "import serial",
+            "serial.serial(",
+            "navigator.serial",
+            "jserialcomm",
+            "system.io.ports",
         ],
+        path,
+        text,
+        Severity::Change,
+        "Serial devices",
+        "Reach a serial device through Krate device.serial: the app never lists or names a port -- krate::serial::pick(title) shows the person the computer's serial devices and answers the one they choose (None if they cancel). Then open it with the baud rate, data bits, parity and stop bits the device expects, write bytes, and read with a short wait from the event loop. Handle Disconnected by offering to pick again. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.serial"),
+    );
+    detect_pattern(
+        analysis,
+        "usb",
+        &[
+            "rusb",
+            "nusb",
+            "libusb",
+            "pyusb",
+            "import usb",
+            "usb.core",
+            "navigator.usb",
+            "webusb",
+            "usb4java",
+            "libusbdotnet",
+            "node-usb",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "USB devices",
+        "Reach a USB device through Krate device.usb: declare each model the app is for by its vendor and product ids in hex (device.usb:1915:7777, one entry a model, no wildcard). The app never lists devices -- krate::usb::pick(title) shows the person the connected devices of those models and answers the one they choose (None if they cancel). Claim one interface, then bulk_in/bulk_out and interrupt_in/interrupt_out on its endpoints with a wait, and control requests to that interface or its endpoints only (never device-level requests: set the configuration and alternate setting the device starts in). Keyboards, mice, storage, audio, video and hubs are refused. A computer only: a browser tab and a phone answer Unavailable.",
+        Some("device.usb:<vendor-id>:<product-id>"),
+    );
+    detect_pattern(
+        analysis,
+        "hardware",
+        &["hidapi", "videocapturedevice", "avcapturevideo", "camera"],
         path,
         text,
         Severity::Blocker,
@@ -2886,6 +2974,96 @@ dependencies = [
             .iter()
             .any(|finding| finding.id == "microphone"));
         assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// A program that serves maps to net.listen (IC-987).
+    #[test]
+    fn a_server_that_listens_maps_to_net_listen() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("server.py"),
+            "import http.server\nhttp.server.HTTPServer(('', 8080), Handler).serve_forever()\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"net.listen".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "listen"));
+    }
+
+    /// A serial port maps to device.serial (IC-985), not to the hardware
+    /// blocker it was before Krate had one.
+    #[test]
+    fn serial_port_use_maps_to_device_serial_instead_of_a_hardware_blocker() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("reader.py"),
+            "import serial\nport = serial.Serial('/dev/ttyUSB0', 115200)\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"device.serial".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "serial"));
+        assert!(!plan.findings.iter().any(|finding| finding.id == "hardware"));
+    }
+
+    /// USB code maps to device.usb (IC-988) -- rusb, libusb, pyusb and
+    /// WebUSB alike -- not to the hardware blocker it was before Krate had
+    /// one.
+    #[test]
+    fn usb_use_maps_to_device_usb_instead_of_a_hardware_blocker() {
+        for (file, source) in [
+            (
+                "radio.rs",
+                "let handle = rusb::open_device_with_vid_pid(0x1915, 0x7777).unwrap();\n",
+            ),
+            (
+                "radio.c",
+                "#include <libusb-1.0/libusb.h>\nlibusb_bulk_transfer(h, 0x01, buf, n, &sent, 1000);\n",
+            ),
+            (
+                "radio.py",
+                "import usb.core\ndev = usb.core.find(idVendor=0x1915, idProduct=0x7777)\n",
+            ),
+            (
+                "radio.js",
+                "const device = await navigator.usb.requestDevice({ filters: [] });\n",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join(file), source).unwrap();
+            let plan = analyze(dir.path()).unwrap();
+            assert!(
+                plan.suggested_capabilities
+                    .contains(&"device.usb:<vendor-id>:<product-id>".to_string()),
+                "{file}: {:?}",
+                plan.suggested_capabilities
+            );
+            assert!(plan.findings.iter().any(|finding| finding.id == "usb"), "{file}");
+            assert!(
+                !plan.findings.iter().any(|finding| finding.id == "hardware"),
+                "{file}"
+            );
+        }
+    }
+
+    /// Printing code maps to device.printer (IC-986).
+    #[test]
+    fn printing_code_maps_to_device_printer() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("labels.py"),
+            "import cups\nconn = cups.Connection()\nconn.printFile('Zebra', 'l.zpl', 'l', {'raw': ''})\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan
+            .suggested_capabilities
+            .contains(&"device.printer".to_string()));
+        assert!(plan.findings.iter().any(|finding| finding.id == "printing"));
     }
 
     #[test]

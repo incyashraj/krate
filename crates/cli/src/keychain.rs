@@ -175,6 +175,35 @@ pub(crate) fn add(item: &Item, bytes: &[u8]) -> Result<()> {
     }
 }
 
+/// Remove the item. Gone already is not an error; a keychain that will not
+/// be asked (locked, or the person said no) is.
+pub(crate) fn remove(item: &Item) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        if !usable() {
+            return Ok(());
+        }
+        let out = std::process::Command::new("/usr/bin/security")
+            .args(["delete-generic-password", "-s", item.service, "-a", "krate"])
+            .output()
+            .with_context(|| format!("could not ask the keychain to remove {}", item.said))?;
+        // 44: errSecItemNotFound -- nothing to remove.
+        if out.status.success() || out.status.code() == Some(44) {
+            return Ok(());
+        }
+        bail!(
+            "your keychain did not let go of {} ({}). Unlock it and try again.",
+            item.said,
+            String::from_utf8_lossy(&out.stderr).trim()
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = item;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

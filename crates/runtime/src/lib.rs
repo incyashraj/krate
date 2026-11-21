@@ -109,11 +109,31 @@ mod print_host;
     any(target_os = "macos", target_os = "linux", target_os = "windows")
 ))]
 pub mod process_host;
+// Printers the person picks (krate:print, IC-986): desktop only.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod printer_host;
 pub mod random_host;
+// Serial devices the person picks (krate:serial, IC-985): desktop only.
 pub mod scene3d;
 pub mod screen_fit;
 pub mod secret_host;
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod serial_host;
+// Where a listener for the network is reached, and announcing it there
+// (IC-990): desktop only, as listening is.
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+mod serve_discovery;
 pub mod shared_host;
+// USB devices the person picks (krate:usb, IC-988): desktop only.
 #[cfg(target_os = "macos")]
 mod speech_apple;
 mod speech_synthesis;
@@ -124,6 +144,11 @@ pub mod store_host;
 pub mod text_overlap;
 pub mod touch_pad;
 pub mod usability;
+#[cfg(all(
+    feature = "phase2-bindings",
+    any(target_os = "macos", target_os = "linux", target_os = "windows")
+))]
+pub mod usb_host;
 
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::locale::{
@@ -280,6 +305,12 @@ pub struct Config {
     /// `process.run` and `process.terminal` need the manifest to name them
     /// as well as the person to allow them (IC-977).
     pub declared_capabilities: Option<std::collections::BTreeSet<krate_manifest::Capability>>,
+    /// Where the printer the person picked for this app is remembered
+    /// (krate:print, IC-986), so the next run prints with no dialog. The CLI
+    /// sets it only for an app whose lineage it can check again and only
+    /// when a person, not `--auto-grant`, is deciding; `None` keeps a pick
+    /// for the run alone.
+    pub printer_memory: Option<PathBuf>,
 }
 
 impl Config {
@@ -331,6 +362,7 @@ impl Default for Config {
             usability_plan: None,
             interpreter: false,
             declared_capabilities: None,
+            printer_memory: None,
         }
     }
 }
@@ -1494,6 +1526,12 @@ impl Runtime {
         // (which adapts) held a wide app upright on a phone, shrunk into a
         // band across the middle (K-1209).
         gui_host.set_adapts(false);
+        // A headless run has nobody to pick a serial device (IC-985) or a
+        // printer (IC-986).
+        store
+            .data()
+            .phase2
+            .set_nobody_to_ask(gui_host.is_headless());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let linker = self.phase3_gui_linker()?;
@@ -1550,6 +1588,12 @@ impl Runtime {
             .imports(&self.engine)
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
+        // A headless run has nobody to pick a serial device (IC-985) or a
+        // printer (IC-986).
+        store
+            .data()
+            .phase2
+            .set_nobody_to_ask(gui_host.is_headless());
         store.data_mut().phase3_gui = Some(gui_host);
         // A windowed app's team-data sync never waits on the network.
         store.data().phase2.set_windowed();
@@ -1720,6 +1764,15 @@ impl Runtime {
         // Programs on the computer (IC-977); a phone or a tab answers every
         // call with words, so the import always links.
         link_phase2!(phase2_bindings::krate::process::processes);
+        // Serial devices the person picks (IC-985); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::serial::ports);
+        // Printers the person picks (IC-986); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::print::printers);
+        // USB devices the person picks (IC-988); a phone or a tab answers
+        // `unavailable`, so the import always links.
+        link_phase2!(phase2_bindings::krate::usb::devices);
 
         // The two that differ.
         link_gui!(ui4::types);
@@ -2040,7 +2093,10 @@ impl HostState {
             )
             // What the manifest names, for krate:process (IC-977): a program
             // runs only when it is named there AND the person allowed it.
-            .with_declared(config.declared_capabilities.clone()),
+            .with_declared(config.declared_capabilities.clone())
+            // Where the person's printer pick is remembered for this app
+            // (IC-986), as the CLI decided it.
+            .with_printers(config.printer_memory.clone(), config.app_name.as_deref()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
@@ -6179,6 +6235,777 @@ mod tests {
                 .expect("no trap"),
             Err(ProcessError::NotDeclared(_))
         ));
+    }
+
+    /// A serial device is reached only when the manifest declares
+    /// `device.serial` and the person allowed it (krate:serial, IC-985).
+    /// Refused, no list is shown and no port is touched, and the words name
+    /// the capability; every other call is refused the same way, so a
+    /// handle cannot be guessed past the gate either.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_serial_device_needs_the_declaration_and_the_persons_yes() {
+        use phase2_bindings::krate::serial::ports::{
+            Host, Parity, SerialError, Settings, StopBits,
+        };
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |grants: &[&str], declared: Option<&[&str]>| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+        };
+        let settings = Settings {
+            baud_rate: 9_600,
+            data_bits: 8,
+            parity: Parity::None,
+            stop_bits: StopBits::One,
+            read_timeout_ms: 0,
+        };
+        let undeclared =
+            "this app did not ask for device.serial, so it cannot talk to a serial device";
+        let refused = "you did not allow this app to talk to a serial device (device.serial)";
+        for (mut host, words) in [
+            // Allowed on the command line, never declared.
+            (host_with(&["device.serial"], Some(&[])), undeclared),
+            // No manifest at all names nothing.
+            (host_with(&["device.serial"], None), undeclared),
+            // Declared, and the person said no.
+            (host_with(&[], Some(&["device.serial"])), refused),
+        ] {
+            let said = |err: SerialError| match err {
+                SerialError::NotAllowed(said) => said,
+                other => panic!("refused by name, got {other:?}"),
+            };
+            assert_eq!(
+                said(
+                    host.pick("Choose".into())
+                        .expect("no trap")
+                        .expect_err("pick")
+                ),
+                words
+            );
+            assert_eq!(
+                said(host.open(1, settings).expect("no trap").expect_err("open")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.read(1, 16, Some(0))
+                        .expect("no trap")
+                        .expect_err("read")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.write(1, b"x".to_vec())
+                        .expect("no trap")
+                        .expect_err("write")
+                ),
+                words
+            );
+        }
+
+        // Declared and allowed: past the gate, a handle the person never
+        // gave is no device.
+        let mut host = host_with(&["device.serial"], Some(&["device.serial"]));
+        assert!(matches!(
+            host.open(1, settings).expect("no trap"),
+            Err(SerialError::UnknownHandle)
+        ));
+    }
+
+    /// A USB device is reached only by the ids the manifest names, only when
+    /// the person allowed them, and never when the computer keeps the device
+    /// (krate:usb, IC-988). Refused, no list is shown and no device is
+    /// opened, and the words name the capability; every later call is held
+    /// to the same rule, so a handle cannot be guessed past it either.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_usb_device_is_reached_only_by_the_ids_the_manifest_names() {
+        use phase2_bindings::krate::usb::devices::{
+            ControlSetup, Host, Recipient, RequestType, UsbError,
+        };
+        use usb_host::fake::FakeUsb;
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |policy: SessionPolicy, declared: Option<&[&str]>| {
+            let fake = FakeUsb::standard();
+            let log = fake.log();
+            let host = phase2_host::Phase2Host::new(
+                UapiGuard::new(policy),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+            .with_usb_backend(Box::new(fake));
+            (host, log)
+        };
+        let grants = |list: &[&str]| {
+            SessionPolicy::from_cli_grants(&list.iter().map(|g| g.to_string()).collect::<Vec<_>>())
+                .expect("grants")
+        };
+        let pick = |host: &mut phase2_host::Phase2Host, ids: &str| {
+            usb_host::TEST_PICK.with(|pick| *pick.borrow_mut() = Some(ids.to_string()));
+            let picked = host.pick("Choose the dongle".into()).expect("no trap");
+            usb_host::TEST_PICK.with(|pick| *pick.borrow_mut() = None);
+            picked
+        };
+        let said = |err: UsbError| match err {
+            UsbError::NotAllowed(said) => said,
+            other => panic!("refused by name, got {other:?}"),
+        };
+        let setup = ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Interface,
+            request: 1,
+            value: 0,
+            index: 0,
+        };
+
+        let undeclared = "this app did not ask for device.usb, so it cannot talk to a USB device";
+        let refused =
+            "you did not allow this app to talk to the 1915:7777 USB device (device.usb:1915:7777)";
+        let organisation = "the organisation that manages this computer does not allow apps to \
+                            talk to USB devices (device.usb)";
+        let no_usb = krate_policy::OrgCeiling {
+            deny: vec![krate_policy::DenyRule::parse("device.usb").expect("a capability")],
+            network: None,
+            calls: Vec::new(),
+        };
+        for (allowed, declared, words) in [
+            // Allowed on the command line, never declared.
+            (grants(&["device.usb:1915:7777"]), Some(&[][..]), undeclared),
+            // No manifest at all names nothing.
+            (grants(&["device.usb:1915:7777"]), None, undeclared),
+            // Declared, and the person said no.
+            (grants(&[]), Some(&["device.usb:1915:7777"][..]), refused),
+            // Declared and allowed, and the organisation says no USB.
+            (
+                grants(&["device.usb:1915:7777"]).with_organisation(no_usb.clone()),
+                Some(&["device.usb:1915:7777"][..]),
+                organisation,
+            ),
+        ] {
+            let (mut host, log) = host_with(allowed, declared);
+            assert_eq!(said(pick(&mut host, "1915:7777").expect_err("pick")), words);
+            assert_eq!(
+                said(host.claim(1, 0).expect("no trap").expect_err("claim")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.bulk_in(1, 0x81, 64, 10)
+                        .expect("no trap")
+                        .expect_err("bulk in")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.interrupt_out(1, 0x02, b"x".to_vec(), 10)
+                        .expect("no trap")
+                        .expect_err("interrupt out")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.control_out(1, setup, b"x".to_vec(), 10)
+                        .expect("no trap")
+                        .expect_err("control out")
+                ),
+                words
+            );
+            assert!(
+                log.lock().expect("log").events.is_empty(),
+                "refused: nothing listed is opened"
+            );
+        }
+
+        // 7777 and 7778 both named; only 7777 allowed. A connected model the
+        // manifest never names is undeclared; a named one the person did not
+        // allow is theirs to refuse; a keyboard is the computer's even when
+        // named and allowed.
+        let (mut host, log) = host_with(
+            grants(&["device.usb:1915:7777", "device.usb:1915:0101"]),
+            Some(&[
+                "device.usb:1915:7777",
+                "device.usb:1915:7778",
+                "device.usb:1915:0101",
+            ]),
+        );
+        assert_eq!(
+            said(pick(&mut host, "1915:0202").expect_err("an unnamed thumb drive")),
+            "this app did not ask for device.usb:1915:0202, so it cannot talk to that USB device"
+        );
+        assert_eq!(
+            said(pick(&mut host, "1915:7778").expect_err("named, not allowed")),
+            "you did not allow this app to talk to the 1915:7778 USB device \
+             (device.usb:1915:7778)"
+        );
+        assert!(matches!(
+            pick(&mut host, "1915:0101"),
+            Err(UsbError::NotForApps(words)) if words.contains("keyboard")
+        ));
+        assert!(log.lock().expect("log").events.is_empty(), "nothing opened");
+        assert!(matches!(pick(&mut host, "cancel"), Ok(None)));
+
+        // The allowed one: picked, claimed, and spoken to byte for byte.
+        let device = pick(&mut host, "1915:7777")
+            .expect("pick")
+            .expect("a device");
+        assert_eq!((device.vendor_id, device.product_id), (0x1915, 0x7777));
+        assert_eq!(device.name, "Radio dongle (1915:7777)");
+        let h = device.handle;
+        assert!(matches!(
+            host.bulk_out(h, 0x01, b"x".to_vec(), 10).expect("no trap"),
+            Err(UsbError::NotClaimed)
+        ));
+        host.claim(h, 0).expect("no trap").expect("claim");
+        host.bulk_out(h, 0x01, vec![0x00, 0x01, 0xfe, 0xff], 1_000)
+            .expect("no trap")
+            .expect("bulk out");
+        assert_eq!(
+            host.bulk_in(h, 0x81, 64, 1_000)
+                .expect("no trap")
+                .expect("bulk in"),
+            vec![0x00, 0x01, 0xfe, 0xff]
+        );
+        // A handle the person never gave is no device.
+        assert!(matches!(
+            host.claim(h + 1, 0).expect("no trap"),
+            Err(UsbError::UnknownHandle)
+        ));
+        // The run ends: nothing left claimed or open.
+        drop(host);
+        let log = log.lock().expect("log");
+        assert!(log.claimed.is_empty(), "{:?}", log.claimed);
+        assert_eq!(log.open, 0);
+    }
+
+    /// Printing reaches a printer only when the manifest declares
+    /// `device.printer`, the person allowed it, and the organisation allows
+    /// printing (krate:print, IC-986). Refused, no list is shown and no job
+    /// is sent, and the words name the capability. Admitted, a job reaches
+    /// the backend with its bytes and options, a raw label stream byte for
+    /// byte, a cancelled pick answers none, and a remembered pick is found
+    /// again by the next run without asking.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn printing_needs_the_declaration_the_persons_yes_and_the_organisation() {
+        use phase2_bindings::krate::print::printers::{
+            Document, DocumentFormat, Host, PaperMm, PaperSize, PrintError, PrintOutcome,
+        };
+        use printer_host::{FakeBackend, JobKind, Paper};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let memory = sandbox
+            .path()
+            .join("grants")
+            .join("printers")
+            .join("app@k.json");
+        let fake = FakeBackend::with_printers(&["Office_Laser", "Zebra_ZD421"]);
+        let host_with = |policy: SessionPolicy, declared: Option<&[&str]>| {
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(policy),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+            .with_printers(None, Some("Travellers"))
+            .with_print_backend(Box::new(fake.clone()), Some(memory.clone()))
+        };
+        let grants = |list: &[&str]| {
+            SessionPolicy::from_cli_grants(&list.iter().map(|g| g.to_string()).collect::<Vec<_>>())
+                .expect("grants")
+        };
+        let label = |copies: u32| Document {
+            format: DocumentFormat::Pdf,
+            bytes: b"%PDF-1.7\n".to_vec(),
+            copies,
+            paper: PaperSize::Custom(PaperMm {
+                width: 100,
+                height: 150,
+            }),
+            title: "Traveller WO-1042".to_string(),
+        };
+        let zpl = b"^XA^FO50,50^ADN,36,20^FDWO-1042\x00\xff^FS^XZ".to_vec();
+
+        let undeclared = "this app did not ask for device.printer, so it cannot print";
+        let refused = "you did not allow this app to print (device.printer)";
+        let organisation = "the organisation that manages this computer does not allow this \
+                            app to print (device.printer)";
+        let no_printing = krate_policy::OrgCeiling {
+            deny: Vec::new(),
+            network: None,
+            calls: vec![krate_policy::PRINT_CALL.to_string()],
+        };
+        for (mut host, words) in [
+            // Allowed on the command line, never declared.
+            (
+                host_with(grants(&["device.printer"]), Some(&[])),
+                undeclared,
+            ),
+            // No manifest at all names nothing.
+            (host_with(grants(&["device.printer"]), None), undeclared),
+            // Declared, and the person said no.
+            (host_with(grants(&[]), Some(&["device.printer"])), refused),
+            // Declared and allowed, and the organisation says no printing.
+            (
+                host_with(
+                    grants(&["device.printer"]).with_organisation(no_printing.clone()),
+                    Some(&["device.printer"]),
+                ),
+                organisation,
+            ),
+        ] {
+            let said = |err: PrintError| match err {
+                PrintError::NotAllowed(said) => said,
+                other => panic!("refused by name, got {other:?}"),
+            };
+            assert_eq!(
+                said(host.remembered().expect("no trap").expect_err("remembered")),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.pick("Choose".into())
+                        .expect("no trap")
+                        .expect_err("pick")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.print_document(1, label(1))
+                        .expect("no trap")
+                        .expect_err("document")
+                ),
+                words
+            );
+            assert_eq!(
+                said(
+                    host.print_raw(1, zpl.clone(), 1, "Label".into())
+                        .expect("no trap")
+                        .expect_err("raw")
+                ),
+                words
+            );
+        }
+        assert!(fake.jobs.lock().unwrap().is_empty(), "nothing was sent");
+        assert!(!memory.exists(), "nothing was remembered");
+
+        // Declared and allowed. A handle the person never gave is no printer.
+        let allowed = || host_with(grants(&["device.printer"]), Some(&["device.printer"]));
+        let mut host = allowed();
+        assert!(matches!(
+            host.print_raw(1, zpl.clone(), 1, String::new())
+                .expect("no trap"),
+            Err(PrintError::UnknownHandle)
+        ));
+        // Nothing picked yet: nothing remembered, and nobody asked.
+        assert!(matches!(host.remembered().expect("no trap"), Ok(None)));
+        // Nobody there to choose (a headless run): none, and no memory.
+        host.set_nobody_to_ask(true);
+        assert!(matches!(
+            host.pick("Choose".into()).expect("no trap"),
+            Ok(None)
+        ));
+        assert!(!memory.exists());
+        drop(host);
+
+        // The person picks the label printer; it is remembered for the app.
+        let printers = || {
+            printer_host::Printers::new(Box::new(fake.clone())).with_memory(Some(memory.clone()))
+        };
+        let mut first = printers();
+        assert_eq!(
+            first.pick_scripted("Zebra_ZD421"),
+            Ok(Some((1, "Zebra ZD421".to_string())))
+        );
+        // A printer that is not set up is no pick, and a cancel keeps the
+        // earlier one.
+        assert!(matches!(
+            first.pick_scripted("Nowhere"),
+            Err(printer_host::Fault::Unavailable(words)) if words.contains("not a printer set up")
+        ));
+        assert_eq!(first.pick_scripted("cancel"), Ok(None));
+        assert_eq!(
+            printer_host::remembered_in(&memory),
+            Some(("Zebra_ZD421".into(), "Zebra ZD421".into()))
+        );
+
+        // The next run finds it with no dialog, and prints to it.
+        let mut host = allowed();
+        let printer = host
+            .remembered()
+            .expect("no trap")
+            .expect("allowed")
+            .expect("remembered");
+        assert_eq!(printer.name, "Zebra ZD421");
+        assert!(matches!(
+            host.print_document(printer.handle, label(2)).expect("no trap"),
+            Ok(PrintOutcome::Queued(job)) if job == "Zebra_ZD421-1"
+        ));
+        assert!(matches!(
+            host.print_raw(printer.handle, zpl.clone(), 1, String::new())
+                .expect("no trap"),
+            Ok(PrintOutcome::Queued(job)) if job == "Zebra_ZD421-2"
+        ));
+        {
+            let jobs = fake.jobs.lock().unwrap();
+            assert_eq!(jobs[0].0, "Zebra_ZD421");
+            assert_eq!(jobs[0].1.kind, JobKind::Pdf);
+            assert_eq!(jobs[0].1.copies, 2);
+            assert_eq!(
+                jobs[0].1.paper,
+                Paper::Custom {
+                    width_mm: 100,
+                    height_mm: 150
+                }
+            );
+            assert_eq!(jobs[0].1.title, "Traveller WO-1042");
+            assert_eq!(jobs[0].1.bytes, b"%PDF-1.7\n");
+            assert_eq!(jobs[1].1.kind, JobKind::Raw);
+            assert_eq!(jobs[1].1.bytes, zpl, "byte for byte");
+            assert_eq!(jobs[1].1.title, "Travellers", "named after the app");
+        }
+        // A job out of bounds is refused before the backend sees it.
+        assert!(matches!(
+            host.print_document(printer.handle, label(0)).expect("no trap"),
+            Err(PrintError::BadJob(words)) if words.contains("copies")
+        ));
+        assert_eq!(fake.jobs.lock().unwrap().len(), 2);
+
+        // Forgotten (the file deleted, as `krate permissions --forget`
+        // does): the next run has nothing remembered and must ask.
+        std::fs::remove_file(&memory).expect("forget");
+        let mut host = allowed();
+        assert!(matches!(host.remembered().expect("no trap"), Ok(None)));
+    }
+
+    /// Listening (IC-987) needs `net.listen:<port>` declared, always; for
+    /// other devices on the network it needs the person's yes too, and for
+    /// this computer alone it does not. Refused, nothing binds, and the
+    /// words name the capability.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn listening_needs_the_declaration_and_for_the_network_the_persons_yes() {
+        use phase2_bindings::krate::net::sockets::{Host, ListenError, ListenScope};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let host_with = |grants: &[&str], declared: Option<&[&str]>| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(declared.map(|caps| {
+                caps.iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect()
+            }))
+        };
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+            l.local_addr().expect("addr").port()
+        };
+        let cap = format!("net.listen:{port}");
+        let said = |answer: std::result::Result<u64, ListenError>| match answer {
+            Err(ListenError::NotAllowed(words)) => words,
+            other => panic!("refused by name, got {other:?}"),
+        };
+        let undeclared = format!(
+            "this app did not declare net.listen:{port}, so it cannot listen on port {port}"
+        );
+
+        // Allowed on the command line, never declared; and no manifest at
+        // all: neither scope.
+        for mut host in [
+            host_with(&[cap.as_str()], Some(&[])),
+            host_with(&[cap.as_str()], None),
+        ] {
+            for scope in [ListenScope::ThisComputer, ListenScope::LocalNetwork] {
+                assert_eq!(
+                    said(host.tcp_listen(port, scope).expect("no trap")),
+                    undeclared
+                );
+            }
+        }
+        // Another port than the one declared: refused by its own name.
+        let mut host = host_with(&[cap.as_str()], Some(&[cap.as_str()]));
+        let other = if port == u16::MAX { port - 1 } else { port + 1 };
+        assert!(said(
+            host.tcp_listen(other, ListenScope::ThisComputer)
+                .expect("no trap")
+        )
+        .contains(&format!("net.listen:{other}")));
+        // A system port, in words, before any declaration is looked at.
+        assert!(matches!(
+            host.tcp_listen(80, ListenScope::ThisComputer).expect("no trap"),
+            Err(ListenError::BadPort(words)) if words.contains("below 1024")
+        ));
+
+        // Declared, and the person said no: the network is refused by name,
+        // this computer alone still listens.
+        let mut host = host_with(&[], Some(&[cap.as_str()]));
+        assert_eq!(
+            said(
+                host.tcp_listen(port, ListenScope::LocalNetwork)
+                    .expect("no trap")
+            ),
+            format!(
+                "you did not let other devices on your network open this app on port {port} \
+                 (net.listen:{port}); it can still listen for this computer only"
+            )
+        );
+        let listener = host
+            .tcp_listen(port, ListenScope::ThisComputer)
+            .expect("no trap")
+            .expect("this computer needs only the declaration");
+        assert!(matches!(
+            host.tcp_local_port(listener).expect("no trap"),
+            Ok(at) if at == port
+        ));
+        host.close(listener).expect("no trap");
+
+        // Declared and allowed: the network too.
+        let mut host = host_with(&[cap.as_str()], Some(&[cap.as_str()]));
+        let listener = host
+            .tcp_listen(port, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("declared and allowed");
+        assert!(matches!(
+            host.tcp_accept(listener).expect("no trap"),
+            Ok(None)
+        ));
+        drop(host);
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
+            "the host gone, its listener is gone"
+        );
+    }
+
+    /// A listener for the network says where it is reached and announces
+    /// itself (IC-990); one for this computer alone does neither, so the
+    /// person's yes for the port is what opens both. An announcement goes
+    /// when its listener closes, and the rest when the run ends.
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    #[test]
+    fn a_network_listener_says_where_it_is_and_announces_itself_until_it_closes() {
+        use phase2_bindings::krate::net::sockets::{Host, ListenError, ListenScope};
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let heard = serve_discovery::tests::Heard::default();
+        let host_with = |grants: &[&str], declared: &[&str]| {
+            let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+            phase2_host::Phase2Host::new(
+                UapiGuard::new(SessionPolicy::from_cli_grants(&grants).expect("grants")),
+                Box::new(LocalPhase2Adapter::new(
+                    Rc::new(RefCell::new(OutputMode::Sink)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    1024,
+                    sandbox.path().to_path_buf(),
+                    Default::default(),
+                )),
+            )
+            .with_declared(Some(
+                declared
+                    .iter()
+                    .map(|c| c.parse::<krate_manifest::Capability>().expect(c))
+                    .collect(),
+            ))
+            .with_printers(None, Some("Shop Floor"))
+            .with_announcer(Box::new(heard.clone()))
+        };
+        let free_port = || {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+            l.local_addr().expect("addr").port()
+        };
+        let (port, second) = (free_port(), free_port());
+        let cap = format!("net.listen:{port}");
+        let cap2 = format!("net.listen:{second}");
+
+        // Declared, never allowed: this computer alone. Neither call says
+        // anything about the network.
+        let mut host = host_with(&[], &[cap.as_str()]);
+        let alone = host
+            .tcp_listen(port, ListenScope::ThisComputer)
+            .expect("no trap")
+            .expect("this computer needs only the declaration");
+        let refused = format!(
+            "this app listens on port {port} for this computer only, so other devices on your \
+             network cannot open it"
+        );
+        assert!(matches!(
+            host.tcp_addresses(alone).expect("no trap"),
+            Err(ListenError::NotAllowed(words)) if words == refused
+        ));
+        assert!(matches!(
+            host.tcp_announce(alone, "_http._tcp".into()).expect("no trap"),
+            Err(ListenError::NotAllowed(words)) if words == refused
+        ));
+        // Not a listener at all.
+        assert!(matches!(
+            host.tcp_addresses(9_999).expect("no trap"),
+            Err(ListenError::UnknownHandle)
+        ));
+        drop(host);
+        assert!(heard.0.lock().unwrap().is_empty(), "nothing announced");
+
+        // Declared and allowed: the network.
+        let mut host = host_with(
+            &[cap.as_str(), cap2.as_str()],
+            &[cap.as_str(), cap2.as_str()],
+        );
+        let listener = host
+            .tcp_listen(port, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("declared and allowed");
+        let found = host
+            .tcp_addresses(listener)
+            .expect("no trap")
+            .expect("where it is reached");
+        let expected: Vec<String> = serve_discovery::local_network_addresses()
+            .iter()
+            .map(|ip| ip.to_string())
+            .collect();
+        assert_eq!(
+            found.iter().map(|a| a.ip.clone()).collect::<Vec<_>>(),
+            expected,
+            "this computer's own local-network addresses"
+        );
+        for a in &found {
+            let ip: std::net::Ipv4Addr = a.ip.parse().expect("an IPv4 address");
+            assert!(ip.is_private() || ip.is_link_local(), "{ip} is private");
+            assert_eq!(a.port, port);
+            assert_eq!(a.url, format!("http://{ip}:{port}/"));
+        }
+
+        // A service type that is not one: refused in words, nothing sent.
+        assert!(matches!(
+            host.tcp_announce(listener, "web pages".into()).expect("no trap"),
+            Err(ListenError::Failed(words)) if words.contains("_http._tcp for web pages")
+        ));
+        assert!(heard.0.lock().unwrap().is_empty());
+
+        let announced = host
+            .tcp_announce(listener, "_http._tcp".into())
+            .expect("no trap");
+        if expected.is_empty() {
+            // A computer on no local network has nothing to announce on.
+            assert!(matches!(
+                announced,
+                Err(ListenError::Failed(words)) if words.contains("not on a local network")
+            ));
+            return;
+        }
+        let announced = announced.expect("announced");
+        assert_eq!(announced.name, "Shop Floor");
+        assert_eq!(announced.host, "shop-floor.local");
+        assert_eq!(announced.url, format!("http://shop-floor.local:{port}/"));
+        let other = host
+            .tcp_listen(second, ListenScope::LocalNetwork)
+            .expect("no trap")
+            .expect("a second listener");
+        host.tcp_announce(other, "_shopfloor._tcp".into())
+            .expect("no trap")
+            .expect("announced");
+        let ips = format!(
+            "{:?}",
+            expected
+                .iter()
+                .map(|ip| ip.parse::<std::net::Ipv4Addr>().unwrap())
+                .collect::<Vec<_>>()
+        );
+        // The listener closes: its announcement goes, the other stays.
+        host.close(listener).expect("no trap");
+        assert_eq!(
+            *heard.0.lock().unwrap(),
+            [
+                format!("announce Shop Floor._http._tcp.local. shop-floor.local {port} {ips}"),
+                format!(
+                    "announce Shop Floor._shopfloor._tcp.local. shop-floor.local {second} {ips}"
+                ),
+                "withdraw Shop Floor._http._tcp.local.".to_string(),
+            ]
+        );
+        // The run ends: the rest go.
+        drop(host);
+        assert_eq!(
+            heard.0.lock().unwrap().last().map(String::as_str),
+            Some("withdraw Shop Floor._shopfloor._tcp.local.")
+        );
+        assert_eq!(heard.0.lock().unwrap().len(), 4);
     }
 
     /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing

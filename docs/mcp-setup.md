@@ -76,6 +76,21 @@ The files live at:
 In Claude Desktop you can also open it from the app: Claude menu, Settings,
 Developer, Edit Config.
 
+## Krate in Claude, with nothing installed
+
+In Claude on the web, the desktop app or your phone, add Krate as a
+connector: Settings, Connectors, Add custom connector, and paste
+
+```
+https://hub.krate.tech/mcp
+```
+
+Claude can then search Krate apps and open any of them. Ask it to make an
+app and it signs you in to Krate once, writes the app, and Krate checks it
+and publishes it to your account, unlisted. You get a link that opens it in
+a browser on any device. Krate runs no AI of its own for this: Claude writes
+the code, Krate compiles and checks it.
+
 ## Two other ways, if you would rather not connect anything
 
 - **Paste one prompt into any chat.** Works in ChatGPT, Claude, Cursor, anything.

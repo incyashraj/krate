@@ -371,6 +371,15 @@ pub trait TimeAdapter {
 pub trait LocaleAdapter {
     fn current(&self) -> std::result::Result<LocaleId, AdapterError>;
     fn timezone(&self) -> std::result::Result<String, AdapterError>;
+    /// Minutes east of UTC in the person's timezone at `millis`, daylight
+    /// saving included (IC-991). Derived from `timezone`, so an adapter that
+    /// names its zone gets the right offset without a second source of truth.
+    fn utc_offset(&self, millis: u64) -> std::result::Result<i32, AdapterError> {
+        let timezone = self.timezone()?;
+        Ok(krate_adapter_common::locale::utc_offset_minutes(
+            millis, &timezone,
+        ))
+    }
     fn format_date(
         &self,
         millis: u64,
@@ -824,6 +833,13 @@ impl<'a> UapiDispatcher<'a> {
     pub fn timezone(&self) -> DispatchResult<String> {
         self.check(&UapiCall::Locale(LocaleCall::Info))?;
         self.adapter.locale().timezone().map_err(Into::into)
+    }
+
+    /// The person's UTC offset at an instant: the same `locale.info` the zone
+    /// name needs, since it says no more than the name already does.
+    pub fn utc_offset(&self, millis: u64) -> DispatchResult<i32> {
+        self.check(&UapiCall::Locale(LocaleCall::Info))?;
+        self.adapter.locale().utc_offset(millis).map_err(Into::into)
     }
 
     pub fn format_date(
@@ -1415,6 +1431,9 @@ mod tests {
 
         let locale = dispatcher.current_locale().expect("locale");
         dispatcher.timezone().expect("timezone");
+        // The offset is derived from the adapter's own zone (UTC here), so
+        // it reads the zone once more.
+        assert_eq!(dispatcher.utc_offset(0).expect("utc offset"), 0);
         dispatcher
             .format_date(0, "UTC", DateStyle::Short, &locale)
             .expect("format date");
@@ -1450,9 +1469,47 @@ mod tests {
         assert_eq!(calls.monotonic_nanos, 1);
         assert_eq!(calls.sleep, 1);
         assert_eq!(calls.current_locale, 1);
-        assert_eq!(calls.timezone, 1);
+        assert_eq!(calls.timezone, 2);
         assert_eq!(calls.format_date, 1);
         assert_eq!(calls.format_number, 1);
+    }
+
+    /// IC-991: an adapter that names its zone gets the daylight-saving
+    /// offset of that zone from the default `utc_offset`, with no second
+    /// source of truth. 2026-03-29 01:00 UTC is Zurich's spring change.
+    #[test]
+    fn utc_offset_follows_the_adapters_named_zone() {
+        struct Zurich;
+        impl LocaleAdapter for Zurich {
+            fn current(&self) -> std::result::Result<LocaleId, AdapterError> {
+                Ok(LocaleId {
+                    bcp47: "de-CH".to_string(),
+                })
+            }
+            fn timezone(&self) -> std::result::Result<String, AdapterError> {
+                Ok("Europe/Zurich".to_string())
+            }
+            fn format_date(
+                &self,
+                _millis: u64,
+                _tz: &str,
+                _style: DateStyle,
+                _loc: &LocaleId,
+            ) -> std::result::Result<String, AdapterError> {
+                Ok(String::new())
+            }
+            fn format_number(
+                &self,
+                _value: f64,
+                _style: NumberStyle,
+                _loc: &LocaleId,
+            ) -> std::result::Result<String, AdapterError> {
+                Ok(String::new())
+            }
+        }
+        let spring = 1_774_746_000_000_u64;
+        assert_eq!(Zurich.utc_offset(spring - 1).unwrap(), 60);
+        assert_eq!(Zurich.utc_offset(spring).unwrap(), 120);
     }
 
     #[test]

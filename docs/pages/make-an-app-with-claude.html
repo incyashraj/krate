@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Make an app with Claude | Krate</title>
+  <meta name="description" content="Add the Krate connector to Claude, ask for an app in plain words, and get a link that opens it in any browser, phones included, with nothing to install." />
+  <link rel="canonical" href="https://krate.tech/docs/pages/make-an-app-with-claude.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Krate" />
+  <meta property="og:title" content="Make an app with Claude | Krate" />
+  <meta property="og:description" content="Add the Krate connector to Claude, ask for an app in plain words, and get a link that opens it in any browser, phones included, with nothing to install." />
+  <meta property="og:url" content="https://krate.tech/docs/pages/make-an-app-with-claude.html" />
+  <meta property="og:image" content="https://krate.tech/og-v5.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "HowTo", "@id": "https://krate.tech/docs/pages/make-an-app-with-claude.html#howto", "url": "https://krate.tech/docs/pages/make-an-app-with-claude.html", "name": "Make an app with Claude", "description": "Add the Krate connector to Claude, ask for an app in plain words, and get a link that opens it in any browser, phones included, with nothing to install.", "inLanguage": "en", "dateModified": "2026-11-21", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "step": [{"@type": "HowToStep", "name": "Add the Krate connector", "text": "On claude.ai, go to Customize > Connectors, choose Add, then Add custom connector, and enter https://hub.krate.tech/mcp as the server URL."}, {"@type": "HowToStep", "name": "Sign in to Krate", "text": "Sign in with GitHub, Google or an email link and choose Allow."}, {"@type": "HowToStep", "name": "Ask for an app", "text": "Ask in plain words, for example: Using the Krate connector, make me a simple habit tracker app that works on my phone and my laptop, and give me the link."}, {"@type": "HowToStep", "name": "Open the link", "text": "Claude writes the app, Krate compiles, checks and publishes it, and the link opens it in any modern browser, phones included, with nothing to install."}]}</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+/* page-only styles, built from the kit's tokens.
+   The article layout shared by the guide and answer pages: an opener that
+   lines up with the text column, contents on the left, the text on the right. */
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.ph.art h1 .rw { color: var(--accent); }
+.ph.art .pill .tag { height: 22px; margin-right: 2px; font-size: 11px; letter-spacing: .02em; }
+.ph.art .pill { padding-left: 4px; padding-right: 14px; } .ph.art .pill b { font-weight: 600; }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose h2 { scroll-margin-top: 6px; }
+.prose .lbl { margin-top: 60px; font-size: 13px; font-weight: 500; color: var(--accent); }
+.prose .lbl + h2 { margin-top: 6px; scroll-margin-top: 30px; }
+.prose > .lbl:first-child { margin-top: 0; }
+.prose h2 code, .prose h3 code { font-size: .82em; }
+.prose em { font-style: italic; }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre .p { color: #fff; font-weight: 500; } .prose pre .s { color: #b6e3a8; }
+.prose a.btn { text-decoration: none; }
+.prose .acts { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px 12px; }
+/* notes inside the text */
+.prose .call { margin-top: 22px; color: var(--ink-2); }
+.prose .call > div > * + * { margin-top: 8px; }
+.prose .call .tag { margin-bottom: 2px; }
+/* a command with a copy button (the live page wires the button) */
+.cmd { position: relative; }
+.cmd pre { padding-right: 82px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmd .cp { position: absolute; top: 9px; right: 9px; height: 28px; padding: 0 11px; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: #d4d4dc; background: rgba(255,255,255,.09); transition: background .2s; }
+.cmd .cp:hover { background: rgba(255,255,255,.16); }
+/* numbered steps */
+.prose ol.steps { list-style: none; padding: 0; counter-reset: st; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 22px; }
+.prose ol.steps > li { counter-increment: st; position: relative; margin: 0; padding: 22px 24px 22px 68px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); }
+.prose ol.steps > li::before { content: counter(st); position: absolute; left: 24px; top: 22px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); }
+.prose ol.steps h3 { margin-top: 2px; font-size: 17px; }
+.prose ol.steps > li > * + * { margin-top: 8px; }
+.prose ol.steps > li > pre, .prose ol.steps > li > .cmd { margin-top: 14px; }
+/* cards inside the text */
+.prose .g2 { margin-top: 24px; }
+.prose .card { font-size: 14.5px; line-height: 1.6; }
+.prose .card h3 { margin-top: 12px; font-size: 17px; }
+.prose .card ul { margin-top: 8px; color: var(--mute); }
+.prose .card li + li { margin-top: 3px; }
+/* questions inside the text */
+.prose .qa { margin-top: 22px; }
+.prose .qa summary { font-size: 16px; color: var(--ink); }
+.prose .qa .ans { font-size: 15px; }
+/* tables inside the text */
+.prose .tblw { margin-top: 22px; }
+.prose .tbl { min-width: 640px; }
+.prose .tbl caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.prose .tbl tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-size: 14.5px; line-height: 1.5; font-weight: 500; color: var(--ink); }
+.prose .tbl tbody tr:last-child > * { border-bottom: 0; }
+.prose .tbl td { line-height: 1.5; }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose ol.steps > li { padding: 20px; }
+  .prose ol.steps > li::before { position: static; margin-bottom: 12px; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+.prose code.hash { overflow-wrap: anywhere; }
+.prose .aside { font-size: 14.5px; color: var(--mute); }
+/* On a phone the Copy button sits under the command, not beside it, so the
+   connector address stays on one line instead of breaking mid-word. */
+@media (max-width: 680px) {
+  .cmd pre { padding-right: 18px; padding-bottom: 50px; }
+  .cmd .cp { top: auto; bottom: 10px; }
+}
+@media (max-width: 360px) { #cmd-url { padding-left: 14px; padding-right: 14px; font-size: 12px; } }
+</style>
+</head>
+<body>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph sm l art wrap">
+  <span class="eye">Guide</span>
+  <h1>Make an app with Claude</h1>
+  <p class="lede">Ask Claude for an app in plain words and get back a link that opens it in any modern browser, phones included, with nothing to install. Claude writes the app. Krate builds it, checks it and publishes it to your Krate account.</p>
+  <p class="meta">Reviewed <time datetime="2026-11-21">21 November 2026</time>. 4 min read</p>
+  <div class="acts">
+    <a class="pill" href="#add-the-connector"><span class="tag blue">ADD</span> <b>hub.krate.tech/mcp</b>&nbsp;to Claude</a>
+  </div>
+</section>
+
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+      <a href="#add-the-connector">Add the connector</a>
+      <a href="#ask-for-an-app">Ask for an app</a>
+      <a href="#what-happens">What happens</a>
+      <a href="#open-and-share">Open it and share it</a>
+      <a href="#claude-code">In Claude Code</a>
+      <a href="#questions">Questions</a>
+    </nav>
+    <article class="prose">
+      <p class="lbl">Add the connector</p>
+      <h2 id="add-the-connector">Connect Krate to Claude once.</h2>
+      <p>Krate is a connector for Claude: a remote MCP server at one address. You add it on claude.ai, and from then on Claude can make Krate apps for you in any chat.</p>
+      <ol class="steps">
+        <li>
+          <h3>Open your connectors</h3>
+          <p>On claude.ai, go to <a href="https://claude.ai/customize/connectors">Customize &gt; Connectors</a>. Choose <strong>Add</strong>, then <strong>Add custom connector</strong>.</p>
+        </li>
+        <li>
+          <h3>Paste Krate's address</h3>
+          <p>Name it <strong>Krate</strong> and paste this as the server URL. Click <strong>Continue</strong>, choose <strong>Sign in when needed</strong>, then click <strong>Add</strong>.</p>
+          <div class="cmd">
+            <pre id="cmd-url">https://hub.krate.tech/mcp</pre>
+            <button class="cp copy-button" type="button" data-target="cmd-url" aria-label="Copy the connector address">Copy</button>
+          </div>
+        </li>
+        <li>
+          <h3>Sign in to Krate</h3>
+          <p>Sign in with GitHub, Google or an email link, and choose <strong>Allow</strong>. The page says exactly what the connector may do: build apps you ask for and publish them to your account. Claude asks for this when you connect, or the first time it builds.</p>
+        </li>
+      </ol>
+      <p class="aside">On Claude's Free plan you can add one custom connector. On a Team or Enterprise plan, an Owner adds Krate under Organization settings &gt; Connectors, and each member then connects with their own Krate sign-in.</p>
+
+      <p class="lbl">Ask for an app</p>
+      <h2 id="ask-for-an-app">Say what you want, in plain words.</h2>
+      <p>Start a chat and ask. Say what the app is for and what it should show first. For example:</p>
+      <div class="cmd">
+        <pre id="cmd-prompt">Using the Krate connector, make me a simple habit tracker app that works on my phone and my laptop, and give me the link.</pre>
+        <button class="cp copy-button" type="button" data-target="cmd-prompt" aria-label="Copy the example request">Copy</button>
+      </div>
+      <p>If Claude does not reach for Krate on its own, turn the connector on for that chat from the <strong>+</strong> menu, or name it in your request as the example does.</p>
+
+      <p class="lbl">What happens</p>
+      <h2 id="what-happens">Claude writes it. Krate builds and checks it.</h2>
+      <ol class="steps">
+        <li>
+          <h3>Claude reads Krate's guide</h3>
+          <p>The connector hands Claude Krate's reference for writing an app: the files an app is made of, the API it may use, the permissions it may ask for, and worked examples.</p>
+        </li>
+        <li>
+          <h3>Claude writes the app</h3>
+          <p>It writes the app's code and its manifest, the list of what the app is allowed to touch, and sends the files to Krate.</p>
+        </li>
+        <li>
+          <h3>Krate compiles and checks it</h3>
+          <p>Krate builds the code, confirms it uses only Krate's API, and runs it once. If something fails, Claude gets Krate's own words on what went wrong and how to fix it, fixes it and builds again. A build usually takes one to five minutes.</p>
+        </li>
+        <li>
+          <h3>You get the link</h3>
+          <p>An app that passes is published to your Krate account, and Claude gives you its link.</p>
+        </li>
+      </ol>
+      <div class="call"><svg class="ci" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.6M10 6.4v.1"/></svg><div>
+        <p><strong>Krate runs no AI of its own here.</strong> The AI is Claude, on your Claude plan. Krate never sees your conversation, only the app files Claude sends it. <a href="/privacy/#claude-connector">What Krate keeps</a>.</p>
+      </div></div>
+
+      <p class="lbl">Open it and share it</p>
+      <h2 id="open-and-share">One link, every screen.</h2>
+      <p>The link Claude gives you opens the app in any modern browser, phones included, with nothing to install and no account. Open it on your phone and your laptop, or send it to anyone in a chat or an email.</p>
+      <p>Claude also gives you the app's own link. With the <a href="/download/">Krate runtime</a> installed, that link opens the same app natively on macOS, Windows and Linux, as a real window.</p>
+      <p>The app is unlisted on your account: only people with the link can open it. Before it opens, anyone running it sees what it asks for. An app starts with no access to files or the network, and reaches only what the person allows.</p>
+      <p>Want it different? Ask Claude for the change, and it builds the app again.</p>
+
+      <p class="lbl">In Claude Code</p>
+      <h2 id="claude-code">Using Claude Code? Add the plugin.</h2>
+      <p>The <a href="https://github.com/incyashraj/krate-claude-plugin">Krate plugin for Claude Code</a> adds the same connector, and a skill that builds on your own machine: Claude reads Krate's API, starts from a working template, checks every change with <code>krate check-app</code>, and packs the app as one <code>.krate</code> file. It needs <a href="/download/">Krate installed</a>.</p>
+      <div class="cmd">
+        <pre id="cmd-plugin"><span class="p">claude</span> plugin marketplace add incyashraj/krate-claude-plugin
+<span class="p">claude</span> plugin install krate@krate</pre>
+        <button class="cp copy-button" type="button" data-target="cmd-plugin" aria-label="Copy the install commands">Copy</button>
+      </div>
+      <p>Only want the connector? Add it on its own:</p>
+      <div class="cmd">
+        <pre id="cmd-mcp"><span class="p">claude</span> mcp add --transport http krate https://hub.krate.tech/mcp</pre>
+        <button class="cp copy-button" type="button" data-target="cmd-mcp" aria-label="Copy the command">Copy</button>
+      </div>
+      <p class="aside">The connector speaks the open Model Context Protocol over streamable HTTP with OAuth sign-in, so other AI tools that support remote MCP servers can use the same address.</p>
+
+      <p class="lbl">Questions</p>
+      <h2 id="questions">Questions.</h2>
+      <div class="qa">
+        <details>
+          <summary>Do I need to know how to code?</summary>
+          <div class="ans"><p>No. You describe the app and Claude writes the code. Krate checks it before you ever see a link.</p></div>
+        </details>
+        <details>
+          <summary>Do the people I send it to need Claude or Krate?</summary>
+          <div class="ans"><p>No. The link opens in their browser with nothing to install and no account. Installing the Krate runtime is only for running apps natively on a computer.</p></div>
+        </details>
+        <details>
+          <summary>Do I need a Krate account?</summary>
+          <div class="ans"><p>To build, yes: you sign in once, with GitHub, Google or an email link, and the apps Claude builds are published to that account. Claude can search the public <a href="/cloud/">Krate gallery</a> for you without a sign-in.</p></div>
+        </details>
+        <details>
+          <summary>How many apps can I build?</summary>
+          <div class="ans"><p>Each Krate account can start up to 10 builds an hour and 30 a day through the connector. When Claude fixes an app and builds it again, that is a new build.</p></div>
+        </details>
+        <details>
+          <summary>What does Krate keep, and how do I disconnect?</summary>
+          <div class="ans"><p>The <a href="/privacy/#claude-connector">privacy page</a> lists what the connector sends Krate, what Krate keeps and for how long, and how to take its access back. To stop using it, remove Krate from <a href="https://claude.ai/customize/connectors">Customize &gt; Connectors</a> in Claude.</p></div>
+        </details>
+      </div>
+    </article>
+  </div>
+</section>
+
+<div class="band st rv">
+  <div><h2>Ask Claude for an app.</h2><p>Add the Krate connector once, then ask in plain words. You get a link that opens the app in any browser, phones included, and the same app runs natively on Mac, Windows and Linux.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="#add-the-connector">Add the connector <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/cloud/">See apps people made</a>
+  </div>
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+<script>
+    // Copy buttons: inline, no external libraries, CSP-safe. Each button names
+    // the id of the <pre> whose text it copies. We copy pre.textContent so the
+    // syntax-highlight spans do not end up in the clipboard.
+    (function () {
+      var buttons = document.querySelectorAll(".copy-button");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].addEventListener("click", function () {
+          var button = this;
+          if (button.disabled) return;
+          var target = document.getElementById(button.getAttribute("data-target"));
+          if (!target) return;
+          var text = target.textContent;
+
+          var done = function () {
+            var original = "Copy";
+            button.textContent = "Copied";
+            button.classList.add("copied");
+            window.setTimeout(function () {
+              button.textContent = original;
+              button.classList.remove("copied");
+            }, 1600);
+          };
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {
+              fallbackCopy(text, done);
+            });
+          } else {
+            fallbackCopy(text, done);
+          }
+        });
+      }
+
+      // For browsers without the async clipboard API (or when it is blocked),
+      // fall back to a hidden textarea and execCommand.
+      function fallbackCopy(text, done) {
+        var area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "");
+        area.style.position = "absolute";
+        area.style.left = "-9999px";
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand("copy"); done(); } catch (e) {}
+        document.body.removeChild(area);
+      }
+    })();
+</script>
+<script>
+// Count the visit, and nothing about the visitor.
+//
+// No cookie, no stored id, no query string, no referrer -- the page path and
+// the day, sent to our own hub. Before this there was no way to answer "how
+// many people came to krate.tech", which is the first question anyone asks
+// about a launch. Deliberately not Google Analytics or Plausible: this sends
+// strictly less, to a server we run.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

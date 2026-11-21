@@ -310,6 +310,13 @@ and `cloud/`).
 Studio is one front end for the engine, not the only one. Whichever you
 pick, every path ends at the same `.krate` file:
 
+- **Claude Code plugin**: in Claude Code, run
+  `/plugin install krate --marketplace incyashraj/krate-claude-plugin` (or,
+  in a terminal, `claude plugin marketplace add incyashraj/krate-claude-plugin`
+  and then `claude plugin install krate@krate`). It teaches Claude to
+  make, check, package and publish Krate apps with Krate's own commands.
+  Install Krate itself first. Source:
+  [krate-claude-plugin](https://github.com/incyashraj/krate-claude-plugin).
 - **MCP**: `krate mcp` is a server Claude Desktop or Cursor can call; add
   `{"mcpServers": {"krate": {"command": "krate", "args": ["mcp"]}}}` to the
   app's MCP config and ask for the app in chat. Full setup:
@@ -351,6 +358,46 @@ middle.
 `--json` gives the same verdict as a machine-readable object; `--shoot
 frame.png` writes the app's first frame to a PNG so output can be looked at
 rather than guessed about.
+
+## Next release, on `main` now
+
+Not in `v0.5.5-rc9` yet; built, tested and merged:
+
+- **Make an app in your Claude chat.** Add Krate to Claude as a connector
+  (`https://hub.krate.tech/mcp`) and ask for an app in plain words: Claude
+  writes it, Krate builds and checks it, and you get a link that opens on any
+  phone or computer, with nothing to install. If a build fails, Claude gets
+  Krate's own words and fixes it. In Claude Code, the
+  [Krate plugin](https://github.com/incyashraj/krate-claude-plugin) adds the
+  same connector. [How it works](https://krate.tech/docs/pages/make-an-app-with-claude.html).
+- **Apps know the person's local time.** `krate::locale::today()` and
+  `local_now()` give the local date and time as numbers, daylight saving
+  included, on desktop and in a browser tab.
+- **Apps reach the factory floor.** Serial ports (`device.serial`), label and
+  receipt printers the person picks once (`device.printer`, raw ZPL, EPL or
+  ESC/POS), and serving on the computer or the local network
+  (`net.listen:<port>`), each behind the permission wall.
+- **Every app you make is signed as you, from its first file.** One
+  publisher key per person per computer, made with no account and no
+  question. Your app keeps its data through every rebuild, and no other app
+  claiming its id can reach it.
+- **A new key without losing anything.** `krate identity --new-key` hands
+  over from your old key to a new one, signed by both; each app moves its
+  data across the first time it opens. `--report-compromised` tells Krate
+  Cloud first: releases the old key signed since a date are blocked, and
+  each app goes back to its last safe version.
+- **Changing an app with AI is a transaction.** The app you have is
+  replaced only by a build that passed every check, and never over a file
+  something else changed while the AI worked; that change is kept beside
+  it instead.
+- **Installed apps are themselves.** Finder, Spotlight, Launchpad and the
+  Windows Start menu show the app's own name, and a Start menu entry opens
+  with no console window.
+- **Krate Cloud** keeps an update with its publisher (another key is
+  refused unless the old one handed over), treats a re-packed release as
+  the version it already is, ranks gallery search by relevance with the
+  publisher's verified identity shown on every result (no placement is
+  sold), and sends a blocked update's link back to the last safe version.
 
 ## Where things stand
 

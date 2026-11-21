@@ -15,6 +15,16 @@
 //! An address a lookup returned stands for the name looked up: the table
 //! remembers which names each address came from, so a grant for a name
 //! covers its addresses (and only those).
+//!
+//! Listening (IC-987) lives here too. The caller has judged the port and the
+//! scope; this binds exactly that port, on the loopback address for this
+//! computer or every address for the network, refuses a port something
+//! already listens on, and hands each device that connects over as a
+//! connection the same reader and writer threads serve. Connections from
+//! other devices are counted and bounded: [`MAX_PEERS`] open at once, each
+//! holding at most [`PEER_QUEUE_BYTES`] in each direction before it pushes
+//! back. A listener is a plain socket in the table, so closing it or
+//! dropping the table (the run ending) closes the port.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
@@ -34,6 +44,29 @@ pub(crate) const QUEUE_BYTES: usize = 4 * 1024 * 1024;
 
 /// How long a connect may take before it fails.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The most listeners one app may hold at once (IC-987).
+pub(crate) const MAX_LISTENERS: usize = 8;
+
+/// The most connections from other devices one app may hold open at once
+/// (IC-987). Past it `tcp-accept` answers too-many and the device waits in
+/// the system's queue until the app closes one.
+pub(crate) const MAX_PEERS: usize = 32;
+
+/// How much one connection from another device holds in each direction
+/// before it pushes back (IC-987): smaller than a dialled connection's, as
+/// the app did not choose who sends it bytes.
+pub(crate) const PEER_QUEUE_BYTES: usize = 1024 * 1024;
+
+/// The lowest port a listener opens (IC-987): below it the ports are the
+/// system's.
+pub(crate) const LOWEST_LISTEN_PORT: u16 = krate_manifest::LOWEST_LISTEN_PORT;
+
+/// How long the in-use probe waits for something already on the port to
+/// answer (IC-987). Something listening on this computer answers within a
+/// millisecond; a free port is refused at once on macOS and Linux, and
+/// Windows, which retries a refused connect, is cut off here.
+const IN_USE_PROBE: Duration = Duration::from_millis(250);
 
 /// The largest UDP payload there is.
 const MAX_DATAGRAM: usize = 65_535;
@@ -65,6 +98,17 @@ pub enum ReadResult {
     Failed(String),
 }
 
+/// Why a listener could not be opened or used. Mirrors the WIT
+/// `listen-error`, less the permission case the caller judges.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListenFault {
+    InUse(String),
+    BadPort(String),
+    TooMany(String),
+    UnknownHandle,
+    Failed(String),
+}
+
 /// One datagram that arrived. Mirrors the WIT `datagram`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Datagram {
@@ -85,12 +129,40 @@ struct TcpInner {
     eof: bool,
     /// The guest closed it.
     closed: bool,
+    /// The writer holds bytes it took from the outbox and has not finished
+    /// sending: a close must wait for them too.
+    sending: bool,
     stream: Option<std::net::TcpStream>,
 }
 
 struct TcpShared {
     inner: Mutex<TcpInner>,
     changed: Condvar,
+    /// How much it holds in each direction before it pushes back.
+    queue_bytes: usize,
+    /// Another device connected to one of this app's listeners (IC-987):
+    /// counted against [`MAX_PEERS`].
+    accepted: bool,
+}
+
+impl TcpShared {
+    fn new(queue_bytes: usize, accepted: bool) -> Self {
+        Self {
+            inner: Mutex::new(TcpInner::default()),
+            changed: Condvar::new(),
+            queue_bytes,
+            accepted,
+        }
+    }
+}
+
+/// A listening socket (IC-987). Non-blocking, so an accept never holds the
+/// app's loop.
+struct Listener {
+    socket: std::net::TcpListener,
+    port: u16,
+    /// Bound to the loopback address: only this computer reaches it.
+    this_computer: bool,
 }
 
 struct Udp {
@@ -102,6 +174,7 @@ struct Udp {
 enum Socket {
     Tcp(Arc<TcpShared>),
     Udp(Udp),
+    Listener(Listener),
 }
 
 /// Where a lookup's thread sends its answer.
@@ -115,6 +188,9 @@ pub struct AsyncSockets {
     lookups: BTreeMap<u64, (String, LookupAnswer)>,
     /// Each address a lookup returned, with the names it came from.
     resolved: HashMap<IpAddr, BTreeSet<String>>,
+    /// Connections the app closed while their writer was still sending
+    /// what it wrote: the end of the run waits for them (K-1313).
+    closing: Vec<Arc<TcpShared>>,
 }
 
 impl AsyncSockets {
@@ -193,10 +269,7 @@ impl AsyncSockets {
     /// Start a connection to an endpoint the caller has judged.
     pub fn tcp_connect(&mut self, host: String, port: u16) -> Result<u64, String> {
         let handle = self.handle()?;
-        let shared = Arc::new(TcpShared {
-            inner: Mutex::new(TcpInner::default()),
-            changed: Condvar::new(),
-        });
+        let shared = Arc::new(TcpShared::new(QUEUE_BYTES, false));
         let worker = Arc::clone(&shared);
         std::thread::spawn(move || run_connection(host, port, worker));
         self.sockets.insert(handle, Socket::Tcp(shared));
@@ -223,7 +296,7 @@ impl AsyncSockets {
         if let Some(why) = &inner.error {
             return Err(why.clone());
         }
-        let room = QUEUE_BYTES.saturating_sub(inner.outbox.len());
+        let room = shared.queue_bytes.saturating_sub(inner.outbox.len());
         let taken = bytes.len().min(room);
         inner.outbox.extend(&bytes[..taken]);
         drop(inner);
@@ -364,29 +437,265 @@ impl AsyncSockets {
         }
     }
 
+    /// Listen on `port`, which the caller has judged for this scope
+    /// (IC-987). `this_computer` binds the loopback address; otherwise every
+    /// IPv4 address of this computer. Refuses a port below
+    /// [`LOWEST_LISTEN_PORT`] and one anything already listens on, in words.
+    pub fn tcp_listen(&mut self, port: u16, this_computer: bool) -> Result<u64, ListenFault> {
+        if port < LOWEST_LISTEN_PORT {
+            return Err(ListenFault::BadPort(format!(
+                "port {port} is below {LOWEST_LISTEN_PORT}: those ports belong to the system, so \
+                 an app listens on {LOWEST_LISTEN_PORT} or above"
+            )));
+        }
+        let listeners = self
+            .sockets
+            .values()
+            .filter(|s| matches!(s, Socket::Listener(_)))
+            .count();
+        if listeners >= MAX_LISTENERS {
+            return Err(ListenFault::TooMany(format!(
+                "too many listeners: this app already listens on {MAX_LISTENERS} ports"
+            )));
+        }
+        if self
+            .sockets
+            .values()
+            .any(|s| matches!(s, Socket::Listener(l) if l.port == port))
+        {
+            return Err(ListenFault::InUse(format!(
+                "this app already listens on port {port}"
+            )));
+        }
+        let in_use = || {
+            ListenFault::InUse(format!(
+                "another program on this computer is already listening on port {port}; \
+                 close it, or choose another port"
+            ))
+        };
+        // Something already listening on the port answers here. The bind
+        // alone does not say so everywhere: with the address reuse Unix
+        // listeners carry, macOS lets a loopback bind sit beside another
+        // program's listener on every address and takes its connections.
+        let probe = SocketAddr::from(([127, 0, 0, 1], port));
+        if std::net::TcpStream::connect_timeout(&probe, IN_USE_PROBE).is_ok() {
+            return Err(in_use());
+        }
+        let handle = self.handle().map_err(ListenFault::TooMany)?;
+        let at = if this_computer {
+            SocketAddr::from(([127, 0, 0, 1], port))
+        } else {
+            SocketAddr::from(([0, 0, 0, 0], port))
+        };
+        let socket = std::net::TcpListener::bind(at).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                in_use()
+            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                ListenFault::Failed(format!(
+                    "this computer did not let the app listen on port {port}: {e}"
+                ))
+            } else {
+                ListenFault::Failed(format!("could not listen on port {port}: {e}"))
+            }
+        })?;
+        socket
+            .set_nonblocking(true)
+            .map_err(|e| ListenFault::Failed(e.to_string()))?;
+        self.sockets.insert(
+            handle,
+            Socket::Listener(Listener {
+                socket,
+                port,
+                this_computer,
+            }),
+        );
+        Ok(handle)
+    }
+
+    /// The next connection waiting on a listener, or none (IC-987). Never
+    /// blocks. The connection gets its own reader and writer threads, as a
+    /// dialled one does, and a smaller queue.
+    pub fn tcp_accept(&mut self, handle: u64) -> Result<Option<u64>, ListenFault> {
+        let Some(Socket::Listener(_)) = self.sockets.get(&handle) else {
+            return Err(ListenFault::UnknownHandle);
+        };
+        let peers = self
+            .sockets
+            .values()
+            .filter(|s| matches!(s, Socket::Tcp(shared) if shared.accepted))
+            .count();
+        if peers >= MAX_PEERS {
+            return Err(ListenFault::TooMany(format!(
+                "this app already has {MAX_PEERS} connections from other devices open; \
+                 close one to let the next in"
+            )));
+        }
+        if self.sockets.len() + self.lookups.len() >= MAX_SOCKETS {
+            return Err(ListenFault::TooMany(format!(
+                "too many sockets: this app already holds {MAX_SOCKETS}"
+            )));
+        }
+        let Some(Socket::Listener(listener)) = self.sockets.get(&handle) else {
+            return Err(ListenFault::UnknownHandle);
+        };
+        let (stream, from) = match listener.socket.accept() {
+            Ok(accepted) => accepted,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::Interrupted
+                        | std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::ConnectionReset
+                ) =>
+            {
+                return Ok(None)
+            }
+            Err(e) => return Err(ListenFault::Failed(format!("could not accept: {e}"))),
+        };
+        // Bound to loopback, only this computer can arrive; checked anyway,
+        // so the scope does not rest on the bind alone.
+        if listener.this_computer && !from.ip().is_loopback() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            return Ok(None);
+        }
+        // An accepted socket inherits the listener's non-blocking mode on
+        // macOS and Windows; its threads block.
+        if stream.set_nonblocking(false).is_err() {
+            return Ok(None);
+        }
+        let handle = self.handle().map_err(ListenFault::TooMany)?;
+        let shared = Arc::new(TcpShared::new(PEER_QUEUE_BYTES, true));
+        if !start_streams(stream, from.to_string(), &shared) {
+            return Ok(None);
+        }
+        self.sockets.insert(handle, Socket::Tcp(shared));
+        Ok(Some(handle))
+    }
+
+    /// The local port of a listener, a connected TCP connection or a UDP
+    /// socket.
+    pub fn tcp_local_port(&self, handle: u64) -> Result<u16, ListenFault> {
+        match self.sockets.get(&handle) {
+            Some(Socket::Listener(listener)) => Ok(listener.port),
+            Some(Socket::Udp(udp)) => udp
+                .socket
+                .local_addr()
+                .map(|a| a.port())
+                .map_err(|e| ListenFault::Failed(e.to_string())),
+            Some(Socket::Tcp(shared)) => {
+                let inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
+                match &inner.stream {
+                    Some(stream) => stream
+                        .local_addr()
+                        .map(|a| a.port())
+                        .map_err(|e| ListenFault::Failed(e.to_string())),
+                    None => Err(ListenFault::Failed(
+                        "the connection is not connected yet".to_string(),
+                    )),
+                }
+            }
+            None => Err(ListenFault::UnknownHandle),
+        }
+    }
+
+    /// A listener's port, and whether it is for this computer alone
+    /// (IC-990): what the host judges before saying where it is reached or
+    /// announcing it. Any other handle is unknown here.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    pub fn listener(&self, handle: u64) -> Result<(u16, bool), ListenFault> {
+        match self.sockets.get(&handle) {
+            Some(Socket::Listener(listener)) => Ok((listener.port, listener.this_computer)),
+            _ => Err(ListenFault::UnknownHandle),
+        }
+    }
+
+    /// How many listeners are open: what a test asks after a run.
+    #[cfg(test)]
+    pub fn listeners(&self) -> usize {
+        self.sockets
+            .values()
+            .filter(|s| matches!(s, Socket::Listener(_)))
+            .count()
+    }
+
     pub fn close(&mut self, handle: u64) {
         self.lookups.remove(&handle);
+        // A listener or a UDP socket closes as it drops.
         if let Some(Socket::Tcp(shared)) = self.sockets.remove(&handle) {
             close_tcp(&shared);
+            self.closing.retain(|c| !is_flushed(c));
+            if !is_flushed(&shared) {
+                self.closing.push(shared);
+            }
         }
     }
 }
 
 impl Drop for AsyncSockets {
     fn drop(&mut self) {
+        let mut open: Vec<Arc<TcpShared>> = core::mem::take(&mut self.closing);
         for socket in self.sockets.values() {
             if let Socket::Tcp(shared) = socket {
                 close_tcp(shared);
+                open.push(Arc::clone(shared));
             }
+        }
+        // The run is ending and the process with it, which would take the
+        // writer threads down mid-send: a server that writes its answer and
+        // closes at once lost the answer on a busy machine (K-1313). Wait,
+        // within the same bound a close gives, for what the app wrote.
+        let deadline = std::time::Instant::now() + FLUSH_ON_CLOSE;
+        for shared in &open {
+            wait_flushed(shared, deadline);
         }
     }
 }
+
+/// Everything the app wrote is sent, or can no longer be.
+fn is_flushed(shared: &TcpShared) -> bool {
+    let inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
+    inner.error.is_some() || inner.stream.is_none() || (inner.outbox.is_empty() && !inner.sending)
+}
+
+fn wait_flushed(shared: &TcpShared, deadline: std::time::Instant) {
+    let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
+    while inner.error.is_none()
+        && inner.stream.is_some()
+        && (!inner.outbox.is_empty() || inner.sending)
+    {
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return;
+        }
+        inner = shared
+            .changed
+            .wait_timeout(inner, deadline - now)
+            .map(|(guard, _)| guard)
+            .unwrap_or_else(|p| p.into_inner().0);
+    }
+}
+
+/// How long a closed connection may spend sending what the app wrote before
+/// it closed (IC-987): a server writes its answer and closes at once, and the
+/// answer must still arrive -- but a device that stops reading cannot hold
+/// the connection open for ever.
+const FLUSH_ON_CLOSE: Duration = Duration::from_secs(5);
 
 fn close_tcp(shared: &TcpShared) {
     let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
     inner.closed = true;
     if let Some(stream) = &inner.stream {
-        let _ = stream.shutdown(std::net::Shutdown::Both);
+        if (inner.outbox.is_empty() && !inner.sending) || inner.error.is_some() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        } else {
+            // The writer sends what is queued, then shuts the connection
+            // down; a write stalled past the deadline ends it.
+            let _ = stream.set_write_timeout(Some(FLUSH_ON_CLOSE));
+        }
     }
     drop(inner);
     shared.changed.notify_all();
@@ -421,27 +730,39 @@ fn run_connection(host: String, port: u16, shared: Arc<TcpShared>) {
     let Some(stream) = stream else {
         return fail(last);
     };
-    let _ = stream.set_nodelay(true);
     let peer = stream
         .peer_addr()
         .map(|a| a.to_string())
         .unwrap_or_default();
+    if !start_streams(stream, peer, &shared) {
+        fail("could not share the connection between its threads".to_string());
+    }
+}
+
+/// A connected stream, dialled or accepted: mark it connected, then a
+/// writer thread sends what the app queues and a reader thread fills the
+/// inbox. False when the stream could not be shared between its threads.
+fn start_streams(stream: std::net::TcpStream, peer: String, shared: &Arc<TcpShared>) -> bool {
+    let _ = stream.set_nodelay(true);
     let (Ok(writer), Ok(control)) = (stream.try_clone(), stream.try_clone()) else {
-        return fail("could not share the connection between its threads".to_string());
+        let _ = stream.shutdown(std::net::Shutdown::Both);
+        return false;
     };
     {
         let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
         if inner.closed {
             let _ = stream.shutdown(std::net::Shutdown::Both);
-            return;
+            return true;
         }
         inner.peer = Some(peer);
         inner.stream = Some(control);
     }
     shared.changed.notify_all();
-    let writer_shared = Arc::clone(&shared);
+    let writer_shared = Arc::clone(shared);
     std::thread::spawn(move || run_writer(writer, writer_shared));
-    run_reader(stream, &shared);
+    let reader_shared = Arc::clone(shared);
+    std::thread::spawn(move || run_reader(stream, &reader_shared));
+    true
 }
 
 fn run_reader(mut stream: std::net::TcpStream, shared: &TcpShared) {
@@ -451,7 +772,7 @@ fn run_reader(mut stream: std::net::TcpStream, shared: &TcpShared) {
         // Hold off while the app has not taken what arrived.
         {
             let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
-            while inner.inbox.len() >= QUEUE_BYTES && !inner.closed {
+            while inner.inbox.len() >= shared.queue_bytes && !inner.closed {
                 inner = shared
                     .changed
                     .wait(inner)
@@ -494,16 +815,32 @@ fn run_writer(mut stream: std::net::TcpStream, shared: Arc<TcpShared>) {
                     .wait(inner)
                     .unwrap_or_else(|p| p.into_inner());
             }
-            if inner.closed || inner.error.is_some() {
+            if inner.error.is_some() {
+                return;
+            }
+            if inner.closed && inner.outbox.is_empty() {
+                // Closed by the app, and everything it wrote is sent.
+                let _ = stream.shutdown(std::net::Shutdown::Both);
                 return;
             }
             let n = inner.outbox.len().min(256 * 1024);
+            inner.sending = true;
             inner.outbox.drain(..n).collect()
         };
         shared.changed.notify_all();
-        if let Err(e) = stream.write_all(&chunk) {
+        let sent = stream.write_all(&chunk);
+        shared
+            .inner
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .sending = false;
+        // Whoever waits for the send to finish (a run ending) hears it.
+        shared.changed.notify_all();
+        if let Err(e) = sent {
             let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
-            if !inner.closed && inner.error.is_none() {
+            if inner.closed {
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+            } else if inner.error.is_none() {
                 inner.error = Some(format!("the connection broke: {e}"));
             }
             return;
@@ -601,6 +938,203 @@ mod tests {
         assert_eq!(got.host, "127.0.0.1");
         assert_eq!(got.port, echo_port);
         assert!(table.udp_receive(h).is_none());
+    }
+
+    /// A port nothing listens on, at or above 1024.
+    fn free_port() -> u16 {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    }
+
+    /// Nothing listens on `port` any more: a connect is refused and the
+    /// port binds again.
+    fn port_is_free(port: u16) -> bool {
+        std::net::TcpStream::connect_timeout(
+            &SocketAddr::from(([127, 0, 0, 1], port)),
+            Duration::from_millis(250),
+        )
+        .is_err()
+            && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+    }
+
+    /// IC-987: listen on loopback, a device (this test) connects, bytes go
+    /// both ways through the ordinary read and write calls, and closing the
+    /// listener closes the port.
+    #[test]
+    fn a_listener_takes_a_connection_that_carries_bytes_both_ways() {
+        use std::io::{Read, Write};
+        let port = free_port();
+        let mut table = AsyncSockets::new();
+        let l = table.tcp_listen(port, true).expect("listen");
+        assert_eq!(table.tcp_local_port(l), Ok(port));
+        // Nobody yet: none, at once.
+        assert_eq!(table.tcp_accept(l), Ok(None));
+        let mut device = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let c = wait(|| table.tcp_accept(l).expect("accept"));
+        assert!(
+            matches!(table.tcp_status(c), ConnectStatus::Connected(peer) if peer.starts_with("127.0.0.1:"))
+        );
+        assert_eq!(table.tcp_local_port(c), Ok(port));
+        device.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
+        let mut got = Vec::new();
+        wait(|| match table.tcp_read(c, 4096) {
+            ReadResult::Data(d) => {
+                got.extend(d);
+                got.ends_with(b"\r\n\r\n").then_some(())
+            }
+            ReadResult::Pending => None,
+            other => panic!("{other:?}"),
+        });
+        assert_eq!(got, b"GET / HTTP/1.0\r\n\r\n");
+        // A server's shape: write the answer and close at once. The answer
+        // still arrives, then the end.
+        let page = vec![b'x'; 256 * 1024];
+        assert_eq!(table.tcp_write(c, &page).unwrap(), page.len() as u32);
+        table.close(c);
+        let mut back = Vec::new();
+        device.read_to_end(&mut back).unwrap();
+        assert_eq!(
+            back.len(),
+            page.len(),
+            "everything written before close arrives"
+        );
+        table.close(l);
+        assert_eq!(table.tcp_accept(l), Err(ListenFault::UnknownHandle));
+        assert!(port_is_free(port), "a closed listener closes its port");
+    }
+
+    /// A port something already listens on is refused in words, whether it
+    /// is another program's or this app's own; a system port is refused
+    /// before anything binds.
+    #[test]
+    fn a_port_in_use_or_below_1024_is_refused_in_words() {
+        let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let taken = other.local_addr().unwrap().port();
+        let mut table = AsyncSockets::new();
+        for this_computer in [true, false] {
+            match table.tcp_listen(taken, this_computer) {
+                Err(ListenFault::InUse(words)) => assert!(
+                    words.contains("another program") && words.contains(&taken.to_string()),
+                    "{words}"
+                ),
+                other => panic!("in use, got {other:?}"),
+            }
+        }
+        let port = free_port();
+        table.tcp_listen(port, true).expect("listen");
+        assert!(matches!(
+            table.tcp_listen(port, false),
+            Err(ListenFault::InUse(words)) if words == format!("this app already listens on port {port}")
+        ));
+        assert!(matches!(
+            table.tcp_listen(80, true),
+            Err(ListenFault::BadPort(words)) if words.contains("below 1024")
+        ));
+        assert!(matches!(
+            table.tcp_listen(0, true),
+            Err(ListenFault::BadPort(_))
+        ));
+    }
+
+    /// The run ending (the table dropped) closes every listener and every
+    /// connection it accepted.
+    #[test]
+    fn every_listener_and_its_connections_close_when_the_run_ends() {
+        use std::io::Read;
+        let (a, b) = (free_port(), free_port());
+        let mut table = AsyncSockets::new();
+        let la = table.tcp_listen(a, true).expect("listen a");
+        table.tcp_listen(b, true).expect("listen b");
+        assert_eq!(table.listeners(), 2);
+        let mut device = std::net::TcpStream::connect(("127.0.0.1", a)).expect("connect");
+        wait(|| table.tcp_accept(la).expect("accept"));
+        drop(table);
+        device
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut rest = Vec::new();
+        device
+            .read_to_end(&mut rest)
+            .expect("the connection ends, it does not hang");
+        assert!(port_is_free(a), "port {a} is closed after the run");
+        assert!(port_is_free(b), "port {b} is closed after the run");
+    }
+
+    /// A server writes its answer, closes, and the run ends at once: the
+    /// answer still arrives whole, because the end of the run waits for
+    /// what the app wrote instead of taking the writer down mid-send. CI's
+    /// busy Linux runner lost a probe's page this way (K-1313).
+    #[test]
+    fn what_an_app_wrote_arrives_even_when_the_run_ends_right_after() {
+        use std::io::Read;
+        const SIZE: usize = 2 * 1024 * 1024;
+        let port = free_port();
+        let mut table = AsyncSockets::new();
+        let l = table.tcp_listen(port, true).expect("listen");
+        let device = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let conn = wait(|| table.tcp_accept(l).expect("accept"));
+        // A slow reader, so the writer is still busy when the run ends.
+        let reader = std::thread::spawn(move || {
+            let mut device = device;
+            let mut chunk = vec![0u8; 64 * 1024];
+            let mut total = 0usize;
+            loop {
+                match device.read(&mut chunk) {
+                    Ok(0) | Err(_) => return total,
+                    Ok(n) => total += n,
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let body = vec![7u8; SIZE];
+        let mut sent = 0usize;
+        while sent < SIZE {
+            let taken = table.tcp_write(conn, &body[sent..]).expect("write") as usize;
+            if taken == 0 {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            sent += taken;
+        }
+        let Some(Socket::Tcp(shared)) = table.sockets.get(&conn) else {
+            panic!("the connection is in the table");
+        };
+        let shared = Arc::clone(shared);
+        table.close(conn);
+        drop(table);
+        assert!(
+            is_flushed(&shared),
+            "the run ended with the answer still unsent: {} bytes queued",
+            shared.inner.lock().map(|i| i.outbox.len()).unwrap_or(0)
+        );
+        assert_eq!(reader.join().expect("reader"), SIZE, "every byte arrived");
+    }
+
+    /// Connections from other devices are bounded: past [`MAX_PEERS`] the
+    /// next waits, and closing one lets it in.
+    #[test]
+    fn connections_from_other_devices_are_bounded() {
+        let port = free_port();
+        let mut table = AsyncSockets::new();
+        let l = table.tcp_listen(port, true).expect("listen");
+        let devices: Vec<_> = (0..=MAX_PEERS)
+            .map(|_| std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect"))
+            .collect();
+        let mut accepted = Vec::new();
+        while accepted.len() < MAX_PEERS {
+            if let Some(c) = table.tcp_accept(l).expect("accept") {
+                accepted.push(c);
+            } else {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        assert!(matches!(table.tcp_accept(l), Err(ListenFault::TooMany(_))));
+        table.close(accepted[0]);
+        let next = wait(|| table.tcp_accept(l).expect("room again"));
+        assert!(matches!(
+            table.tcp_status(next),
+            ConnectStatus::Connected(_)
+        ));
+        drop(devices);
     }
 
     #[test]

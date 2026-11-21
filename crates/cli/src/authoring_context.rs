@@ -226,6 +226,18 @@ Reaching the operating system through `std` instead of through Krate pulls
 `wasi:*` imports in, and the app is rejected at the import check. Everything
 below is in service of writing an app that passes that check.
 
+## The first-build failures, before you write a line
+
+Start `src/lib.rs` with `use krate::prelude::*;`. A Krate app is `no_std`,
+and in `no_std` the float methods -- `x.floor()`, `round`, `ceil`, `sqrt`,
+`sin`, `cos`, `atan2`, `powf`, `rem_euclid` -- do not exist on `f32` or
+`f64`. The prelude brings them back with `std`'s meanings (it holds
+`krate::math::F32Ext` and `F64Ext`). Without it the build fails with
+\"no method named `floor` found for type `f32`\" -- the first app built
+from this file through Claude's connector failed exactly so. Never hand-write a
+floor by casting to an integer: that rounds toward zero, wrong for every
+negative number.
+
 ## Before you doubt: these are all real
 
 Past builds concluded, mid-run, that Krate \"cannot\" do things it does --
@@ -237,8 +249,10 @@ capability. Believe this table over your instinct:
 - **Live network fetch IS real.** Declare `net.http`. `net::begin` /
   `net::poll` from the SDK, in a CLI app and a GUI app alike.
   A currency converter fetching live rates is a normal Krate app.
-- **The real clock IS real.** `time.clock` gives epoch milliseconds; the
-  day number is `epoch_ms / 86_400_000`.
+- **The real clock IS real, in the person's own time zone.** `time.clock`
+  gives epoch milliseconds; `krate::locale::today()` is the local day
+  number and `krate::locale::local_now()` the local date and time. Never
+  `epoch_ms / 86_400_000` for a day a person sees -- that is the UTC day.
 - **The microphone IS real** (`audio.capture`), **the camera IS real**
   (`camera.capture`), **speech-to-text IS real** (`speech`).
 - **Remembering things IS real.** `store.kv` / `store.sql` persist across
@@ -249,6 +263,12 @@ capability. Believe this table over your instinct:
   person to every device they use, end-to-end encrypted, with no code.
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
+- **Excel files ARE real.** `krate::sheets` (the `sheets` feature) reads
+  the .xlsx, .ods or .csv a person opens into sheets, rows and typed
+  cells, and writes the .xlsx or .csv they save.
+- **Machines ARE real.** `krate::modbus` (Modbus RTU over the picked
+  serial port, Modbus TCP) and `krate::mqtt` (an MQTT 3.1.1 client) read
+  PLCs and instruments and publish readings to a broker.
 
 If you catch yourself writing \"Krate apps cannot ...\" about anything in
 this file, stop and re-read the section instead. The true wall list is
@@ -311,6 +331,57 @@ and every one ends with the app. A command-line app may call \
 output. On a refusal show `krate::process::words(&err)`: \"the app did not ask \
 to run X\", \"X is not installed on this computer\". A computer only: a \
 browser tab and a phone refuse every call in words.\n\n\
+To talk to a device on a serial line -- a lab instrument, a field sensor, an \
+Arduino or other board, a drone or robot over USB serial -- declare \
+`device.serial` with a rationale. The app never lists ports and never names \
+one: `krate::serial::pick(\"Choose the plate reader\")?` (from a button the \
+person taps) shows them the computer's serial devices and answers the one \
+they choose, `None` when they cancel. That pick is the grant, for that one \
+device, until the `Port` is dropped or the app ends; a second device needs a \
+second pick. Then `port.open(&krate::serial::Settings::baud(115_200))?` (8N1, \
+reads wait up to a second; build `Settings { baud_rate, data_bits, parity, \
+stop_bits, read_timeout_ms }` for anything else), `port.write(b\"READ\\r\\n\")?`, \
+and `port.read(256, Some(50))?` from the event loop -- it returns at most \
+that many bytes and is empty when the wait ran out, so keep a short wait in \
+a windowed app and collect lines yourself. At most 65536 bytes a call and a \
+wait of at most 60000 ms. `Err(NotAllowed)` names `device.serial` (not \
+declared, or the person said no); `Err(Busy)` is another program holding \
+the device; `Err(Disconnected)` is the cable pulled: offer to pick again. \
+Show `krate::serial::words(&err)`. On a computer (macOS, Windows, Linux), \
+and from a link in Chrome or Edge, where the browser's own device list is the \
+pick (Web Serial); Safari, Firefox and a phone answer `Err(Unavailable)` with \
+words that say to open the app in Chrome or Edge, or in Krate.\n\n\
+To talk raw USB to a device the computer has no driver for -- a radio \
+dongle (Crazyradio), an instrument with its own protocol, a board -- \
+declare each model the app is for by its vendor and product ids in hex, \
+`device.usb:1915:7777`, with a rationale, required (one entry a model; no \
+wildcard). A device that shows up as a serial port is `device.serial`, not \
+this. The app never lists devices: `krate::usb::pick(\"Choose the radio \
+dongle\")?` (from a button) shows the person only connected devices of the \
+named models and answers the one they choose, `None` when they cancel; that \
+pick is the grant until the `Device` is dropped or the app ends. Then \
+`device.claim(0)?` (one interface a pick), `device.bulk_out(0x01, &bytes, \
+1_000)?`, `device.bulk_in(0x81, 64, 1_000)?` (empty when the wait ran out; \
+rounded up to whole packets), `interrupt_in`/`interrupt_out` the same way, \
+and `device.control_out(krate::usb::vendor_request(req, value, 0), &data, \
+1_000)?` / `control_in(setup, len, wait)`. Control requests go to the claimed \
+interface or one of its endpoints (the low byte of `index` names it), or, \
+class and vendor requests, to the whole device: many vendor devices are set \
+up that way (a Crazyradio's channel is \
+`device.control_out(krate::usb::vendor_device_request(0x01, channel, 0), &[], \
+1_000)?`; `class_device_request` likewise), still after `claim`. Of the \
+standard requests only GET_STATUS and GET_DESCRIPTOR are sent. At most 65536 bytes a transfer, 4096 a control transfer, \
+waits of 1 to 60000 ms; keep waits short in a windowed app and poll from \
+the event loop. Keyboards, mice and other HID, storage, audio, video and \
+hubs answer `Err(NotForApps)` even when named. `Err(NotAllowed)` names the \
+capability; `Err(Busy)` is another program or a driver holding it; \
+`Err(Disconnected)`: offer to pick again. Show `krate::usb::words(&err)`. On \
+a computer (macOS, Windows, Linux; Linux needs a udev rule, which the words \
+give, and Windows the WinUSB driver), and from a link in Chrome or Edge \
+(WebUSB): the browser's own device list shows only the models the manifest \
+names, and its pick is the person's. That is also how a tab prints raw ZPL or \
+ESC/POS: name the label printer's ids and `bulk_out` to it. Safari, Firefox \
+and a phone answer `Err(Unavailable)` in words.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \
@@ -675,8 +746,18 @@ keys; Nova takes the finger too.\n\n\
 `time.clock` gives wall-clock time (milliseconds since the Unix epoch) and \
 it IS granted -- do not talk yourself out of it. \"Show today's date\", \
 \"reset the ticks each morning\", \"how long since X\" are all one pattern: \
-derive a day number `epoch_ms / 86_400_000`, store it with the data \
-(`store.kv`), and on load compare -- a new day means reset before drawing. \
+take the person's LOCAL day number `krate::locale::today()` (needs \
+`time.clock` and `locale.info`), store it with the data (`store.kv`), and \
+on load compare -- a new day means reset before drawing. Consecutive days \
+are one apart, so a streak is a run of numbers. \
+`krate::locale::local_now()` returns `LocalTime { year: i32, month: u8, \
+day: u8, hour: u8, minute: u8, second: u8, weekday: u8 (1 = Monday), \
+offset_minutes: i32, day_number: i64 }`; \
+`local_time(ms)` and `day_number(ms)` do the same for a stored time, and \
+`date_of_day(n)` turns a day number back into (year, month, day). Never \
+divide epoch milliseconds by 86_400_000 for a day a person sees: that is \
+the UTC day, and it rolls over in the middle of the evening in America \
+and the morning in Asia (K-1300). \
 No timers, no midnight callback, no background work: the reset happens \
 whenever the app next opens, which is exactly what a person expects. (A \
 generated app once argued this was impossible mid-build, then used the \
@@ -789,8 +870,207 @@ pub(crate) fn sdk_surface_section() -> String {
     // render_reference carries its own "if it is not here, do not invent it"
     // preamble and the widget-kind list, so it follows directly.
     out.push_str(&sdk_reference::render_reference(&functions));
+    out.push_str(SHEETS_SECTION);
+    out.push_str(MACHINES_SECTION);
     out
 }
+
+/// `krate::sheets` (IC-993), by hand: the generated reference reads only
+/// `lib.rs`, and this module lives in its own directory behind a feature.
+/// A test holds every name below to the module's source.
+const SHEETS_SECTION: &str = "\n\
+## Spreadsheets: `krate::sheets` (Excel, LibreOffice, CSV)\n\n\
+An app reads the workbook a person opens and writes the one they save. Turn \
+on the `sheets` feature of the `krate` dependency -- `features = [\"gui\", \
+\"sheets\"]` (a CLI app: `features = [\"sheets\"]`). It runs inside the app, \
+`no_std`, with no capability of its own: the bytes come from \
+`ui.dialog:file-open` (or a drop) and go back through `ui.dialog:file-save`, \
+the same in a browser tab as on a desktop.\n\n\
+- `sheets::read(&bytes) -> Result<Workbook, SheetError>` -- an `.xlsx`/`.xlsm` \
+(Excel's own, or one another program exported), an `.ods` (LibreOffice) or a `.csv`, \
+recognised from the bytes. An old binary `.xls` is `Err(SheetError::OldExcel)`; \
+show `e.message()`, which tells the person to save it as `.xlsx`.\n\
+- `Workbook { sheets: Vec<Sheet> }`, `book.sheet(\"Orders\")` (ignores case).\n\
+- `Sheet { name: String, rows: Vec<Vec<Cell>> }`: `sheet.get(row, col) -> &Cell` \
+(from 0; `Cell::Empty` past the end -- never index `rows[r][c]`), \
+`sheet.height()`, `sheet.width()`, `sheet.set(row, col, cell)`, \
+`sheet.push_row(vec![..])`, `Sheet::new(\"name\")`, \
+`Sheet::column_name(27)` -> `\"AB\"`.\n\
+- `Cell::{Empty, Text(String), Number(f64), Bool(bool), Date(DateTime), \
+Error(String)}`. A formula comes through as the value it last calculated; \
+dates are recognised from the cell's format. `cell.to_text()` is what the \
+cell shows (`0.1 + 0.2` shows `0.3`, dates `2024-03-15`), `cell.as_number()` \
+reads a number or numeric text, `cell.as_str()`, `cell.is_empty()`. Build \
+cells with `Cell::from(\"text\")`, `Cell::from(12.5)`, `Cell::from(3)`, \
+`Cell::from(true)`.\n\
+- `DateTime { year, month, day, hour, minute, second }`: `DateTime::date(2024, \
+3, 15).at(9, 30, 0)`, `.to_text()`, `.to_iso()`, `DateTime::parse_iso(s)`, \
+`.day_number()` (the same count as `krate::locale::today()`, so \"overdue\" is \
+`d.day_number() < krate::locale::today()`), `DateTime::from_serial(45366.0)` / \
+`.to_serial()` for Excel's date numbers.\n\
+- `sheets::write_xlsx(&workbook) -> Vec<u8>` -- a standard `.xlsx` workbook, \
+every type kept, dates as dates, sheet names made acceptable to Excel. \
+`sheets::write_csv(&sheet) -> String` and `sheets::read_csv(&text) -> Sheet` \
+(cells from CSV are text; `as_number()` reads them).\n\n\
+Formatting, merged-cell layout, charts and the formulas themselves are not \
+read or written; values are. A value hidden under a merged range is dropped, \
+as the sheet shows it.\n\n\
+Open a workbook, show it as a table, export a summary:\n\n\
+```rust\n\
+use alloc::vec;\n\
+use krate::gfx::{canvas2d, types as gfx};\n\
+use krate::sheets::{self, Cell, Sheet, Workbook};\n\
+use krate::ui::dialog;\n\
+\n\
+// Open: the person's pick is the permission (`ui.dialog:file-open`).\n\
+fn open_workbook(win: u64) -> Result<Option<Workbook>, &'static str> {\n\
+\x20   let Ok(Some(chosen)) = dialog::open_file(win, \"Open a workbook\", \"xlsx,xlsm,ods,csv\") else {\n\
+\x20       return Ok(None); // they cancelled\n\
+\x20   };\n\
+\x20   let bytes = krate::fs::read_chosen(&chosen.token).map_err(|_| \"That file could not be read.\")?;\n\
+\x20   sheets::read(&bytes).map(Some).map_err(|e| e.message())\n\
+}\n\
+\n\
+// Show: a grid of `to_text()`, a page at a time.\n\
+fn draw_table(canvas: u64, sheet: &Sheet, first_row: usize, ink: gfx::Color) {\n\
+\x20   for r in first_row..sheet.height().min(first_row + 30) {\n\
+\x20       let y = 28.0 + (r - first_row) as f32 * 22.0;\n\
+\x20       for c in 0..sheet.width().min(8) {\n\
+\x20           let text = sheet.get(r, c).to_text();\n\
+\x20           let at = gfx::Point { x: 16.0 + c as f32 * 120.0, y };\n\
+\x20           let _ = canvas2d::draw_text(canvas, &text, at, 14.0, ink);\n\
+\x20       }\n\
+\x20   }\n\
+}\n\
+\n\
+// Export: a new sheet, saved where the person says (`ui.dialog:file-save`).\n\
+fn export_totals(win: u64, sheet: &Sheet) {\n\
+\x20   let mut out = Sheet::new(\"Totals\");\n\
+\x20   out.push_row(vec![Cell::from(\"Item\"), Cell::from(\"Total\")]);\n\
+\x20   for row in sheet.rows.iter().skip(1) {\n\
+\x20       let name = row.first().map(Cell::to_text).unwrap_or_default();\n\
+\x20       let total: f64 = row.iter().skip(1).filter_map(Cell::as_number).sum();\n\
+\x20       out.push_row(vec![Cell::from(name), Cell::from(total)]);\n\
+\x20   }\n\
+\x20   let bytes = sheets::write_xlsx(&Workbook { sheets: vec![out] });\n\
+\x20   if let Ok(Some(chosen)) = dialog::save_file(win, \"Save the totals\", \"totals.xlsx\", \"xlsx\") {\n\
+\x20       let _ = krate::fs::write_chosen(&chosen.token, &bytes);\n\
+\x20   }\n\
+}\n\
+```\n\n\
+`apps/krate-sheets-probe` reads an Excel file and a LibreOffice file, \
+writes both back, and checks every value. An app that turns a team's \
+workbook into an app keeps the data in `store.sql` or `store.kv` after the \
+first import, and offers Export so the spreadsheet is never a dead end.\n";
+
+/// `krate::modbus` and `krate::mqtt` (IC-994), by hand for the same reason
+/// as the spreadsheet section. A test holds every name below to the source.
+const MACHINES_SECTION: &str = "\n\
+## Machines: `krate::modbus` and `krate::mqtt` (PLCs, instruments, brokers)\n\n\
+An app reads a machine's registers and publishes its readings. Turn on the \
+feature of the `krate` dependency -- `features = [\"gui\", \"modbus\"]`, \
+`\"mqtt\"`, or both (a CLI app leaves out `\"gui\"`). Neither has a \
+capability of its own: Modbus RTU runs over the serial port the person \
+picked (`device.serial`), Modbus TCP and MQTT over a TCP connection to the \
+host the manifest declares (`net.connect:<host>:502`, \
+`net.connect:<host>:1883`). Every call waits at most its timeout and fails \
+with words (`e.message()`); nothing a device sends can crash the app.\n\n\
+- `modbus::Client::rtu(port, unit)` -- `port` from `krate::serial::pick`, \
+already `open`ed with the device's settings; `unit` 1 to 247 (0 sends a \
+write to every device and waits for nothing). \
+`modbus::Client::tcp(host, 502, unit) -> Result<Client, ModbusError>`.\n\
+- `client.read_holding_registers(address, count)` and \
+`read_input_registers(..) -> Result<Vec<u16>, ModbusError>` (1 to 125), \
+`read_coils(..)` and `read_discrete_inputs(..) -> Vec<bool>` (1 to 2000), \
+exactly as many as asked. `write_register(address, u16)`, \
+`write_registers(address, &[u16])`, `write_coil(address, bool)`, \
+`write_coils(address, &[bool])`. Addresses count from 0: the register a \
+manual calls 40001 is holding register 0, 30001 input register 0. \
+`set_timeout(ms)` (default 1000), `set_unit(unit)`.\n\
+- `ModbusError::{TimedOut, Exception(Exception), BadCrc, BadReply(..), \
+BadRequest(..), Link(..)}`; `Exception::IllegalDataAddress` is the device \
+saying that register does not exist. A value in two registers: \
+`modbus::f32_from(high, low)`, `u32_from`, `i32_from`, `f32_to(value)` \
+(if it reads as nonsense, the device keeps the low word first: swap them).\n\
+- `mqtt::Client::connect(host, 1883, &mqtt::Options::new(\"client-id\"))` -- \
+`.login(user, password)`, `.keep_alive(secs)` (default 60), \
+`.timeout(ms)` (default 5000). Clean sessions, MQTT 3.1.1.\n\
+- `client.publish(topic, payload, QoS::AtLeastOnce)` waits for the \
+broker's receipt (`QoS::AtMostOnce` does not); `publish_retained(..)` \
+keeps it as the topic's last value. `subscribe(filter, qos)` (`+` one \
+level, `#` everything below) returns the QoS granted; `unsubscribe(filter)`.\n\
+- `client.poll() -> Result<Option<Message>, MqttError>` never waits: call it \
+every turn of the event loop -- it also sends the keep-alive pings, so call \
+it at least once a keep-alive period. `client.receive(wait_ms)` waits for \
+one (a CLI app). `Message { topic, payload, qos, retained }`, \
+`message.text()`. `client.disconnect()`.\n\
+- `MqttError::{Refused(Refusal), TimedOut(..), SubscribeRefused, \
+Protocol(..), BadTopic(..), BadOptions(..), TooLarge, Link(..)}`; \
+`Refusal::BadLogin` is a wrong user name or password. After `Link` or \
+`TimedOut` the connection is gone: connect again.\n\n\
+Not there yet, so do not promise it: MQTT over TLS (port 8883) -- an app's \
+sockets are plain TCP; MQTT 5; QoS 2; Modbus ASCII. Keep a broker password \
+in `krate::secret` (`store.secret`), never in the source.\n\n\
+Read a holding register over RTU:\n\n\
+```rust\n\
+use alloc::string::String;\n\
+use krate::{modbus, serial};\n\
+\n\
+// `device.serial` in the manifest; the person picks the controller.\n\
+fn connect_controller() -> Result<Option<modbus::Client>, String> {\n\
+\x20   let picked = serial::pick(\"Choose the temperature controller\");\n\
+\x20   let Some(port) = picked.map_err(|e| String::from(serial::words(&e)))? else {\n\
+\x20       return Ok(None); // they cancelled\n\
+\x20   };\n\
+\x20   port.open(&serial::Settings::baud(9600))\n\
+\x20       .map_err(|e| String::from(serial::words(&e)))?;\n\
+\x20   Ok(Some(modbus::Client::rtu(port, 1))) // unit address 1\n\
+}\n\
+\n\
+// Register 40001 (address 0) holds tenths of a degree.\n\
+fn read_celsius(controller: &mut modbus::Client) -> Result<f32, String> {\n\
+\x20   let regs = controller.read_holding_registers(0, 1).map_err(|e| e.message())?;\n\
+\x20   Ok(f32::from(regs[0]) / 10.0)\n\
+}\n\
+```\n\n\
+Publish a reading over MQTT and hear the set point:\n\n\
+```rust\n\
+use alloc::{format, string::String};\n\
+use krate::mqtt::{self, QoS};\n\
+\n\
+// `net.connect:broker.lab.local:1883` and `store.secret` in the manifest.\n\
+fn open_broker() -> Result<mqtt::Client, String> {\n\
+\x20   let password = krate::secret::get_text(\"broker\").ok().flatten().unwrap_or_default();\n\
+\x20   let options = mqtt::Options::new(\"oven-7\").login(\"lab\", &password);\n\
+\x20   let mut broker =\n\
+\x20       mqtt::Client::connect(\"broker.lab.local\", 1883, &options).map_err(|e| e.message())?;\n\
+\x20   broker\n\
+\x20       .subscribe(\"lab/oven-7/setpoint\", QoS::AtLeastOnce)\n\
+\x20       .map_err(|e| e.message())?;\n\
+\x20   Ok(broker)\n\
+}\n\
+\n\
+fn publish_reading(broker: &mut mqtt::Client, celsius: f32) -> Result<(), String> {\n\
+\x20   let text = format!(\"{celsius:.1}\");\n\
+\x20   broker\n\
+\x20       .publish(\"lab/oven-7/celsius\", text.as_bytes(), QoS::AtLeastOnce)\n\
+\x20       .map_err(|e| e.message())\n\
+}\n\
+\n\
+// Every turn of the event loop.\n\
+fn hear_setpoint(broker: &mut mqtt::Client, setpoint: &mut f32) -> Result<(), String> {\n\
+\x20   while let Some(message) = broker.poll().map_err(|e| e.message())? {\n\
+\x20       if let Some(value) = message.text().and_then(|t| t.trim().parse().ok()) {\n\
+\x20           *setpoint = value;\n\
+\x20       }\n\
+\x20   }\n\
+\x20   Ok(())\n\
+}\n\
+```\n\n\
+`apps/krate-machines-probe` runs both against a device and a broker \
+simulated inside the app. Poll a machine on a timer, not in a tight loop \
+(once a second is plenty for most sensors), and show the last good reading \
+with its time when a read fails.\n";
 
 /// Section 2: the capability catalog, from the runtime's own registry. Richer
 /// than the bare name list the old contract used: it names each capability's
@@ -895,8 +1175,12 @@ fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
         Ok(cap) if !pattern.contains('<') => cap.works_in_a_tab(),
         _ => krate_manifest::works_in_a_tab(spec.module(), spec.action()),
     };
+    // Serial and USB from a link need the browser's Web Serial and WebUSB,
+    // which Chrome and Edge have (IC-992).
+    let chromium = krate_manifest::tab_needs(spec.module(), spec.action()).is_some();
     let link = match (tab, pattern.as_str()) {
         (true, "ui.dialog:*") => "yes, except `open-folder`",
+        (true, _) if chromium => "in Chrome and Edge",
         (true, _) => "yes",
         (false, _) => "computer only",
     };
@@ -955,6 +1239,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "store.secret" => "secrets encrypted at rest (passwords, tokens); not the OS keychain",
         "random.bytes" => "entropy (also what getrandom/rand need)",
         "net.connect" => "reach a host and port",
+        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (section 2c, rule 7b)",
         "net.connection" => "an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8)",
         "time.clock" => "wall-clock time",
         "time.monotonic" => "a monotonic timer",
@@ -981,6 +1266,9 @@ fn capability_note(pattern: &str) -> &'static str {
         "photos.add" => "add pictures to the person's photo library (add-only: the app never sees the library)",
         "process.run" => "run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can",
         "process.terminal" => "the person's own shell in a terminal the app draws",
+        "device.serial" => "a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable",
+        "device.printer" => "print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing",
+        "device.usb" => "a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs",
         _ => "",
     }
 }
@@ -1041,8 +1329,40 @@ socket exists. Nothing blocks: ask `tcp-status`, `tcp-read` and \
 `udp-receive` from the loop. `std::net` cannot open sockets in an app; in \
 Rust use the `net-krate` crate's `TcpStream`, `UdpSocket` and \
 `lookup_host`, which have std's shape (and tokio and quinn adapters). A \
-UDP socket hears only addresses it sent to, and an app cannot listen for \
-incoming connections yet.\n\n\
+UDP socket hears only addresses it sent to.\n\n\
+7b. **Serving the people on the network.** A factory or lab app that the \
+floor's tablets and other computers open in a browser, or a tool other \
+programs on this computer talk to, listens on one port: declare \
+`net.listen:<port>` (1024 or above; 8080 is the usual choice) with a \
+rationale. `krate::net::listen::Listener::open(8080, Scope::LocalNetwork)?` \
+lets other devices in -- mark it `required = true`, because the person is \
+asked \"let other devices on your network open this app on port 8080\" -- \
+and `Scope::ThisComputer` binds 127.0.0.1 only, which needs the declaration \
+but no question (mark it `required = false` when that is all the app does). \
+Nothing blocks: each turn of the loop, `while let Some(conn) = \
+listener.accept()? { ... }` takes the devices that arrived, and \
+`conn.read(4096)` (`Data`, `Pending`, `Closed`) and `conn.write(bytes)?` \
+work like a dialled connection; write the whole answer, then drop the \
+connection -- what was written still arrives. For a page, answer \
+`HTTP/1.1 200 OK` with `Content-Type`, `Content-Length` and \
+`Connection: close` headers. Show the person what to open on the other \
+device -- never ask them to find an IP: `listener.addresses()?` gives this \
+computer's private network addresses, main connection first, each a \
+`ListenAddress { ip, port, url }` with `url` like \
+`http://192.168.1.20:8080/` (empty when the computer is on no network; ask \
+again when showing it later). `listener.announce(\"_http._tcp\")?` lets \
+the network's devices find it by the app's name, as printers are found, \
+and returns `Announcement { name, host, url }` with `url` like \
+`http://shop-floor.local:8080/` -- show both, as some Android browsers do \
+not open `.local` names. Both need a `Scope::LocalNetwork` listener (the \
+same yes; `NotAllowed` for `ThisComputer`), and the announcement goes when \
+the listener is dropped. \
+Refusals are words \
+(`krate::net::listen::words(&err)`): `NotAllowed` names \
+`net.listen:<port>`, `InUse` is another program on the port, `BadPort` is \
+below 1024, `TooMany` is 32 devices already connected. Every listener closes \
+when the app ends. A computer only: a browser tab and a phone answer \
+`Unavailable`.\n\n\
 8. **An organisation's own API: a company connection.** When the app is \
 for an organisation (\"for finance, reading the Finance API\") and its admin \
 set that API up as a connection, declare `net.connection:<name>` (the name \
@@ -1225,7 +1545,7 @@ that is now done): `ui::notifications::post(\"upload\", \"Uploading\", \
 \"3 of 10 photos\")` -- the same id replaces it, and \
 `ui::notifications::withdraw(\"upload\")` takes it back once it no longer \
 holds; ids are letters, digits, `-` and `_`. Works on a Mac, Windows, \
-Linux and in the browser. Treat any notification as a courtesy -- show \
+Linux, Android, iPhone and in the browser. Treat any notification as a courtesy -- show \
 the same state in the window too, and never make a step depend on it \
 having appeared.\n\n\
 **Open in the browser** (`ui.open-url`, an explicit ask): \
@@ -1240,8 +1560,35 @@ and waits for the person. For several pages, draw each one and call \
 `ui::print::add_page(win)`, then `ui::print::finish(win, title)`. The \
 answer is `Printed`, `Cancelled`, or `OpenedInViewer` (Windows and Linux \
 open the pages in the PDF viewer to print from there) -- say which in the \
-window, and never claim it printed on `OpenedInViewer`. Draw the page on a \
-white background: paper is white, and a dark theme wastes ink.\n\n";
+window, and never claim it printed on `OpenedInViewer`. From a link it is \
+the browser's own print dialog, in every browser; a browser does not say \
+whether the person cancelled, so a tab answers `Printed` once its dialog \
+closes. Draw the page on a white background: paper is white, and a dark \
+theme wastes ink.\n\n\
+**Printing to a printer the person picks, no dialog each time** \
+(`device.printer`, declared required, with a rationale) -- labels on a \
+packing bench, a job traveller with every work order, receipts: \
+`krate::print::printer(\"Choose the label printer\")?` answers the printer \
+the person picked for this app before, and shows the system's list only \
+when there is none; the pick is remembered, so every later print goes \
+straight out. `None` is a cancel. Offer a \"Change printer\" button that \
+calls `krate::print::pick(title)?`, and show `printer.name()` beside it. \
+Then `printer.raw(zpl_bytes, 1, \"WO-1042\")?` sends ZPL, EPL or ESC/POS \
+to a label or receipt printer byte for byte, and \
+`printer.pdf(&pdf_bytes, copies, krate::print::PaperSize::A4, title)?` or \
+`printer.png(&png_bytes, ...)` prints a document \
+(`PaperSize::Custom(krate::print::PaperMm { width: 100, height: 150 })` for \
+label stock). Build the PDF or PNG in the app (a PDF crate, or a canvas \
+picture). A job is at most 16 MiB and 1 to 100 copies; PDF bytes must start \
+`%PDF-`. The answer is `PrintOutcome::Queued(job)`, `Failed(words)` (the \
+system's reason: paused, out of paper) or `Gone(words)` (the printer was \
+removed: offer the pick again) -- show `krate::print::outcome_words`, and \
+`krate::print::words(&err)` on an `Err` (`NotAllowed` names \
+`device.printer`). The app never lists or names printers. A computer only: \
+Windows prints PNG and raw label language, not PDF; a browser tab and a \
+phone answer `Unavailable` in words. From a link, print what the window \
+shows (`krate:ui/print`), and send raw label language to a USB label printer \
+named as `device.usb:<vendor>:<product>` (Chrome and Edge).\n\n";
 
 /// Section 2f: game feel. The Ice Climber A/B (one request, two agents)
 /// showed the runtime treats every agent the same and the results still
@@ -1638,6 +1985,10 @@ person nominated; it creates nothing by itself, so asking and then not \
 writing leaves nothing behind. An editor that can open a document and not \
 save one is not an editor: any app that reads a file the person chose \
 should offer to save one too.\n\n\
+Call the dialogs in a `quick` run too. Never write `if quick { Ok(None) }` \
+around them: check-app answers them itself (`pick = \"day.xlsx\"` in \
+`krate-check.toml`, otherwise as a cancel), so skipping the dialog only \
+hides the export or open path from the check -- the one a person uses.\n\n\
 ## The app's icon\n\n\
 Write `assets/icon.png` (square PNG, 512px or larger) and the app wears it \
 everywhere: the dock while it runs, Finder when installed, the installer. \
@@ -3450,5 +3801,153 @@ interface api {
             inlined.contains("If a tool draws a region on a canvas, it obeys those four"),
             "the canvas craft rules are still written as piece-only"
         );
+    }
+
+    /// The spreadsheet section is hand-written, so every call it teaches is
+    /// held to the module's source: a rename there fails here, not in a
+    /// generated app (IC-993).
+    #[test]
+    fn the_sheets_section_names_only_real_calls() {
+        let source = [
+            include_str!("../../bindings-rust/src/sheets/mod.rs"),
+            include_str!("../../bindings-rust/src/sheets/xlsx.rs"),
+            include_str!("../../bindings-rust/src/sheets/csv.rs"),
+        ]
+        .concat();
+        let manifest = include_str!("../../bindings-rust/Cargo.toml");
+        assert!(
+            manifest.contains("\nsheets = ["),
+            "the `sheets` feature is gone"
+        );
+        let pack = sdk_surface_section();
+        assert!(pack.contains("## Spreadsheets: `krate::sheets`"));
+        for name in [
+            "read",
+            "read_csv",
+            "write_xlsx",
+            "write_csv",
+            "sheet",
+            "get",
+            "height",
+            "width",
+            "set",
+            "push_row",
+            "new",
+            "column_name",
+            "to_text",
+            "as_number",
+            "as_str",
+            "is_empty",
+            "date",
+            "at",
+            "to_iso",
+            "parse_iso",
+            "day_number",
+            "from_serial",
+            "to_serial",
+            "message",
+        ] {
+            assert!(
+                pack.contains(&format!("{name}(")),
+                "the section no longer teaches `{name}`; drop it from this list"
+            );
+            assert!(
+                source.contains(&format!("pub fn {name}(")),
+                "the guide teaches `{name}(` but krate::sheets has no such function"
+            );
+        }
+        for variant in [
+            "Empty",
+            "Text(String)",
+            "Number(f64)",
+            "Bool(bool)",
+            "Date(DateTime)",
+            "Error(String)",
+            "OldExcel",
+        ] {
+            assert!(source.contains(variant), "{variant}");
+        }
+        // Both prompts carry it: the pack and the published krate-mode.
+        assert!(crate::krate_mode::generate().contains("## Spreadsheets: `krate::sheets`"));
+    }
+
+    /// The machines section is hand-written too: every call and variant it
+    /// teaches is held to `krate::modbus` and `krate::mqtt` (IC-994).
+    #[test]
+    fn the_machines_section_names_only_real_calls() {
+        let source = [
+            include_str!("../../bindings-rust/src/modbus/mod.rs"),
+            include_str!("../../bindings-rust/src/modbus/frame.rs"),
+            include_str!("../../bindings-rust/src/mqtt/mod.rs"),
+        ]
+        .concat();
+        let manifest = include_str!("../../bindings-rust/Cargo.toml");
+        for feature in ["\nmodbus = [", "\nmqtt = ["] {
+            assert!(manifest.contains(feature), "the feature {feature} is gone");
+        }
+        let pack = sdk_surface_section();
+        assert!(pack.contains("## Machines: `krate::modbus` and `krate::mqtt`"));
+        for name in [
+            "rtu",
+            "tcp",
+            "read_holding_registers",
+            "read_input_registers",
+            "read_coils",
+            "read_discrete_inputs",
+            "write_register",
+            "write_registers",
+            "write_coil",
+            "write_coils",
+            "set_timeout",
+            "set_unit",
+            "f32_from",
+            "f32_to",
+            "message",
+            "connect",
+            "login",
+            "keep_alive",
+            "timeout",
+            "publish",
+            "publish_retained",
+            "subscribe",
+            "unsubscribe",
+            "poll",
+            "receive",
+            "text",
+            "disconnect",
+        ] {
+            assert!(
+                pack.contains(&format!("{name}(")),
+                "the section no longer teaches `{name}`; drop it from this list"
+            );
+            assert!(
+                source.contains(&format!("pub fn {name}(")),
+                "the guide teaches `{name}(` but krate::modbus / krate::mqtt has no such function"
+            );
+        }
+        for name in ["u32_from", "i32_from"] {
+            assert!(source.contains(&format!("pub fn {name}(")), "{name}");
+        }
+        for variant in [
+            "TimedOut",
+            "Exception(Exception)",
+            "BadCrc",
+            "BadReply(",
+            "BadRequest(",
+            "IllegalDataAddress",
+            "Refused(Refusal)",
+            "SubscribeRefused",
+            "BadTopic(",
+            "BadOptions(",
+            "TooLarge",
+            "BadLogin",
+            "AtLeastOnce",
+            "AtMostOnce",
+            "pub retained: bool",
+        ] {
+            assert!(source.contains(variant), "{variant}");
+        }
+        assert!(crate::krate_mode::generate()
+            .contains("## Machines: `krate::modbus` and `krate::mqtt`"));
     }
 }

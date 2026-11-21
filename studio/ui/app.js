@@ -2818,7 +2818,18 @@ function friendlyAsk(cap) {
     "process.run:cargo": "run cargo on this computer: a project's build can run any code it contains",
     "process.run": "run a program on this computer: it can do what you can",
     "process.terminal": "open a terminal on this computer: it can do anything you can",
+    // IC-985: the device the person picks, nothing else.
+    "device.serial": "talk to a serial device you choose",
+    // IC-986: the printer the person picks, nothing else.
+    "device.printer": "print to a printer you choose",
   };
+  // IC-987: the manifest crate's words, with the port the person is asked
+  // about.
+  const listen = /^net\.listen:(\d+)$/.exec(cap);
+  if (listen) return `let other devices on your network open this app on port ${listen[1]}`;
+  // IC-988: the manifest crate's words, with the device's ids.
+  const usb = /^device\.usb:([0-9a-fA-F]{4}:[0-9a-fA-F]{4})$/.exec(cap);
+  if (usb) return `talk to the ${usb[1].toLowerCase()} USB device you choose`;
   return map[cap] || map[cap.split(":")[0]] || cap;
 }
 
@@ -4930,6 +4941,14 @@ const CAP_WORDS = {
   "process.run:cargo": "Run cargo on this computer: a project's build can run any code it contains",
   "process.run": "Run a program on this computer: it can do what you can",
   "process.terminal": "Open a terminal on this computer: it can do anything you can",
+  // IC-985: the device the person picks, nothing else.
+  "device.serial": "Talk to a serial device you choose",
+  // IC-986: the printer the person picks, nothing else.
+  "device.printer": "Print to a printer you choose",
+  // IC-988: shown with the device's ids, "(1915:7777)".
+  "device.usb": "Talk to a USB device you choose",
+  // IC-987: shown with its port, "(8080)".
+  "net.listen": "Let other devices on your network open this app on a port",
   "memory.budget": "Use more memory than apps normally get",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
@@ -5386,6 +5405,15 @@ const CAPS_REACH_OUT = new Set([
   // (IC-977).
   "process.run",
   "process.terminal",
+  // A device on a wire the person picks (IC-985).
+  "device.serial",
+  // Paper and labels out in the world, on a printer the person picks
+  // (IC-986).
+  "device.printer",
+  // A USB device the person picks (IC-988).
+  "device.usb",
+  // Other devices on the network reaching in (IC-987).
+  "net.listen",
   // Acts on the desktop outside its own window.
   "ui.open-url",
   "ui.notify",

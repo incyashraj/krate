@@ -1,0 +1,369 @@
+/* Every door of the real builder hands its children to the build user, with
+ * only the key that door needs (K-1293).
+ *
+ * Drives the REAL server with a fake engine that writes down, for every
+ * call, which user it ran as, its HOME and TMPDIR, and which secrets it
+ * could see. The build user here is this very user (a test cannot be
+ * root), mapped through KRATE_BUILD_PASSWD: the server takes the same uid
+ * switching path it takes on Fly, and the HOME/TMPDIR it hands over prove
+ * it did. The uid itself is pinned in sandbox.test.mjs.
+ *
+ * Per door, what the child may see:
+ *   /plan, /build (create)         the agent's own key, nothing else
+ *   the picture of a built app     no key
+ *   /compile, /guide, /port/plan   no key
+ *   /judge                         no key
+ * and never, anywhere, the hub secret or another vendor's key.
+ *
+ * Then the production half: on a box with FLY_APP_NAME and no build user,
+ * every build door answers 503 and the engine is never started.
+ *
+ *   node --test cloud/builder/test/build-user.test.mjs
+ */
+import { test, after } from "node:test";
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createServer as probeServer } from "node:net";
+import { CARGO_TEMPLATE } from "../src/compile.js";
+
+const SECRET = "hub-secret-for-build-user-test";
+const HOUSE_KEY = "sk-ant-house-key-for-build-user-test";
+const OTHER_KEY = "sk-openai-house-key-for-build-user-test";
+const FLY_TOKEN = "fly-token-for-build-user-test";
+
+const freePort = () => new Promise((resolve, reject) => {
+  const probe = probeServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
+});
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ---- a hub that says yes to everything and serves one upload ------------- */
+const UPLOAD = Buffer.from("a big app, judged on the builder");
+const UPLOAD_SHA = createHash("sha256").update(UPLOAD).digest("hex");
+const verdicts = [];
+const hub = createServer((req, res) => {
+  if (req.url.startsWith("/internal/big/") && req.url.endsWith("/bytes")) return res.end(UPLOAD);
+  let raw = "";
+  req.on("data", (c) => { raw += c; });
+  req.on("end", () => {
+    if (req.url.endsWith("/verdict")) verdicts.push(JSON.parse(raw));
+    res.setHeader("content-type", "application/json");
+    res.end("{}");
+  });
+});
+await new Promise((r) => hub.listen(0, "127.0.0.1", r));
+const HUB = `http://127.0.0.1:${hub.address().port}`;
+
+/* ---- a fake engine that writes down who it ran as and what it saw -------- */
+const work = await mkdtemp(join(tmpdir(), "krate-build-user-"));
+const calls = join(work, "calls.log");
+const krateBin = join(work, "krate");
+await writeFile(krateBin, `#!/bin/sh
+echo "$1|uid=$(id -u)|home=$HOME|tmp=$TMPDIR|cargo=\${CARGO_HOME:-none}|user=\${USER:-}|secret=\${KRATE_BUILDER_SECRET:-none}|anthropic=\${ANTHROPIC_API_KEY:-none}|openai=\${OPENAI_API_KEY:-none}|fly=\${FLY_API_TOKEN:-none}|cwd=$(pwd)" >> "${calls}"
+case "$1" in
+  --version) echo "krate 9.9.9-test"; exit 0 ;;
+  krate-mode) echo "# Krate Mode"; exit 0 ;;
+  plan) echo '{"plan":"a small notes app","needs":[]}'; exit 0 ;;
+  port) echo '{"verdict":"portable","source":"x"}'; exit 0 ;;
+  judge) echo '{"ok":true,"judgement":{}}'; exit 0 ;;
+  create)
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "--output" ] && out="$a"; prev="$a"; done
+    printf 'not-a-real-bundle' > "$out"
+    exit 0 ;;
+  run) exit 1 ;;
+  check-app)
+    dir="$2"
+    # A slow build: its pid where the test can see it, then a long wait.
+    if grep -q SLOW "$dir/src/lib.rs"; then echo $$ > "$HOME/../$(basename "$HOME").pid"; sleep 30; fi
+    crate=$(grep -m1 '^name' "$dir/Cargo.toml" | sed 's/.*"\\(.*\\)".*/\\1/' | tr '-' '_')
+    mkdir -p "$dir/target/wasm32-wasip1/release"
+    printf 'wasm' > "$dir/target/wasm32-wasip1/release/$crate.wasm"
+    echo "{\\"ok\\":true,\\"dir\\":\\"$dir\\",\\"stages\\":[\\"build\\"],\\"imports\\":[],\\"usability_notes\\":[],\\"link_notes\\":[]}"
+    exit 0 ;;
+  pack)
+    out=""; prev=""
+    for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+    case "$out" in
+      *nudge.krate)
+        mkdir -p "$HOME/.cache/krate/sdk/fake-sdk-1"
+        touch "$HOME/.cache/krate/sdk/fake-sdk-1/.complete"
+        exit 1 ;;
+    esac
+    printf 'PK-fake-bundle' > "$out"
+    exit 0 ;;
+esac
+exit 1
+`.replaceAll("${calls}", calls));
+await chmod(krateBin, 0o755);
+
+const started = [];
+after(() => { for (const p of started) p.kill("SIGKILL"); hub.close(); });
+
+async function startBuilder(extra) {
+  const port = await freePort();
+  const stateDir = await mkdtemp(join(work, "state-"));
+  const proc = spawn("node", ["cloud/builder/src/server.js"], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOME: join(work, "service-home"),
+      TMPDIR: join(work, "service-tmp"),
+      KRATE_BIN: krateBin,
+      KRATE_HUB: HUB,
+      KRATE_STATE_DIR: stateDir,
+      KRATE_AGENT: "anthropic",
+      KRATE_BUILDER_DEV: "1",
+      KRATE_BUILDER_SECRET: SECRET,
+      ANTHROPIC_API_KEY: HOUSE_KEY,
+      OPENAI_API_KEY: OTHER_KEY,
+      FLY_API_TOKEN: FLY_TOKEN,
+      ...extra,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  started.push(proc);
+  let log = "";
+  proc.stdout.on("data", (b) => { log += b; });
+  proc.stderr.on("data", (b) => { log += b; });
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 100; i += 1) {
+    try { if ((await fetch(`${base}/health`)).ok) break; } catch (e) {}
+    await sleep(100);
+  }
+  return { base, proc, stateDir, log: () => log };
+}
+
+async function engineCalls() {
+  return (await readFile(calls, "utf8").catch(() => "")).split("\n").filter(Boolean).map((line) => {
+    const [verb, ...fields] = line.split("|");
+    return { verb, line, ...Object.fromEntries(fields.map((f) => [f.slice(0, f.indexOf("=")), f.slice(f.indexOf("=") + 1)])) };
+  });
+}
+async function until(what, ms = 15000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { const v = await what(); if (v) return v; await sleep(100); }
+  throw new Error("timed out");
+}
+
+const post = (base, path, body, headers = {}) => fetch(`${base}${path}`, {
+  method: "POST",
+  headers: { "content-type": "application/json", authorization: "Bearer dev", "x-krate-builder": SECRET, ...headers },
+  body: JSON.stringify(body),
+});
+const b64 = (s) => Buffer.from(s).toString("base64");
+const MANIFEST = `[app]
+id = "dev.krate.your_app"
+name = "Tide Clock"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/your_app.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window"
+required = true
+`;
+
+/* A pool of build users, every one of them this very user (a test cannot
+ * be root), each with its own home under `pool-<name>/`. */
+async function poolOf(name, n) {
+  const me = process.getuid();
+  const root = join(work, `pool-${name}`);
+  await mkdir(root);
+  const homes = Array.from({ length: n }, (_, i) => join(root, String(i + 1)));
+  const file = join(work, `passwd-${name}`);
+  await writeFile(file, homes.map((h, i) => `kratebuild${i + 1}:x:${me}:${process.getgid()}::${h}:/bin/sh\n`).join(""));
+  return { file, homes, root, env: { KRATE_BUILD_PASSWD: file, KRATE_BUILD_SLOTS: String(n) } };
+}
+const health = async (b) => (await fetch(`${b.base}/health`)).json();
+
+test("every door hands its children to a build user of its own, with only the key that door needs", async () => {
+  const me = process.getuid();
+  const pool = await poolOf("doors", 2);
+  const b = await startBuilder(pool.env);
+  const said = await health(b);
+  // This user, not root, so no boundary -- the server says so honestly.
+  assert.equal(said.isolation, "none");
+  assert.deepEqual(said.slots, { size: 2, free: 2 });
+
+  // /plan: a model call on the house key.
+  const plan = await post(b.base, "/plan", { request: "a notes app" });
+  assert.equal(plan.status, 200, await plan.text());
+
+  // /build: the agent on the house key, then the finished app photographed.
+  const build = await post(b.base, "/build", { request: "a notes app" });
+  assert.equal(build.status, 200, b.log());
+  const { id } = await build.json();
+  await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${id}`, { headers: { authorization: "Bearer dev" } })).json();
+    return job.state === "done" || job.state === "failed" ? job : null;
+  });
+
+  // /compile: somebody else's source, no model at all.
+  const compile = await post(b.base, "/compile", {
+    name: "Tide Clock",
+    files: [
+      { path: "Cargo.toml", data: b64(CARGO_TEMPLATE) },
+      { path: "manifest.toml", data: b64(MANIFEST) },
+      { path: "src/lib.rs", data: b64("#![no_std]\nextern crate alloc;\n") },
+    ],
+  }, { "x-krate-account": "hub:github:alice" });
+  assert.equal(compile.status, 202, b.log());
+  const compiled = (await compile.json()).id;
+  await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${compiled}`, { headers: { "x-krate-builder": SECRET, "x-krate-account": "hub:github:alice" } })).json();
+    return job.state === "done" || job.state === "failed" ? job : null;
+  });
+
+  // /guide, /port/plan, /judge: the engine reading, never a model.
+  assert.equal((await fetch(`${b.base}/guide`, { headers: { authorization: "Bearer dev", "x-krate-builder": SECRET } })).status, 200, b.log());
+  const portPlan = await post(b.base, "/port/plan", { project: { name: "p", files: [{ path: "main.py", bytes: b64("print(1)") }] } });
+  assert.equal(portPlan.status, 200, b.log());
+  const judged = await post(b.base, "/judge", { id: "bigupload1", kind: "bundle", size: UPLOAD.length, sha256: UPLOAD_SHA });
+  assert.equal(judged.status, 202);
+  await until(() => verdicts.length > 0);
+
+  const seen = await engineCalls();
+  const verbs = new Set(seen.map((c) => c.verb));
+  for (const verb of ["plan", "create", "run", "pack", "check-app", "--version", "krate-mode", "port", "judge"]) {
+    assert.ok(verbs.has(verb), `the engine was never asked to ${verb}: ${[...verbs].join(", ")}\n${b.log()}`);
+  }
+  for (const c of seen) {
+    // Never, on any path.
+    assert.equal(c.secret, "none", `the hub secret reached \`krate ${c.verb}\``);
+    assert.equal(c.openai, "none", `another vendor's key reached \`krate ${c.verb}\``);
+    assert.equal(c.fly, "none", `a Fly token reached \`krate ${c.verb}\``);
+    assert.ok(!c.line.includes(SECRET), `the hub secret, by value, in \`krate ${c.verb}\``);
+    if (c.verb === "gift-opener") {
+      // The gift probe stays the service's user: its HOME, no key.
+      assert.equal(c.anthropic, "none", "a gift needs no key");
+      continue;
+    }
+    // A build user's own home, scratch and cargo home, which only the
+    // switching path sets.
+    assert.equal(c.uid, String(me));
+    const slot = pool.homes.indexOf(c.home);
+    assert.ok(slot >= 0, `\`krate ${c.verb}\` ran outside a build user's home: ${c.home}`);
+    assert.equal(c.tmp, join(c.home, "tmp"), `\`krate ${c.verb}\` got the service's TMPDIR`);
+    assert.equal(c.cargo, join(c.home, ".cargo"), `\`krate ${c.verb}\` shared a cargo home`);
+    assert.equal(c.user, `kratebuild${slot + 1}`);
+    const wantsKey = c.verb === "plan" || c.verb === "create";
+    assert.equal(c.anthropic, wantsKey ? HOUSE_KEY : "none", `\`krate ${c.verb}\` key`);
+  }
+  // A build's own folder is in its build user's scratch, not the service's.
+  const created = seen.find((c) => c.verb === "create");
+  assert.ok(created.cwd.startsWith(join(await realpath(pool.root), created.home.split("/").pop(), "tmp") + "/krate-build-"), created.cwd);
+  // Every job handed its user back, its home emptied.
+  await until(async () => (await health(b)).slots.free === 2);
+  assert.deepEqual(await readdir(pool.root), [], "no build user's home outlives its job");
+  b.proc.kill("SIGTERM");
+});
+
+test("two jobs at once run as two build users; a third is told busy; a stopped and a timed-out job hand theirs back", async () => {
+  await writeFile(calls, "");
+  const pool = await poolOf("busy", 2);
+  // More compiles allowed than build users, so the pool is what says busy.
+  const b = await startBuilder({ ...pool.env, KRATE_COMPILE_TIMEOUT_MS: "2500", KRATE_COMPILE_CONCURRENT: "5" });
+  const asHub = (who) => ({ "x-krate-builder": SECRET, "x-krate-account": `hub:github:${who}` });
+  const slow = (who) => post(b.base, "/compile", {
+    name: "Slow",
+    files: [
+      { path: "Cargo.toml", data: b64(CARGO_TEMPLATE) },
+      { path: "manifest.toml", data: b64(MANIFEST) },
+      { path: "src/lib.rs", data: b64("#![no_std]\n// SLOW\n") },
+    ],
+  }, asHub(who));
+  const first = await slow("alice");
+  assert.equal(first.status, 202, b.log());
+  const second = await slow("bob");
+  assert.equal(second.status, 202, b.log());
+  // Both are in check-app: two pids, written in two different homes' names.
+  const pidFiles = pool.homes.map((h) => `${h}.pid`);
+  await until(async () => (await Promise.all(pidFiles.map((f) => readFile(f, "utf8").catch(() => "")))).every(Boolean));
+  const pids = await Promise.all(pidFiles.map(async (f) => Number(await readFile(f, "utf8"))));
+  const running = (await engineCalls()).filter((c) => c.verb === "check-app");
+  assert.equal(new Set(running.map((c) => c.home)).size, 2, "two jobs, two homes");
+  assert.equal(new Set(running.map((c) => c.user)).size, 2, "two jobs, two build users");
+  assert.deepEqual((await health(b)).slots, { size: 2, free: 0 });
+  // Each job's folder is its own build user's, 0700.
+  for (const c of running) assert.equal((await stat(c.cwd)).mode & 0o777, 0o700, c.cwd);
+
+  // A third job, anyone's, waits for a free build user: refused, not counted.
+  const third = await slow("carol");
+  assert.equal(third.status, 503);
+  assert.match((await third.json()).error, /busy/);
+  const ledger = JSON.parse(await readFile(join(b.stateDir, "compiles.json"), "utf8"));
+  assert.equal(ledger.accounts["hub:github:carol"], undefined, "a busy refusal uses up nothing");
+
+  // Stopped: its process is killed and its build user is back.
+  const aliceId = (await first.json()).id;
+  const stop = await fetch(`${b.base}/build/${aliceId}/stop`, { method: "POST", headers: asHub("alice") });
+  assert.equal(stop.status, 200);
+  await until(async () => (await health(b)).slots.free === 1);
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return false; } };
+  await until(async () => !alive(pids[0]) || !alive(pids[1]));
+  // Timed out: the same.
+  const bobId = (await second.json()).id;
+  const bob = await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${bobId}`, { headers: asHub("bob") })).json();
+    return job.state === "failed" ? job : null;
+  });
+  assert.match(bob.error, /took longer than/);
+  await until(async () => (await health(b)).slots.free === 2);
+  assert.ok(!alive(pids[0]) && !alive(pids[1]), "neither job's check-app outlived it");
+  assert.deepEqual(await readdir(pool.root).then((n) => n.filter((x) => !x.endsWith(".pid"))), [], "both homes emptied");
+  // And the box builds again: a third person's job on a recycled user.
+  const again = await post(b.base, "/compile", {
+    name: "Quick",
+    files: [
+      { path: "Cargo.toml", data: b64(CARGO_TEMPLATE) },
+      { path: "manifest.toml", data: b64(MANIFEST) },
+      { path: "src/lib.rs", data: b64("#![no_std]\n") },
+    ],
+  }, asHub("carol"));
+  assert.equal(again.status, 202);
+  const carolId = (await again.json()).id;
+  const carol = await until(async () => {
+    const job = await (await fetch(`${b.base}/build/${carolId}`, { headers: asHub("carol") })).json();
+    return job.state === "done" || job.state === "failed" ? job : null;
+  });
+  assert.equal(carol.state, "done", b.log());
+  await until(async () => (await health(b)).slots.free === 2);
+  b.proc.kill("SIGTERM");
+});
+
+test("production with no build user: every build door is refused and nothing runs", async () => {
+  await writeFile(calls, "");
+  const empty = join(work, "passwd-empty");
+  await writeFile(empty, "root:x:0:0:root:/root:/bin/sh\n");
+  const b = await startBuilder({ KRATE_BUILD_PASSWD: empty, FLY_APP_NAME: "krate-builder-test" });
+  assert.equal((await (await fetch(`${b.base}/health`)).json()).isolation, "none");
+  assert.match(b.log(), /refusing every build/);
+
+  const doors = [
+    ["/build", () => post(b.base, "/build", { request: "a notes app" })],
+    ["/plan", () => post(b.base, "/plan", { request: "a notes app" })],
+    ["/compile", () => post(b.base, "/compile", { name: "x", files: [] })],
+    ["/port/plan", () => post(b.base, "/port/plan", { project: { name: "p", files: [{ path: "a.py", bytes: b64("x") }] } })],
+    ["/port", () => post(b.base, "/port", { project: { name: "p", files: [{ path: "a.py", bytes: b64("x") }] } })],
+    ["/judge", () => post(b.base, "/judge", { id: "bigupload2", kind: "bundle", size: UPLOAD.length, sha256: UPLOAD_SHA })],
+    ["/guide", () => fetch(`${b.base}/guide`, { headers: { authorization: "Bearer dev", "x-krate-builder": SECRET } })],
+    ["/build/x/revise", () => post(b.base, "/build/0123/revise", { change: "bigger" })],
+  ];
+  for (const [door, call] of doors) {
+    const res = await call();
+    assert.equal(res.status, 503, `${door} answered ${res.status}`);
+    assert.match(await res.text(), /switched off/, door);
+  }
+  await sleep(300);
+  const ran = (await engineCalls()).filter((c) => c.verb !== "gift-opener");
+  assert.deepEqual(ran.map((c) => c.verb), [], "the engine ran on a box with no build user");
+  b.proc.kill("SIGTERM");
+});

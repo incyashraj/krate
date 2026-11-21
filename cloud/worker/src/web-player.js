@@ -150,6 +150,8 @@ const PLAYER_FILES = new Set([
   // page, and it has no fetch handler).
   "senses.js",
   "notify-sw.js",
+  // Serial and USB devices the person picks (IC-992): the page's half.
+  "devices.js",
   // A .krate file opened in the tab (/run/file): the transpiler the hub
   // makes each release's web pack with, run in the page instead, so the file
   // never leaves the browser; and the service worker that takes a file

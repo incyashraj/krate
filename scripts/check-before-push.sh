@@ -154,6 +154,7 @@ done
 # CI.
 if [ -x target/debug/krate ]; then
   run "make path (stubbed agent)" sh scripts/test-cold-make.sh
+  run "revise as a transaction (stubbed agent)" sh scripts/test-revise-transaction.sh
 else
   note "make path (stubbed agent)" "skipped: no target/debug/krate"
 fi

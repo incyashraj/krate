@@ -566,6 +566,9 @@
     const rail = wide() && side.dataset.open !== "true";
     document.body.classList.toggle("kr-rail", rail);
     if (rail && side.inert) side.inert = false;
+    // The rail's rows are smaller squares than the open list's rows: the
+    // indicator follows at once, and again once the width has settled.
+    requestAnimationFrame(placeNav);
     setTimeout(placeNav, 520);
   }
   watch(side, { attributes: true, attributeFilter: ["data-open"] }, railSync);

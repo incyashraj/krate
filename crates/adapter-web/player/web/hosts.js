@@ -435,6 +435,14 @@ export function buildImports(ctx) {
     'krate:locale/info': {
       current: () => { need('locale.info', 'reading your language'); return { bcp47: navigator.language || 'en-US' }; },
       timezone: () => { need('locale.info', 'reading your time zone'); return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; },
+      // Minutes east of UTC in the zone `timezone` names, at that instant,
+      // daylight saving included (IC-991). getTimezoneOffset answers in the
+      // browser's own zone with the opposite sign; `|| 0` keeps a -0 out.
+      utcOffset(millis) {
+        need('locale.info', 'reading your time zone');
+        const offset = -new Date(Number(millis)).getTimezoneOffset();
+        return Number.isFinite(offset) ? (offset || 0) : 0;
+      },
     },
     'krate:locale/format': {
       formatDate(millis, tz, style, loc) {
@@ -803,6 +811,9 @@ export function buildImports(ctx) {
     forget: (c, image) => ui.c_forget(c, image),
   };
   Object.assign(impl, senses({ allows, bridge, present: () => ctx.present(), facts: ctx.senses || {} }));
+  // Serial and USB devices the person picks (IC-992), through the
+  // browser's Web Serial and WebUSB where it has them.
+  Object.assign(impl, tabDevices({ allows, bridge, present: () => ctx.present(), facts: ctx.devices || {} }));
   // Haptics, motion and unlock: a tab has no sensor or sheet for them, so it
   // answers as a computer without the feature does (not available, nothing to
   // read, nothing to tap, unlock unavailable with a reason) and shows no
@@ -812,6 +823,55 @@ export function buildImports(ctx) {
   impl['krate:ui/unlock'] = {
     available: () => false,
     check: () => ({ tag: 'unavailable', val: 'This device cannot check it is you.' }),
+  };
+  // Printing what the window shows (krate:ui/print, IC-992): through the
+  // browser's own print dialog, where the person picks the printer (or a
+  // PDF), as the system's dialog does on a computer. Each page is the
+  // window's frame as it is when the app asks, the desktop's limits and
+  // words (phase3_gui_host.rs). A browser does not say whether the person
+  // printed or cancelled, so once its dialog closes the answer is printed.
+  const MAX_PRINT_PAGES = 100;
+  const printPages = [];
+  const printPage = (w) => {
+    const page = ctx.capture ? ctx.capture(w.toString()) : null;
+    if (!page) throw new HostError({ tag: 'invalid-window' });
+    return page;
+  };
+  const printNow = (title, pages) => {
+    const { json } = bridge.call('print.pages', { title: String(title || ''), pages }, pages.map((p) => p.rgba.buffer));
+    if (json.err) throw new HostError(json.err);
+    return json.ok;
+  };
+  impl['krate:ui/print'] = {
+    window: (w, title) => printNow(title, [printPage(w)]),
+    addPage(w) {
+      if (printPages.length >= MAX_PRINT_PAGES) {
+        throw new HostError({ tag: 'platform', val: `a document holds at most ${MAX_PRINT_PAGES} pages; finish this one first` });
+      }
+      printPages.push(printPage(w));
+      return printPages.length;
+    },
+    finish(w, title) {
+      // The window must still be the app's, like every other call.
+      printPage(w);
+      const pages = printPages.splice(0);
+      if (!pages.length) throw new HostError({ tag: 'platform', val: 'no pages were added to print' });
+      return printNow(title, pages);
+    },
+  };
+  // A printer the person picks (krate:print, IC-986): a tab reaches no
+  // printer without the browser's own dialog each time, and an app on this
+  // interface prints with no dialog, so every call answers unavailable, in
+  // words, rather than pretend. In a tab an app prints what its window
+  // shows (krate:ui/print, above), and raw ZPL or ESC/POS goes to a label
+  // printer the manifest names as a USB device (krate:usb).
+  const PRINT_HERE = 'Printing to a printer you pick works in Krate on a computer, not in a browser tab. Open the app in Krate to print.';
+  const noPrinter = () => { throw new HostError({ tag: 'unavailable', val: PRINT_HERE }, PRINT_HERE); };
+  impl['krate:print/printers'] = {
+    remembered: noPrinter,
+    pick: noPrinter,
+    printDocument: noPrinter,
+    printRaw: noPrinter,
   };
 
   // Every interface the component imports: what this file implements,
@@ -835,6 +895,165 @@ export function buildImports(ctx) {
     imports[name] = iface;
   }
   return imports;
+}
+
+// ------------------------------------------------------------ devices
+// Serial and USB devices the person picks, in a tab (IC-992): krate:serial
+// through the browser's Web Serial, krate:usb through WebUSB, in Chrome and
+// Edge. As on desktop (crates/runtime/src/phase2_host.rs admit_serial,
+// admit_usb_any; serial_host.rs; usb_host.rs) every call is admitted here
+// first -- the grant, then what the app handed over, in the desktop's own
+// words -- before anything reaches the page (devices.js), which holds the
+// handles and the picked devices and asks the browser. A browser without
+// the API answers every call `unavailable`, in words that say where it
+// works.
+
+/// The words a browser without Web Serial or WebUSB gives (devices.js).
+export const NO_SERIAL = 'This browser cannot reach a serial device. Open the app in Chrome or Edge, or in Krate on a computer.';
+export const NO_USB = 'This browser cannot reach a USB device. Open the app in Chrome or Edge, or in Krate on a computer.';
+/// serial_host.rs and usb_host.rs.
+const SERIAL_MIN_BAUD = 50;
+const SERIAL_MAX_BAUD = 4000000;
+const DEVICE_MAX_WAIT_MS = 60000;
+const DEVICE_MAX_IO = 65536;
+const USB_MAX_CONTROL = 4096;
+
+function tabDevices({ allows, bridge, present, facts }) {
+  const fail = (payload) => new HostError(payload);
+  const ask = (op, args, transfer) => {
+    const answer = bridge.call(op, args || {}, transfer);
+    if (answer.json.err) throw fail(answer.json.err);
+    return answer;
+  };
+  // A handle crosses as a number; one past what a number holds exactly was
+  // never handed out (handles count up from 1).
+  const handleOf = (h) => (typeof h === 'bigint' ? (h <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(h) : -1) : Number(h));
+  const copy = (b) => (b instanceof Uint8Array ? b.slice() : new Uint8Array(b || []));
+
+  // ------------------------------------------------------------ serial
+  const serialAdmit = () => {
+    if (!facts.serial) throw fail({ tag: 'unavailable', val: NO_SERIAL });
+    if (!allows('device.serial')) {
+      throw fail({ tag: 'not-allowed', val: 'this app did not ask for device.serial, so it cannot talk to a serial device' });
+    }
+  };
+  const serialWait = (ms) => {
+    if (ms > DEVICE_MAX_WAIT_MS) throw fail({ tag: 'bad-settings', val: `a wait is at most ${DEVICE_MAX_WAIT_MS} milliseconds, not ${ms}` });
+  };
+  const ports = {
+    pick(title) {
+      serialAdmit();
+      present();
+      const port = ask('serial.pick', { title: String(title) }).json.ok;
+      return port ? { handle: BigInt(port.handle), name: port.name } : undefined;
+    },
+    open(port, settings) {
+      serialAdmit();
+      // serial_host.rs Settings::check, before the handle is looked at.
+      if (!(settings.baudRate >= SERIAL_MIN_BAUD && settings.baudRate <= SERIAL_MAX_BAUD)) {
+        throw fail({ tag: 'bad-settings', val: `a baud rate is from ${SERIAL_MIN_BAUD} to ${SERIAL_MAX_BAUD}, not ${settings.baudRate}` });
+      }
+      if (!(settings.dataBits >= 5 && settings.dataBits <= 8)) {
+        throw fail({ tag: 'bad-settings', val: `data bits are 5, 6, 7 or 8, not ${settings.dataBits}` });
+      }
+      serialWait(settings.readTimeoutMs);
+      ask('serial.open', {
+        handle: handleOf(port),
+        settings: { baudRate: settings.baudRate, dataBits: settings.dataBits, parity: settings.parity, stopBits: settings.stopBits, readTimeoutMs: settings.readTimeoutMs },
+      });
+    },
+    read(port, max, timeoutMs) {
+      serialAdmit();
+      if (timeoutMs !== undefined) serialWait(timeoutMs);
+      const { body } = ask('serial.read', { handle: handleOf(port), max, timeout: timeoutMs === undefined ? null : timeoutMs });
+      return new Uint8Array(body);
+    },
+    write(port, bytes) {
+      serialAdmit();
+      if (bytes.length > DEVICE_MAX_IO) {
+        throw fail({ tag: 'bad-settings', val: `a write is at most ${DEVICE_MAX_IO} bytes, not ${bytes.length}; write the rest in another call` });
+      }
+      const data = copy(bytes);
+      ask('serial.write', { handle: handleOf(port), bytes: data }, [data.buffer]);
+    },
+    close(port) {
+      if (!facts.serial) return;
+      bridge.call('serial.close', { handle: handleOf(port) });
+    },
+  };
+
+  // --------------------------------------------------------------- usb
+  // phase2_host.rs admit_usb_any: some model the manifest names, allowed.
+  // The page checks the picked device's own ids against the same list.
+  const usbAdmit = () => {
+    if (!facts.usb) throw fail({ tag: 'unavailable', val: NO_USB });
+    const models = (facts.usbModels || []).filter((ids) => allows(`device.usb:${ids}`));
+    if (!models.length) {
+      throw fail({ tag: 'not-allowed', val: 'this app did not ask for device.usb, so it cannot talk to a USB device' });
+    }
+  };
+  const usbWait = (ms) => {
+    if (!(ms >= 1 && ms <= DEVICE_MAX_WAIT_MS)) throw fail({ tag: 'bad-request', val: `a wait is from 1 to ${DEVICE_MAX_WAIT_MS} milliseconds, not ${ms}` });
+  };
+  const transferSize = (n) => {
+    if (n > DEVICE_MAX_IO) throw fail({ tag: 'bad-request', val: `a transfer is at most ${DEVICE_MAX_IO} bytes, not ${n}; send the rest in another call` });
+  };
+  const controlSize = (n) => {
+    if (n > USB_MAX_CONTROL) throw fail({ tag: 'bad-request', val: `a control transfer is at most ${USB_MAX_CONTROL} bytes, not ${n}` });
+  };
+  const setupOf = (s) => ({ requestType: s.requestType, recipient: s.recipient, request: s.request, value: s.value, index: s.index });
+  const usbIn = (kind) => (device, endpoint, max, timeoutMs) => {
+    usbAdmit();
+    usbWait(timeoutMs);
+    const { body } = ask('usb.in', { handle: handleOf(device), kind, endpoint, max, timeout: timeoutMs });
+    return new Uint8Array(body);
+  };
+  const usbOut = (kind) => (device, endpoint, bytes, timeoutMs) => {
+    usbAdmit();
+    usbWait(timeoutMs);
+    transferSize(bytes.length);
+    const data = copy(bytes);
+    ask('usb.out', { handle: handleOf(device), kind, endpoint, bytes: data, timeout: timeoutMs }, [data.buffer]);
+  };
+  const usbDevices = {
+    pick(title) {
+      usbAdmit();
+      present();
+      const d = ask('usb.pick', { title: String(title) }).json.ok;
+      return d ? { handle: BigInt(d.handle), name: d.name, vendorId: d.vendorId, productId: d.productId } : undefined;
+    },
+    claim(device, number) {
+      usbAdmit();
+      ask('usb.claim', { handle: handleOf(device), number });
+    },
+    bulkIn: usbIn('bulk'),
+    bulkOut: usbOut('bulk'),
+    interruptIn: usbIn('interrupt'),
+    interruptOut: usbOut('interrupt'),
+    controlIn(device, setup, length, timeoutMs) {
+      usbAdmit();
+      usbWait(timeoutMs);
+      controlSize(length);
+      const { body } = ask('usb.control-in', { handle: handleOf(device), setup: setupOf(setup), length, timeout: timeoutMs });
+      return new Uint8Array(body);
+    },
+    controlOut(device, setup, data, timeoutMs) {
+      usbAdmit();
+      usbWait(timeoutMs);
+      controlSize(data.length);
+      const bytes = copy(data);
+      ask('usb.control-out', { handle: handleOf(device), setup: setupOf(setup), data: bytes, timeout: timeoutMs }, [bytes.buffer]);
+    },
+    close(device) {
+      if (!facts.usb) return;
+      bridge.call('usb.close', { handle: handleOf(device) });
+    },
+  };
+
+  return {
+    'krate:serial/ports': ports,
+    'krate:usb/devices': usbDevices,
+  };
 }
 
 // ------------------------------------------------------------- senses

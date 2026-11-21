@@ -604,12 +604,19 @@ impl Field {
         self.anchor = self.anchor.map(|a| self.fit(a));
     }
 
+    /// `at` moved back to the nearest place a caret may stand: a boundary
+    /// between what a person sees as characters, never inside an emoji
+    /// family or between a letter and its accent (K-1281).
     fn fit(&self, at: usize) -> usize {
         let mut at = at.min(self.text.len());
         while !self.text.is_char_boundary(at) {
             at -= 1;
         }
-        at
+        let mut cursor = unicode_segmentation::GraphemeCursor::new(at, self.text.len(), true);
+        match cursor.is_boundary(&self.text, 0) {
+            Ok(true) | Err(_) => at,
+            Ok(false) => self.prev(at),
+        }
     }
 
     /// What is selected, as `(start, end)` byte offsets; `None` when
@@ -698,22 +705,29 @@ impl Field {
         true
     }
 
-    /// The character boundary before `at`.
+    /// The character boundary before `at`: the start of the grapheme
+    /// cluster before it, so an arrow or Backspace passes an emoji family,
+    /// a flag or a letter with its accent as one character (K-1281).
     pub fn prev(&self, at: usize) -> usize {
-        self.text[..at]
-            .char_indices()
-            .next_back()
-            .map(|(i, _)| i)
+        let at = at.min(self.text.len());
+        let mut cursor = unicode_segmentation::GraphemeCursor::new(at, self.text.len(), true);
+        cursor
+            .prev_boundary(&self.text, 0)
+            .ok()
+            .flatten()
             .unwrap_or(0)
     }
 
-    /// The character boundary after `at`.
+    /// The character boundary after `at`: the end of the grapheme cluster
+    /// it starts.
     pub fn next(&self, at: usize) -> usize {
-        self.text[at..]
-            .chars()
-            .next()
-            .map(|c| at + c.len_utf8())
-            .unwrap_or(at)
+        let at = at.min(self.text.len());
+        let mut cursor = unicode_segmentation::GraphemeCursor::new(at, self.text.len(), true);
+        cursor
+            .next_boundary(&self.text, 0)
+            .ok()
+            .flatten()
+            .unwrap_or(self.text.len())
     }
 
     /// The editing keys, without modifiers. `(changed, moved)`.
@@ -922,6 +936,46 @@ mod tests {
 
     /// K-1190: Cmd/Ctrl+C copies and leaves the text; Cmd/Ctrl+X cuts; with
     /// nothing selected neither does anything.
+    /// A caret, Backspace and Delete pass what a person sees as one
+    /// character as one (K-1281, IC-743 test 1550): an emoji family, a
+    /// skin-toned hand, a flag, and an accented letter typed as a letter
+    /// and a combining accent.
+    #[test]
+    fn a_field_edits_by_the_characters_a_person_sees() {
+        let family = "\u{1F469}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let wave = "\u{1F44B}\u{1F3FD}";
+        let flag = "\u{1F1EE}\u{1F1F3}";
+        let e_acute = "e\u{0301}";
+        for cluster in [family, wave, flag, e_acute] {
+            let mut f = Field::new(false);
+            f.set(&alloc::format!("a{cluster}b"));
+            f.key("ArrowLeft");
+            assert_eq!(f.caret, 1 + cluster.len(), "before b: {cluster:?}");
+            f.key("ArrowLeft");
+            assert_eq!(f.caret, 1, "one press passes the whole {cluster:?}");
+            f.key("ArrowRight");
+            assert_eq!(f.caret, 1 + cluster.len());
+            assert_eq!(f.key("Backspace"), (true, true));
+            assert_eq!(f.text, "ab", "Backspace removes the whole {cluster:?}");
+
+            let mut g = Field::new(false);
+            g.set(&alloc::format!("a{cluster}b"));
+            g.move_to(1, false);
+            assert_eq!(g.key("Delete"), (true, true));
+            assert_eq!(g.text, "ab", "Delete removes the whole {cluster:?}");
+        }
+        // A tap that lands inside a cluster puts the caret before it.
+        let mut f = Field::new(false);
+        f.set(&alloc::format!("a{family}"));
+        f.move_to(1 + 5, false);
+        assert_eq!(f.caret, 1, "never inside the family");
+        // Plain text is unchanged: one letter at a time.
+        let mut f = Field::new(false);
+        f.set("abc");
+        f.key("Backspace");
+        assert_eq!(f.text, "ab");
+    }
+
     #[test]
     fn a_field_copies_and_cuts_what_is_selected() {
         let mut f = Field::new(false);

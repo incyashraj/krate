@@ -544,6 +544,9 @@ fn change_an_app(bundle: &Path) -> Result<()> {
     // still in history -- so the change can be made by asking again with both
     // the original request and the change, rather than dead-ending someone who
     // just told us what they wanted.
+    // What the change begins from, taken as its source is taken, so the
+    // file can be held to it when the change replaces it (IC-397).
+    let parent = crate::derived_from_of(bundle);
     let source = match crate::bundle_source_dir(bundle)? {
         Some(source) => Some(source),
         None => {
@@ -613,7 +616,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             provider,
             bundle,
             &attachments,
-            crate::derived_from_of(bundle),
+            parent.clone(),
             &progress,
         ),
         None => {
@@ -1372,6 +1375,26 @@ fn plain_capability(cap: &str) -> Option<String> {
         "audio.playback" => "play sound",
         "audio.capture" => "record from your microphone",
         "speech.transcribe" => "turn speech into text, on this computer",
+        // A serial device the person picks (IC-985).
+        "device.serial" => "talk to a serial device you choose",
+        // A printer the person picks (IC-986).
+        "device.printer" => "print to a printer you choose",
+        // A USB device the person picks (IC-988): the manifest crate's
+        // words, with the device's ids.
+        "device.usb" => {
+            return cap
+                .parse::<krate_manifest::Capability>()
+                .ok()
+                .map(|cap| cap.plain());
+        }
+        // Other devices on the network reaching in (IC-987): the manifest
+        // crate's words, with the port.
+        "net.listen" => {
+            return cap
+                .parse::<krate_manifest::Capability>()
+                .ok()
+                .map(|cap| cap.plain());
+        }
         // A program or a terminal (IC-977): the card's own words, which say
         // what a program can do.
         "process.run" | "process.terminal" => {
@@ -1792,6 +1815,42 @@ mod tests {
         assert_eq!(
             plain_capability("process.terminal").as_deref(),
             Some("open a terminal on this computer: it can do anything you can")
+        );
+        // A listening port (IC-987): the manifest crate's words, port and
+        // all.
+        assert_eq!(
+            plain_capability("net.listen:8080").as_deref(),
+            Some("let other devices on your network open this app on port 8080")
+        );
+        // A serial device is the one the person picks (IC-985), and the
+        // line is the manifest crate's own words.
+        assert_eq!(
+            plain_capability("device.serial").as_deref(),
+            Some(
+                "device.serial"
+                    .parse::<krate_manifest::Capability>()
+                    .expect("device.serial")
+                    .plain()
+                    .as_str()
+            )
+        );
+        // A printer is the one the person picks (IC-986), and the line is
+        // the manifest crate's own words.
+        assert_eq!(
+            plain_capability("device.printer").as_deref(),
+            Some(
+                "device.printer"
+                    .parse::<krate_manifest::Capability>()
+                    .expect("device.printer")
+                    .plain()
+                    .as_str()
+            )
+        );
+        // A USB device is the one the person picks, of the model the
+        // manifest names (IC-988): the manifest crate's words, ids and all.
+        assert_eq!(
+            plain_capability("device.usb:1915:7777").as_deref(),
+            Some("talk to the 1915:7777 USB device you choose")
         );
     }
 

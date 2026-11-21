@@ -55,7 +55,9 @@ const publish = (bytes, extra = {}) =>
   assert.strictEqual(answer.ok, true, JSON.stringify(answer));
   const j = answer.judgement;
   assert.strictEqual(j.manifest.app.id, "dev.krate.bounce");
-  assert.strictEqual(j.archive, await sha256Hex(BOUNCE), "the archive identity is the plain sha256 the hub keys on");
+  assert.strictEqual(j.sha256, await sha256Hex(BOUNCE), "sha256 is the plain hash the hub keys on");
+  assert.match(j.archive, /^[0-9a-f]{64}$/);
+  assert.notStrictEqual(j.archive, j.sha256, "archive is the schema-tagged identity, never the plain hash under its name (K-1284)");
   assert.strictEqual(j.signature.state, "absent");
   assert.strictEqual(j.validator, 1, "the validator names its own version");
   assert.match(j.wit, /^[0-9a-f]{64}$/, "and the WIT it judged against");
@@ -69,11 +71,14 @@ const publish = (bytes, extra = {}) =>
   const e = env();
   const res = await worker.fetch(publish(BOUNCE, { "x-krate-capabilities": "[]" }), e);
   assert.strictEqual(res.status, 200, await res.clone().text());
-  const { id } = JSON.parse(await res.text());
+  const published = JSON.parse(await res.text());
+  const { id } = published;
   const meta = JSON.parse(e._kv.get(`app:${id}`));
   assert.deepStrictEqual(meta.capabilities.map((c) => c.cap), ["ui.window:create", "io.stdout", "io.args"], "permissions come from the crate's own manifest parser");
   assert.strictEqual(meta.capabilities[0].rationale, "Open the animation window");
-  assert.strictEqual(meta.identity.archive, id, "the listing's archive identity is the store key");
+  assert.strictEqual(meta.identity.sha256, id, "the listing's sha256 is the store key");
+  assert.strictEqual(meta.identity.archive, judgeBundle(BOUNCE).judgement.archive, "and its archive is the validator's archive identity");
+  assert.strictEqual(published.archive, meta.identity.archive, "publish echoes it");
   assert.match(meta.identity.execution, /^[0-9a-f]{64}$/);
   assert.strictEqual(meta.signature.state, "absent");
   assert.strictEqual(meta.release, null, "unsigned: no release");

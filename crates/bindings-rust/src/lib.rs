@@ -1389,10 +1389,165 @@ pub mod net {
     /// ```
     pub mod sockets {
         pub use crate::bindings::krate::net::sockets::{
-            close, lookup, poll_lookup, tcp_connect, tcp_read, tcp_status, tcp_write, udp_bind,
-            udp_local_port, udp_receive, udp_send, ConnectStatus, Datagram, LookupStatus,
+            close, lookup, poll_lookup, tcp_accept, tcp_addresses, tcp_announce, tcp_connect,
+            tcp_listen, tcp_local_port, tcp_read, tcp_status, tcp_write, udp_bind, udp_local_port,
+            udp_receive, udp_send, Announcement, ConnectStatus, Datagram, ListenAddress,
+            ListenError, ListenScope, LookupStatus, ReadResult,
+        };
+    }
+
+    /// Serving the people on the network (IC-987): a factory or lab app
+    /// that tablets and the floor's other computers open in a browser, or a
+    /// tool other programs on this computer talk to.
+    ///
+    /// Declare `net.listen:<port>` (1024 or above) with a rationale. A
+    /// [`Listener`] for [`Scope::ThisComputer`] needs only the declaration;
+    /// one for [`Scope::LocalNetwork`] also needs the person's yes, which
+    /// the consent screen asks as "let other devices on your network open
+    /// this app on port N". Nothing here blocks: ask [`Listener::accept`]
+    /// from the app's loop, and read and write each [`Connection`] the same
+    /// way. Dropping either closes it, and every one closes when the app
+    /// ends.
+    ///
+    /// A listener for the network says where it is reached (IC-990):
+    /// [`Listener::addresses`] gives this computer's addresses on the local
+    /// network with the port and a link to show the person ("open
+    /// http://192.168.1.20:8080/ on the tablet"), and [`Listener::announce`]
+    /// lets the network's devices find it by the app's name, as printers are
+    /// found, at `http://<app-name>.local:<port>/`, until it closes.
+    ///
+    /// ```ignore
+    /// use krate::net::listen::{Listener, Scope};
+    /// let server = Listener::open(8080, Scope::LocalNetwork)?;
+    /// for at in server.addresses()? {
+    ///     show(&at.url); // "http://192.168.1.20:8080/"
+    /// }
+    /// let named = server.announce("_http._tcp")?; // named.url: "http://shop-floor.local:8080/"
+    /// // each turn of the loop:
+    /// while let Some(conn) = server.accept()? {
+    ///     clients.push(conn);
+    /// }
+    /// for conn in &clients {
+    ///     if let ReadResult::Data(bytes) = conn.read(4096) { /* a request */ }
+    /// }
+    /// ```
+    pub mod listen {
+        use super::NetError;
+        use crate::bindings::krate::net::sockets as host;
+        pub use crate::bindings::krate::net::sockets::{
+            Announcement, ConnectStatus, ListenAddress, ListenError, ListenScope as Scope,
             ReadResult,
         };
+        use alloc::string::String;
+        use alloc::vec::Vec;
+
+        /// A port this app listens on. Dropped, it is closed: the
+        /// connections it accepted stay open until each is dropped.
+        pub struct Listener {
+            handle: u64,
+        }
+
+        impl Listener {
+            /// Listen on `port`, which the manifest declares as
+            /// `net.listen:<port>`.
+            pub fn open(port: u16, scope: Scope) -> Result<Self, ListenError> {
+                host::tcp_listen(port, scope).map(|handle| Self { handle })
+            }
+
+            /// The next device that connected, or `None`. Never waits.
+            pub fn accept(&self) -> Result<Option<Connection>, ListenError> {
+                host::tcp_accept(self.handle).map(|c| c.map(|handle| Connection { handle }))
+            }
+
+            /// The port it listens on.
+            pub fn port(&self) -> Result<u16, ListenError> {
+                host::tcp_local_port(self.handle)
+            }
+
+            /// Where other devices on the local network reach it: this
+            /// computer's private addresses with the port, the main
+            /// connection first, each with a `url` to show the person. Only
+            /// for a [`Scope::LocalNetwork`] listener (`NotAllowed`
+            /// otherwise); empty when the computer is on no network. Ask
+            /// again when showing it later: an address changes when the
+            /// computer joins another network.
+            pub fn addresses(&self) -> Result<Vec<ListenAddress>, ListenError> {
+                host::tcp_addresses(self.handle)
+            }
+
+            /// Let devices on the local network find it by the app's name
+            /// (DNS-SD over multicast DNS, as printers are found):
+            /// `"_http._tcp"` for web pages, or the app's own type
+            /// (`"_shopfloor._tcp"`). Returns the name devices list, the
+            /// `<app-name>.local` host and a `url` to show. Withdrawn when the
+            /// listener is dropped or the app ends. A [`Scope::LocalNetwork`]
+            /// listener only.
+            pub fn announce(&self, service_type: &str) -> Result<Announcement, ListenError> {
+                host::tcp_announce(self.handle, service_type)
+            }
+
+            /// The raw handle, for the `sockets` calls.
+            pub fn handle(&self) -> u64 {
+                self.handle
+            }
+        }
+
+        impl Drop for Listener {
+            fn drop(&mut self) {
+                host::close(self.handle);
+            }
+        }
+
+        /// One device connected to a [`Listener`]. Dropped, it is closed.
+        pub struct Connection {
+            handle: u64,
+        }
+
+        impl Connection {
+            /// Take up to `max_bytes` of what the device sent. Never waits:
+            /// `Pending` means nothing new, `Closed` that it finished.
+            pub fn read(&self, max_bytes: u32) -> ReadResult {
+                host::tcp_read(self.handle, max_bytes)
+            }
+
+            /// Queue bytes to send; returns how many were taken, which is
+            /// fewer when the queue is full (send the rest later).
+            pub fn write(&self, bytes: &[u8]) -> Result<u32, NetError> {
+                host::tcp_write(self.handle, bytes)
+            }
+
+            /// Who connected, as "ip:port".
+            pub fn peer(&self) -> Option<String> {
+                match host::tcp_status(self.handle) {
+                    ConnectStatus::Connected(peer) => Some(peer),
+                    _ => None,
+                }
+            }
+
+            /// The raw handle, for the `sockets` calls.
+            pub fn handle(&self) -> u64 {
+                self.handle
+            }
+        }
+
+        impl Drop for Connection {
+            fn drop(&mut self) {
+                host::close(self.handle);
+            }
+        }
+
+        /// Words to show the person for a refusal.
+        pub fn words(err: &ListenError) -> &str {
+            match err {
+                ListenError::NotAllowed(why)
+                | ListenError::InUse(why)
+                | ListenError::BadPort(why)
+                | ListenError::TooMany(why)
+                | ListenError::Unavailable(why)
+                | ListenError::Failed(why) => why,
+                ListenError::UnknownHandle => "that listener is not open in this app",
+            }
+        }
     }
 
     /// Send a lower-level HTTP or HTTPS request record.
@@ -1653,6 +1808,501 @@ pub mod process {
     }
 }
 
+/// Serial devices the person picks (IC-985): a lab instrument, a sensor, a
+/// microcontroller board, a drone or robot on a USB serial line.
+///
+/// Declare `device.serial` with a rationale. The app never lists ports and
+/// never names one: [`pick`] shows the person the computer's serial devices
+/// and returns the one they chose, or `None` when they cancelled. That pick
+/// is the grant, for that one device, until the [`Port`] is dropped or the
+/// app ends. Without `device.serial` (or when the person said no) [`pick`]
+/// answers `SerialError::NotAllowed`, whose words name the capability.
+///
+/// ```ignore
+/// use krate::serial::{self, Settings};
+/// if let Some(port) = serial::pick("Choose the plate reader")? {
+///     port.open(&Settings::baud(115_200))?;
+///     port.write(b"READ\r\n")?;
+///     let answer = port.read(256, Some(2_000))?; // empty if the wait ran out
+/// }
+/// ```
+///
+/// A computer only: in a browser tab and on a phone every call answers
+/// `SerialError::Unavailable` with words saying so.
+pub mod serial {
+    use crate::bindings::krate::serial::ports as host;
+    pub use crate::bindings::krate::serial::ports::{Parity, SerialError, Settings, StopBits};
+    use alloc::vec::Vec;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &SerialError) -> &str {
+        match err {
+            SerialError::NotAllowed(w)
+            | SerialError::Unavailable(w)
+            | SerialError::BadSettings(w)
+            | SerialError::Busy(w)
+            | SerialError::Disconnected(w)
+            | SerialError::TooMany(w)
+            | SerialError::Failed(w) => w,
+            SerialError::UnknownHandle => "that serial device is not open in this app",
+            SerialError::NotOpen => "open the serial device before reading or writing",
+        }
+    }
+
+    impl Settings {
+        /// `baud` bits a second, 8 data bits, no parity, one stop bit (8N1),
+        /// and reads that wait up to a second: what most devices expect.
+        pub fn baud(baud: u32) -> Self {
+            Settings {
+                baud_rate: baud,
+                data_bits: 8,
+                parity: Parity::None,
+                stop_bits: StopBits::One,
+                read_timeout_ms: 1_000,
+            }
+        }
+    }
+
+    /// A serial device the person picked. Dropped, it is closed and the pick
+    /// is spent.
+    #[derive(Debug)]
+    pub struct Port {
+        handle: u64,
+        name: alloc::string::String,
+    }
+
+    /// Ask the person to choose a serial device. `title` is a short line for
+    /// the list ("Choose the plate reader"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Port>, SerialError> {
+        Ok(host::pick(title)?.map(|port| Port {
+            handle: port.handle,
+            name: port.name,
+        }))
+    }
+
+    impl Port {
+        /// The device's name as the computer gives it, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Open it with `settings`, or change the settings of an open port.
+        pub fn open(&self, settings: &Settings) -> Result<(), SerialError> {
+            host::open(self.handle, *settings)
+        }
+
+        /// Read at most `max` bytes (at most 65536), waiting up to
+        /// `timeout_ms` (`None`: the wait it was opened with) for the first.
+        /// Empty when the wait ran out.
+        pub fn read(&self, max: u32, timeout_ms: Option<u32>) -> Result<Vec<u8>, SerialError> {
+            host::read(self.handle, max, timeout_ms)
+        }
+
+        /// Write every byte (at most 65536 a call).
+        pub fn write(&self, bytes: &[u8]) -> Result<(), SerialError> {
+            host::write(self.handle, bytes)
+        }
+    }
+
+    impl Drop for Port {
+        fn drop(&mut self) {
+            host::close(self.handle);
+        }
+    }
+}
+
+/// USB devices the person picks (IC-988): a radio dongle, an instrument with
+/// its own protocol, a label printer or a board that talks raw USB.
+///
+/// Declare each device model the app is for by its vendor and product ids
+/// in hex, `device.usb:1915:7777`, with a rationale (one `[[capabilities]]`
+/// entry a model). The app never lists devices: [`pick`] shows the person
+/// only the connected devices of those models and returns the one they
+/// chose, or `None` when they cancelled. That pick is the grant, for that one
+/// device, until the [`Device`] is dropped or the app ends. Claim one
+/// interface, then move bytes on its endpoints. Keyboards, mice, storage,
+/// audio, video and hubs answer `UsbError::NotForApps`: the computer's own
+/// drivers serve them.
+///
+/// ```ignore
+/// use krate::usb;
+/// if let Some(radio) = usb::pick("Choose the radio dongle")? {
+///     radio.claim(0)?;
+///     // A Crazyradio is set up with vendor requests to the whole device.
+///     radio.control_out(usb::vendor_device_request(0x01, 80, 0), &[], 1_000)?; // channel 80
+///     radio.control_out(usb::vendor_device_request(0x03, 2, 0), &[], 1_000)?; // 2 Mbit/s
+///     radio.bulk_out(0x01, &[0xff], 1_000)?;
+///     let ack = radio.bulk_in(0x81, 64, 1_000)?; // empty if the wait ran out
+/// }
+/// ```
+///
+/// A control request goes to the claimed interface ([`vendor_request`],
+/// [`class_request`]), one of its endpoints, or, a class or vendor request,
+/// to the whole device ([`vendor_device_request`], [`class_device_request`]);
+/// an interface is claimed first either way. Of the standard requests only
+/// GET_STATUS and GET_DESCRIPTOR are sent. A computer only: in a browser tab
+/// and on a phone every call answers `UsbError::Unavailable` with words
+/// saying so.
+pub mod usb {
+    use crate::bindings::krate::usb::devices as host;
+    pub use crate::bindings::krate::usb::devices::{
+        ControlSetup, Recipient, RequestType, UsbError,
+    };
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &UsbError) -> &str {
+        match err {
+            UsbError::NotAllowed(w)
+            | UsbError::Unavailable(w)
+            | UsbError::NotForApps(w)
+            | UsbError::BadRequest(w)
+            | UsbError::Busy(w)
+            | UsbError::Disconnected(w)
+            | UsbError::Stalled(w)
+            | UsbError::TimedOut(w)
+            | UsbError::TooMany(w)
+            | UsbError::Failed(w) => w,
+            UsbError::UnknownHandle => "that USB device is not open in this app",
+            UsbError::NotClaimed => "claim an interface of the USB device before using it",
+        }
+    }
+
+    /// A vendor request to the claimed interface: `request` with `value`, the
+    /// interface's own number in the low byte of the index.
+    pub fn vendor_request(request: u8, value: u16, interface: u8) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Interface,
+            request,
+            value,
+            index: u16::from(interface),
+        }
+    }
+
+    /// A class request to the claimed interface, the same way.
+    pub fn class_request(request: u8, value: u16, interface: u8) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Class,
+            ..vendor_request(request, value, interface)
+        }
+    }
+
+    /// A vendor request to the whole device the person picked: `request`
+    /// with `value` and `index`, both the request's own. Many vendor
+    /// devices are set up this way (a Crazyradio's channel is
+    /// `vendor_device_request(0x01, channel, 0)`). Claim an interface first.
+    pub fn vendor_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Vendor,
+            recipient: Recipient::Device,
+            request,
+            value,
+            index,
+        }
+    }
+
+    /// A class request to the whole device, the same way.
+    pub fn class_device_request(request: u8, value: u16, index: u16) -> ControlSetup {
+        ControlSetup {
+            request_type: RequestType::Class,
+            ..vendor_device_request(request, value, index)
+        }
+    }
+
+    /// A USB device the person picked. Dropped, its interface is released,
+    /// it is closed and the pick is spent.
+    #[derive(Debug)]
+    pub struct Device {
+        handle: u64,
+        name: String,
+        vendor_id: u16,
+        product_id: u16,
+    }
+
+    /// Ask the person to choose one connected device of a model the manifest
+    /// names. `title` is a short line for the list ("Choose the radio
+    /// dongle"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Device>, UsbError> {
+        Ok(host::pick(title)?.map(|device| Device {
+            handle: device.handle,
+            name: device.name,
+            vendor_id: device.vendor_id,
+            product_id: device.product_id,
+        }))
+    }
+
+    impl Device {
+        /// The device's name, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// Its vendor id: one the manifest named.
+        pub fn vendor_id(&self) -> u16 {
+            self.vendor_id
+        }
+
+        /// Its product id: one the manifest named.
+        pub fn product_id(&self) -> u16 {
+            self.product_id
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Claim interface `number`: one a pick.
+        pub fn claim(&self, number: u8) -> Result<(), UsbError> {
+            host::claim(self.handle, number)
+        }
+
+        /// Read up to `max` bytes (rounded up to whole packets, at most
+        /// 65536) from bulk IN endpoint `endpoint` (0x81 and up), waiting up
+        /// to `timeout_ms` (1 to 60000). Empty when the wait ran out.
+        pub fn bulk_in(
+            &self,
+            endpoint: u8,
+            max: u32,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::bulk_in(self.handle, endpoint, max, timeout_ms)
+        }
+
+        /// Write `bytes` (at most 65536) to bulk OUT endpoint `endpoint`.
+        pub fn bulk_out(
+            &self,
+            endpoint: u8,
+            bytes: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::bulk_out(self.handle, endpoint, bytes, timeout_ms)
+        }
+
+        /// As [`Device::bulk_in`], from an interrupt endpoint.
+        pub fn interrupt_in(
+            &self,
+            endpoint: u8,
+            max: u32,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::interrupt_in(self.handle, endpoint, max, timeout_ms)
+        }
+
+        /// As [`Device::bulk_out`], to an interrupt endpoint.
+        pub fn interrupt_out(
+            &self,
+            endpoint: u8,
+            bytes: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::interrupt_out(self.handle, endpoint, bytes, timeout_ms)
+        }
+
+        /// A control request that reads up to `length` bytes (at most 4096)
+        /// from the claimed interface, one of its endpoints or the device.
+        pub fn control_in(
+            &self,
+            setup: ControlSetup,
+            length: u16,
+            timeout_ms: u32,
+        ) -> Result<Vec<u8>, UsbError> {
+            host::control_in(self.handle, setup, length, timeout_ms)
+        }
+
+        /// A control request that writes `data` (at most 4096 bytes) to the
+        /// claimed interface, one of its endpoints or the device.
+        pub fn control_out(
+            &self,
+            setup: ControlSetup,
+            data: &[u8],
+            timeout_ms: u32,
+        ) -> Result<(), UsbError> {
+            host::control_out(self.handle, setup, data, timeout_ms)
+        }
+    }
+
+    impl Drop for Device {
+        fn drop(&mut self) {
+            host::close(self.handle);
+        }
+    }
+}
+
+#[cfg(any(feature = "sheets", test))]
+pub mod sheets;
+
+// Machine protocols over the serial port the person picked or a TCP
+// connection to a declared host (IC-994): `link` is the byte link both run
+// over, `modbus` and `mqtt` the protocols. No grant of their own.
+#[cfg(any(feature = "modbus", feature = "mqtt", test))]
+pub mod link;
+#[cfg(any(feature = "modbus", test))]
+pub mod modbus;
+#[cfg(any(feature = "mqtt", test))]
+pub mod mqtt;
+
+/// Printers the person picks (IC-986): documents and labels, without a
+/// dialog every time.
+///
+/// Declare `device.printer` with a rationale (required: the person is only
+/// asked about required capabilities). The app never lists printers and
+/// never names one: [`printer`] answers the printer the person picked for
+/// this app before, and asks them to pick one only when there is none, so
+/// a label after a label prints with no dialog. [`pick`] always asks (a
+/// "Change printer" button). The pick is remembered for the app until the
+/// person takes it back with `krate permissions --forget <app id>`.
+///
+/// ```ignore
+/// use krate::print::{self, PaperSize, PrintOutcome};
+/// if let Some(printer) = print::printer("Choose the label printer")? {
+///     match printer.raw(b"^XA^FO50,50^ADN,36,20^FDWO-1042^FS^XZ", 1, "WO-1042")? {
+///         PrintOutcome::Queued(_) => { /* printed */ }
+///         PrintOutcome::Failed(words) | PrintOutcome::Gone(words) => { /* show words */ }
+///     }
+///     printer.pdf(&traveller_pdf, 1, PaperSize::A4, "Traveller WO-1042")?;
+/// }
+/// ```
+///
+/// A computer only (macOS and Linux through CUPS, Windows through its print
+/// spooler; Windows prints PNG pages and raw label language, not PDF). In a
+/// browser tab and on a phone every call answers `PrintError::Unavailable`
+/// with words saying so.
+pub mod print {
+    use crate::bindings::krate::print::printers as host;
+    pub use crate::bindings::krate::print::printers::{
+        Document, DocumentFormat, PaperMm, PaperSize, PrintError, PrintOutcome,
+    };
+    use alloc::string::String;
+
+    /// The words a refusal carries, to show the person.
+    pub fn words(err: &PrintError) -> &str {
+        match err {
+            PrintError::NotAllowed(w) | PrintError::Unavailable(w) | PrintError::BadJob(w) => w,
+            PrintError::UnknownHandle => "that printer was not picked in this app",
+        }
+    }
+
+    /// The words of an outcome: the job's name when queued, the system's
+    /// reason otherwise.
+    pub fn outcome_words(outcome: &PrintOutcome) -> &str {
+        match outcome {
+            PrintOutcome::Queued(w) | PrintOutcome::Failed(w) | PrintOutcome::Gone(w) => w,
+        }
+    }
+
+    /// A printer the person picked, now or on an earlier run.
+    #[derive(Debug, Clone)]
+    pub struct Printer {
+        handle: u64,
+        name: String,
+    }
+
+    impl From<host::Printer> for Printer {
+        fn from(printer: host::Printer) -> Self {
+            Printer {
+                handle: printer.handle,
+                name: printer.name,
+            }
+        }
+    }
+
+    /// The printer the person picked for this app before, if it is still
+    /// set up. Never asks anyone.
+    pub fn remembered() -> Result<Option<Printer>, PrintError> {
+        Ok(host::remembered()?.map(Printer::from))
+    }
+
+    /// Ask the person to choose a printer, remembered for this app in place
+    /// of any earlier pick. `title` is a short line for the list ("Choose
+    /// the label printer"). `None` when they cancelled.
+    pub fn pick(title: &str) -> Result<Option<Printer>, PrintError> {
+        Ok(host::pick(title)?.map(Printer::from))
+    }
+
+    /// The printer to use: the one remembered for this app, or, when there
+    /// is none, the one the person picks now. `None` when they cancelled.
+    pub fn printer(title: &str) -> Result<Option<Printer>, PrintError> {
+        match remembered()? {
+            Some(printer) => Ok(Some(printer)),
+            None => pick(title),
+        }
+    }
+
+    impl Printer {
+        /// The printer's name as the computer shows it, to show the person.
+        pub fn name(&self) -> &str {
+            &self.name
+        }
+
+        /// The handle the host knows it by.
+        pub fn handle(&self) -> u64 {
+            self.handle
+        }
+
+        /// Print a PDF (at most 16 MiB), `copies` from 1 to 100, on `paper`;
+        /// `title` names the job in the printer's queue.
+        pub fn pdf(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            self.document(DocumentFormat::Pdf, bytes, copies, paper, title)
+        }
+
+        /// Print one PNG page, scaled to fit `paper`.
+        pub fn png(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            self.document(DocumentFormat::Png, bytes, copies, paper, title)
+        }
+
+        fn document(
+            &self,
+            format: DocumentFormat,
+            bytes: &[u8],
+            copies: u32,
+            paper: PaperSize,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            host::print_document(
+                self.handle,
+                &Document {
+                    format,
+                    bytes: bytes.to_vec(),
+                    copies,
+                    paper,
+                    title: title.into(),
+                },
+            )
+        }
+
+        /// Send raw printer language -- ZPL, EPL, ESC/POS -- byte for byte
+        /// to a label or receipt printer, `copies` times.
+        pub fn raw(
+            &self,
+            bytes: &[u8],
+            copies: u32,
+            title: &str,
+        ) -> Result<PrintOutcome, PrintError> {
+            host::print_raw(self.handle, bytes, copies, title)
+        }
+    }
+}
+
 pub mod random {
     pub use crate::bindings::krate::random::bytes::RandomError;
     use alloc::vec::Vec;
@@ -1764,9 +2414,127 @@ pub mod locale {
         format::format_number(value, style, loc)
     }
 
+    /// Minutes east of UTC in the person's own timezone at `millis` (Unix
+    /// epoch milliseconds), daylight saving included: 60 in Zurich in
+    /// January, 120 in July, -300 in New York in January, 330 in India.
+    /// Needs `locale.info` (granted by default).
+    pub fn utc_offset(millis: u64) -> i32 {
+        info::utc_offset(millis)
+    }
+
+    /// A moment in the person's own time, as plain numbers (IC-991).
+    ///
+    /// Use it for anything a person reads as a date or a time of day:
+    /// "today", streaks, daily resets, schedules, reminders, calendars. The
+    /// UTC day (`millis / 86_400_000`) is the wrong day for most of the
+    /// world for part of every day.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct LocalTime {
+        /// Calendar year, e.g. 2026.
+        pub year: i32,
+        /// 1 = January ... 12 = December.
+        pub month: u8,
+        /// Day of the month, 1 to 31.
+        pub day: u8,
+        /// 0 to 23.
+        pub hour: u8,
+        /// 0 to 59.
+        pub minute: u8,
+        /// 0 to 59.
+        pub second: u8,
+        /// ISO weekday: 1 = Monday ... 7 = Sunday.
+        pub weekday: u8,
+        /// Minutes east of UTC at this moment (what `utc_offset` answered).
+        pub offset_minutes: i32,
+        /// The local day as a number: days since 1970-01-01 in the person's
+        /// time. Equal numbers are the same day; one apart are consecutive
+        /// days -- store it for "done today" and streaks.
+        pub day_number: i64,
+    }
+
+    impl LocalTime {
+        /// `millis` seen at `offset_minutes` east of UTC. Pure arithmetic --
+        /// no host call -- so it is also how to show a time in a zone other
+        /// than the person's when its offset is known.
+        pub fn at_offset(millis: u64, offset_minutes: i32) -> Self {
+            let local_ms = i128::from(millis) + i128::from(offset_minutes) * 60_000;
+            let secs = local_ms.div_euclid(1_000);
+            let day_number = secs.div_euclid(86_400) as i64;
+            let in_day = secs.rem_euclid(86_400) as u32;
+            let (year, month, day) = date_of_day(day_number);
+            LocalTime {
+                year,
+                month,
+                day,
+                hour: (in_day / 3_600) as u8,
+                minute: (in_day / 60 % 60) as u8,
+                second: (in_day % 60) as u8,
+                weekday: weekday_of_day(day_number),
+                offset_minutes,
+                day_number,
+            }
+        }
+    }
+
+    /// `millis` in the person's own time. Needs `locale.info`.
+    pub fn local_time(millis: u64) -> LocalTime {
+        LocalTime::at_offset(millis, utc_offset(millis))
+    }
+
+    /// Now, in the person's own time. Needs `time.clock` and `locale.info`.
+    pub fn local_now() -> LocalTime {
+        local_time(crate::time::now_millis())
+    }
+
+    /// The person's local day number for `millis` (see
+    /// [`LocalTime::day_number`]). Needs `locale.info`.
+    pub fn day_number(millis: u64) -> i64 {
+        local_time(millis).day_number
+    }
+
+    /// Today's local day number: store it with whatever was done today, and
+    /// a different number on the next open means a new day. Needs
+    /// `time.clock` and `locale.info`.
+    pub fn today() -> i64 {
+        local_now().day_number
+    }
+
+    /// The calendar date `(year, month, day)` of a local day number.
+    pub fn date_of_day(day_number: i64) -> (i32, u8, u8) {
+        // Howard Hinnant's civil_from_days.
+        let z = day_number + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z.rem_euclid(146_097);
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+        let year = (yoe + era * 400 + i64::from(month <= 2)) as i32;
+        (year, month, day)
+    }
+
+    /// The local day number of a calendar date -- the inverse of
+    /// [`date_of_day`], for a date the person picked or typed.
+    pub fn day_of_date(year: i32, month: u8, day: u8) -> i64 {
+        let y = i64::from(year) - i64::from(month <= 2);
+        let era = y.div_euclid(400);
+        let yoe = y.rem_euclid(400);
+        let m = i64::from(month);
+        let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(day) - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146_097 + doe - 719_468
+    }
+
+    /// ISO weekday of a local day number: 1 = Monday ... 7 = Sunday.
+    pub fn weekday_of_day(day_number: i64) -> u8 {
+        // 1970-01-01 was a Thursday (4).
+        ((day_number + 3).rem_euclid(7) + 1) as u8
+    }
+
     /// Locale and timezone discovery.
     pub mod info {
-        pub use crate::bindings::krate::locale::info::{current, timezone};
+        pub use crate::bindings::krate::locale::info::{current, timezone, utc_offset};
     }
 
     /// Date and number formatting.
@@ -1791,6 +2559,73 @@ mod tests {
         assert!(matches!(mode, fs::OpenMode::Read));
         assert!(matches!(method, net::HttpMethod::Get));
         assert!(matches!(date_style, locale::DateStyle::Short));
+    }
+
+    /// IC-991: the local day comes from the offset, not the UTC day. 23:30
+    /// UTC on Wednesday 14 January 2026 is already Thursday the 15th in
+    /// Zurich (+60) and still the 14th in New York (-300).
+    #[test]
+    fn local_time_is_the_persons_day_not_the_utc_day() {
+        let late = 1_768_433_400_000_u64; // 2026-01-14 23:30:00 UTC
+        let utc = locale::LocalTime::at_offset(late, 0);
+        assert_eq!((utc.year, utc.month, utc.day), (2026, 1, 14));
+        assert_eq!((utc.hour, utc.minute, utc.weekday), (23, 30, 3));
+
+        let zurich = locale::LocalTime::at_offset(late, 60);
+        assert_eq!((zurich.year, zurich.month, zurich.day), (2026, 1, 15));
+        assert_eq!((zurich.hour, zurich.minute, zurich.second), (0, 30, 0));
+        assert_eq!(zurich.weekday, 4, "Thursday");
+        assert_eq!(zurich.day_number, utc.day_number + 1);
+        assert_eq!(zurich.offset_minutes, 60);
+
+        let new_york = locale::LocalTime::at_offset(late, -300);
+        assert_eq!((new_york.day, new_york.hour), (14, 18));
+        assert_eq!(new_york.day_number, utc.day_number);
+
+        // Half-hour zone, and the day before the epoch.
+        let india = locale::LocalTime::at_offset(0, 330);
+        assert_eq!((india.year, india.month, india.day), (1970, 1, 1));
+        assert_eq!((india.hour, india.minute), (5, 30));
+        let hawaii = locale::LocalTime::at_offset(0, -600);
+        assert_eq!((hawaii.year, hawaii.month, hawaii.day), (1969, 12, 31));
+        assert_eq!((hawaii.day_number, hawaii.weekday), (-1, 3));
+    }
+
+    /// Day numbers and dates round-trip across leap days, month ends and
+    /// centuries, and consecutive days are one apart -- what a streak needs.
+    #[test]
+    fn day_numbers_and_dates_round_trip() {
+        assert_eq!(locale::day_of_date(1970, 1, 1), 0);
+        assert_eq!(locale::date_of_day(0), (1970, 1, 1));
+        assert_eq!(
+            locale::day_of_date(2000, 2, 29) + 1,
+            locale::day_of_date(2000, 3, 1)
+        );
+        assert_eq!(
+            locale::day_of_date(2026, 12, 31) + 1,
+            locale::day_of_date(2027, 1, 1)
+        );
+        assert_eq!(
+            locale::date_of_day(locale::day_of_date(2100, 2, 28) + 1),
+            (2100, 3, 1)
+        );
+        for day in -800_000..800_000_i64 {
+            if day % 997 != 0 {
+                continue;
+            }
+            let (y, m, d) = locale::date_of_day(day);
+            assert_eq!(locale::day_of_date(y, m, d), day, "{y}-{m}-{d}");
+        }
+        assert_eq!(
+            locale::weekday_of_day(locale::day_of_date(2026, 11, 21)),
+            6,
+            "Saturday"
+        );
+        assert_eq!(
+            locale::weekday_of_day(locale::day_of_date(2026, 11, 23)),
+            1,
+            "Monday"
+        );
     }
 
     #[test]

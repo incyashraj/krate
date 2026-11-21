@@ -87,11 +87,112 @@ pub fn ensure_materialized() -> Result<PathBuf> {
     }
 }
 
+/// Point an app's Cargo.toml at `current` (this binary's SDK copy) where it
+/// names another version's copy in the same SDK cache (K-1311).
+///
+/// `krate create` writes the SDK's absolute cache path into the app, keyed
+/// on the version that made it. A newer Krate then built the app against
+/// the OLD copy: an SDK fix never reached an existing app, and a cleared
+/// cache broke its build. Only paths under `current`'s own cache directory
+/// are touched; a path into a checkout or anywhere else is left alone.
+/// Answers the rewritten text and the old versions it replaced, or `None`
+/// when nothing pointed elsewhere.
+pub fn repoint_cached_sdk(text: &str, current: &Path) -> Option<(String, Vec<String>)> {
+    let version = current.file_name()?.to_string_lossy().into_owned();
+    let base = current.parent()?.to_string_lossy().into_owned();
+    let mut out = String::from(text);
+    let mut replaced: Vec<String> = Vec::new();
+    // The same cache directory as Cargo.toml may spell it: as written, with
+    // the other separator, or with TOML-escaped backslashes on Windows.
+    let mut spellings: Vec<(String, &str)> = vec![
+        (base.clone(), "/"),
+        (base.clone(), "\\"),
+        (base.replace('\\', "/"), "/"),
+        (base.replace('\\', "\\\\"), "\\\\"),
+    ];
+    spellings.dedup();
+    for (prefix, sep) in spellings {
+        let lead = format!("{prefix}{sep}");
+        let mut from = 0;
+        while let Some(at) = out[from..].find(&lead) {
+            let start = from + at + lead.len();
+            let end = out[start..]
+                .find(['/', '\\', '"', '\''])
+                .map_or(out.len(), |e| start + e);
+            let pinned = out[start..end].to_string();
+            if !pinned.is_empty() && pinned != version {
+                out.replace_range(start..end, &version);
+                if !replaced.contains(&pinned) {
+                    replaced.push(pinned);
+                }
+                from = start + version.len();
+            } else {
+                from = end;
+            }
+        }
+    }
+    (!replaced.is_empty()).then_some((out, replaced))
+}
+
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     std::fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
+}
+
+#[cfg(test)]
+mod repoint_tests {
+    use super::repoint_cached_sdk;
+    use std::path::Path;
+
+    const OLD: &str = r#"[dependencies]
+krate = { path = "/home/a/.cache/krate/sdk/22e4ac2beb5f1dbd/crates/bindings-rust", features = ["gui"] }
+
+[package.metadata.component.target]
+path = "/home/a/.cache/krate/sdk/22e4ac2beb5f1dbd/wit/krate/phase4"
+"krate:io" = { path = "/home/a/.cache/krate/sdk/22e4ac2beb5f1dbd/wit/krate/phase4/deps/io" }
+"#;
+
+    /// The oven board Codex made with one Krate, rebuilt by a newer one:
+    /// every pinned path moves to the running binary's copy (K-1311).
+    #[test]
+    fn an_app_pinned_to_an_older_sdk_builds_against_this_one() {
+        let current = Path::new("/home/a/.cache/krate/sdk/29a3131cf89b1e4a");
+        let (text, old) = repoint_cached_sdk(OLD, current).expect("it pointed elsewhere");
+        assert_eq!(old, vec![String::from("22e4ac2beb5f1dbd")]);
+        assert!(!text.contains("22e4ac2beb5f1dbd"), "{text}");
+        assert_eq!(
+            text.matches("/krate/sdk/29a3131cf89b1e4a/").count(),
+            3,
+            "{text}"
+        );
+        assert!(
+            text.contains("features = [\"gui\"]"),
+            "nothing else changes"
+        );
+    }
+
+    #[test]
+    fn an_app_already_on_this_sdk_or_on_a_checkout_is_left_alone() {
+        let current = Path::new("/home/a/.cache/krate/sdk/22e4ac2beb5f1dbd");
+        assert!(repoint_cached_sdk(OLD, current).is_none());
+        let checkout = "krate = { path = \"../../crates/bindings-rust\" }\n";
+        assert!(repoint_cached_sdk(checkout, Path::new("/home/a/.cache/krate/sdk/x")).is_none());
+        let elsewhere =
+            "krate = { path = \"/opt/krate/sdk/22e4ac2beb5f1dbd/crates/bindings-rust\" }\n";
+        assert!(repoint_cached_sdk(elsewhere, Path::new("/home/a/.cache/krate/sdk/x")).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_path_with_escaped_backslashes_is_repointed() {
+        let current = Path::new("C:\\Users\\a\\AppData\\Local\\krate\\sdk\\new1");
+        let text = "krate = { path = \"C:\\\\Users\\\\a\\\\AppData\\\\Local\\\\krate\\\\sdk\\\\old1\\\\crates\\\\bindings-rust\" }\n";
+        let (out, old) = repoint_cached_sdk(text, current).expect("it pointed elsewhere");
+        assert_eq!(old, vec![String::from("old1")]);
+        assert!(out.contains("new1") && !out.contains("old1"), "{out}");
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +240,27 @@ mod tests {
 
         assert!(paths.contains(&"crates/bindings-rust/Cargo.toml"));
         assert!(paths.contains(&"crates/bindings-rust/src/lib.rs"));
+        // `features = ["sheets"]` needs the module's own directory (IC-993);
+        // its tests read fixtures the SDK does not carry, so they stay out.
+        for file in ["mod.rs", "zip.rs", "xml.rs", "xlsx.rs", "ods.rs", "csv.rs"] {
+            let path = format!("crates/bindings-rust/src/sheets/{file}");
+            assert!(paths.contains(&path.as_str()), "{path} is not shipped");
+        }
+        assert!(!paths.contains(&"crates/bindings-rust/src/sheets/tests.rs"));
+        // `features = ["modbus"]` and `["mqtt"]` (IC-994): the shared link
+        // and each module's own directory, without its tests.
+        assert!(paths.contains(&"crates/bindings-rust/src/link.rs"));
+        for file in [
+            "modbus/mod.rs",
+            "modbus/frame.rs",
+            "mqtt/mod.rs",
+            "mqtt/packet.rs",
+        ] {
+            let path = format!("crates/bindings-rust/src/{file}");
+            assert!(paths.contains(&path.as_str()), "{path} is not shipped");
+        }
+        assert!(!paths.contains(&"crates/bindings-rust/src/modbus/tests.rs"));
+        assert!(!paths.contains(&"crates/bindings-rust/src/mqtt/tests.rs"));
     }
 
     #[test]

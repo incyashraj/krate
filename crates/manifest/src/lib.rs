@@ -133,6 +133,34 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // Krate has -- a shell can do anything the person can -- so it is its
     // own line on the card, never implied by any `process.run`.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "process", "terminal", false),
+    // A serial device the person picks (IC-985): a lab instrument, a
+    // sensor, a board on a USB serial line. Resource-free: the app never
+    // names a port -- it asks, the person chooses one from the system's
+    // list, and that pick is the grant, for that port, for that run. Never
+    // default-granted, never on a phone; in a tab where the browser has Web
+    // Serial (IC-992).
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "serial", false),
+    // A printer the person picks (IC-986): a label printer on the packing
+    // bench, the office laser for job travellers. Resource-free: the app
+    // never names a printer -- it asks, the person chooses one from the
+    // system's list, and that pick is remembered for the app so the next
+    // label prints with no dialog. Never default-granted, never in a tab or
+    // on a phone.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "device", "printer", false),
+    // A USB device the person picks (IC-988): a radio dongle, an instrument
+    // with its own protocol. Scoped to one device model by its vendor and
+    // product ids in hex -- `device.usb:1915:7777` -- exact, no wildcard, and
+    // an app may name several. The app never lists devices: the person picks
+    // one connected device of a named model, and that pick is the grant, for
+    // that device, for that run. Never default-granted, never on a phone; in
+    // a tab where the browser has WebUSB (IC-992).
+    CapabilitySpec::resource_scoped(
+        CapabilityPhase::Phase2,
+        "device",
+        "usb",
+        "<vendor-id>:<product-id>",
+        false,
+    ),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",
@@ -148,6 +176,14 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<host>:<port>",
         false,
     ),
+    // Serving the people on the network (IC-987): a factory or lab app that
+    // tablets and the floor's other computers open. Scoped to one port, 1024
+    // or above, so the person is asked about exactly the door that opens and
+    // a system port can never be declared. Never default-granted. The app
+    // picks the scope when it listens: other devices need the person's yes;
+    // this computer alone (loopback) needs only the declaration, because
+    // nothing outside the computer can reach it. Never in a tab or on a phone.
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "net", "listen", "<port>", false),
     // A company connection (IC-952): an organisation's admin set up an API's
     // address and credential once, under this name, and the runtime adds the
     // credential to this app's requests to that address. The app never holds
@@ -613,7 +649,25 @@ pub fn works_in_a_tab(module: &str, action: &str) -> bool {
             // A file dropped on the app, judged by the desktop's own media
             // type table (krate_adapter_common::mime).
             | ("ui", "dropzone")
+            // Serial and USB devices the person picks (IC-992), through the
+            // browser's own Web Serial and WebUSB and its own device picker,
+            // which only some browsers have: see [`tab_needs`].
+            | ("device", "serial" | "usb")
     )
+}
+
+/// The browser API a capability needs in a tab, for those only some
+/// browsers have (IC-992): `serial` (Web Serial) for `device.serial`, `usb`
+/// (WebUSB) for `device.usb`, both in Chrome and Edge and not in Safari or
+/// Firefox. The Player's consent card treats such a capability as one a tab
+/// cannot give in a browser without it, and says to open the app in Chrome
+/// or Edge, or in Krate; the authoring pack's column says "Chrome and Edge".
+pub fn tab_needs(module: &str, action: &str) -> Option<&'static str> {
+    match (module, action) {
+        ("device", "serial") => Some("serial"),
+        ("device", "usb") => Some("usb"),
+        _ => None,
+    }
 }
 
 impl Capability {
@@ -767,6 +821,12 @@ impl Capability {
         works_in_a_tab(self.module(), self.action())
     }
 
+    /// The browser API this capability needs in a tab, when only some
+    /// browsers have it ([`tab_needs`]).
+    pub fn tab_needs(&self) -> Option<&'static str> {
+        tab_needs(self.module(), self.action())
+    }
+
     /// Render a capability as a short plain phrase for a person, e.g.
     /// `fs.write:./checklist/**` -> "save files in ./checklist". Falls back to the
     /// technical form for anything without a friendly phrasing, so the label is
@@ -807,6 +867,14 @@ impl Capability {
                     "use your organisation's {r} connection (the app never sees its credential)"
                 ),
                 None => "use one of your organisation's connections".to_string(),
+            },
+            // IC-987: the question is about other devices; this computer
+            // alone is never asked.
+            ("net", "listen") => match resource {
+                Some(port) => {
+                    format!("let other devices on your network open this app on port {port}")
+                }
+                None => "let other devices on your network open this app".to_string(),
             },
             ("ui", "window") => "open a window on your screen".to_string(),
             ("ui", "clipboard") if cap.resource() == Some("read") => {
@@ -856,6 +924,16 @@ impl Capability {
             ("camera", "capture") => "use your camera".to_string(),
             ("location", "read") => "know where you are".to_string(),
             ("bluetooth", "connect") => "connect to Bluetooth devices".to_string(),
+            // IC-985: the person picks the device; the line says so.
+            ("device", "serial") => "talk to a serial device you choose".to_string(),
+            // IC-986: the person picks the printer; the line says so.
+            ("device", "printer") => "print to a printer you choose".to_string(),
+            // IC-988: the person picks the device, of a model the manifest
+            // names by its ids; the line says both.
+            ("device", "usb") => match resource {
+                Some(ids) => format!("talk to the {ids} USB device you choose"),
+                None => "talk to a USB device you choose".to_string(),
+            },
             ("photos", "add") => "add pictures to your photo library".to_string(),
             // IC-977: what a program can do, said plainly. A build runs the
             // project's own code (build scripts, macros, tests), so cargo
@@ -1203,6 +1281,10 @@ fn validate_capability_resource(
         return validate_connection_name(resource);
     }
 
+    if module == "net" && action == "listen" {
+        return validate_listen_port(resource).map(|_| ());
+    }
+
     // A group name is refused rather than flattened: two names reducing to
     // one directory would share a store nobody meant to share.
     if module == "store" && action == "group" {
@@ -1222,6 +1304,10 @@ fn validate_capability_resource(
         return validate_program_name(resource);
     }
 
+    if module == "device" && action == "usb" {
+        return validate_usb_ids(resource).map(|_| ());
+    }
+
     if module == "gfx" && action == "gpu" {
         validate_one_of(resource, &["basic", "compute"], "GPU resource")?;
     }
@@ -1238,10 +1324,82 @@ fn canonicalize_capability_resource(module: &str, action: &str, resource: &str) 
     if module == "net" && action == "connect" {
         return canonicalize_connect_resource(resource);
     }
+    if module == "net" && action == "listen" {
+        return validate_listen_port(resource)
+            .ok()
+            .map(|port| port.to_string());
+    }
+    if module == "device" && action == "usb" {
+        return validate_usb_ids(resource)
+            .ok()
+            .map(|(vendor, product)| usb_ids(vendor, product));
+    }
     if module == "ui" || module == "gfx" {
         return Some(resource.to_ascii_lowercase());
     }
     Some(resource.to_string())
+}
+
+/// `device.usb:<vendor-id>:<product-id>` as Krate writes it: four lowercase
+/// hex digits each (IC-988).
+pub fn usb_ids(vendor: u16, product: u16) -> String {
+    format!("{vendor:04x}:{product:04x}")
+}
+
+/// `device.usb:<vendor-id>:<product-id>` names exactly one device model
+/// (IC-988): two ids of four hex digits each, as `lsusb` and the system's
+/// own lists print them (`1915:7777`). No wildcard, no range, no `0x`, and
+/// not 0000, so the line on the consent card names one kind of device.
+pub fn validate_usb_ids(resource: &str) -> std::result::Result<(u16, u16), String> {
+    let shape = || {
+        format!(
+            "`{resource}` is not a USB device: device.usb names one model by its vendor and \
+             product ids, four hex digits each, such as `device.usb:1915:7777`"
+        )
+    };
+    let (vendor, product) = resource.split_once(':').ok_or_else(shape)?;
+    let id = |part: &str| {
+        (part.len() == 4 && part.bytes().all(|b| b.is_ascii_hexdigit()))
+            .then(|| u16::from_str_radix(part, 16).ok())
+            .flatten()
+            .ok_or_else(shape)
+    };
+    let (vendor, product) = (id(vendor)?, id(product)?);
+    if vendor == 0 {
+        return Err(format!(
+            "`{resource}` has vendor id 0000, which no real device has: name the device's own \
+             ids, such as `device.usb:1915:7777`"
+        ));
+    }
+    Ok((vendor, product))
+}
+
+/// The lowest port an app may listen on (IC-987). Below it the ports belong
+/// to the system (a web server's 80, a mail server's 25), and on most
+/// computers only an administrator may open one.
+pub const LOWEST_LISTEN_PORT: u16 = 1024;
+
+/// `net.listen:<port>` names exactly one port, 1024 to 65535 (IC-987): no
+/// wildcard, no range, no 0 (which would let the system pick a port the
+/// person was never told about).
+fn validate_listen_port(resource: &str) -> std::result::Result<u16, String> {
+    let port: u16 = resource
+        .parse()
+        .ok()
+        .filter(|_| resource.bytes().all(|b| b.is_ascii_digit()))
+        .ok_or_else(|| {
+            format!(
+                "`{resource}` is not a port: net.listen names one port by its number, \
+                 such as `net.listen:8080`"
+            )
+        })?;
+    if port < LOWEST_LISTEN_PORT {
+        return Err(format!(
+            "port {port} is below {LOWEST_LISTEN_PORT}: those ports belong to the system, so \
+             an app listens on {LOWEST_LISTEN_PORT} or above (8080 is the usual choice)"
+        ));
+    }
+    Ok(port)
 }
 
 fn validate_ui_resource(action: &str, resource: &str) -> std::result::Result<(), String> {
@@ -1656,6 +1814,135 @@ mod tests {
 
         // Long enough to be unreadable on the screen a person decides from.
         assert!(validate_group_name(&"a".repeat(65)).is_err());
+    }
+
+    /// `device.serial` (IC-985) is one plain line, never granted without
+    /// asking, in a tab only where the browser has Web Serial (IC-992), and
+    /// names no port: the person picks it.
+    #[test]
+    fn a_serial_device_is_asked_for_and_names_no_port() {
+        let cap: Capability = "device.serial".parse().expect("device.serial");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        // In a tab, through the browser's Web Serial (IC-992).
+        assert!(cap.works_in_a_tab());
+        assert_eq!(cap.tab_needs(), Some("serial"));
+        assert_eq!(cap.plain(), "talk to a serial device you choose");
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.serial")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for named in [
+            "device.serial:/dev/ttyUSB0",
+            "device.serial:COM3",
+            "device.usb",
+        ] {
+            assert!(named.parse::<Capability>().is_err(), "{named}");
+        }
+    }
+
+    /// `device.usb:<vendor>:<product>` (IC-988) names one device model by
+    /// its two ids in hex, exactly: never a wildcard, a range or a bare
+    /// `device.usb`; never granted without asking, in a tab only where the
+    /// browser has WebUSB (IC-992); and the
+    /// consent line names the ids the person is asked about.
+    #[test]
+    fn a_usb_device_is_named_by_its_two_ids_exactly() {
+        let cap: Capability = "device.usb:1915:7777".parse().expect("device.usb");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        // In a tab, through the browser's WebUSB (IC-992).
+        assert!(cap.works_in_a_tab());
+        assert_eq!(cap.tab_needs(), Some("usb"));
+        assert_eq!(cap.plain(), "talk to the 1915:7777 USB device you choose");
+        // Upper case is the same device, written the one way.
+        let upper: Capability = "device.usb:1A86:7523".parse().expect("upper case");
+        assert_eq!(upper.to_string(), "device.usb:1a86:7523");
+        assert_eq!(validate_usb_ids("1915:7777"), Ok((0x1915, 0x7777)));
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.usb")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for refused in [
+            "device.usb",
+            "device.usb:",
+            "device.usb:1915",
+            "device.usb:1915:*",
+            "device.usb:*:*",
+            "device.usb:*",
+            "device.usb:0x1915:0x7777",
+            "device.usb:1915:777",
+            "device.usb:19150:7777",
+            "device.usb:1915:7777:0",
+            "device.usb:1915-191f:7777",
+            "device.usb:0000:7777",
+            "device.usb:gggg:7777",
+        ] {
+            assert!(refused.parse::<Capability>().is_err(), "{refused}");
+        }
+    }
+
+    /// `device.printer` (IC-986) is one plain line, never granted without
+    /// asking, never in a tab, and names no printer: the person picks it.
+    #[test]
+    fn a_printer_is_asked_for_and_names_no_printer() {
+        let cap: Capability = "device.printer".parse().expect("device.printer");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(
+            !cap.works_in_a_tab(),
+            "a tab cannot print to a picked printer"
+        );
+        assert_eq!(cap.plain(), "print to a printer you choose");
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.name() == "device.printer")
+            .expect("in the registry");
+        assert_eq!(spec.phase(), CapabilityPhase::Phase2);
+        assert!(spec.implemented());
+        for named in [
+            "device.printer:Zebra_ZD421",
+            "device.printer:*",
+            "device.printers",
+        ] {
+            assert!(named.parse::<Capability>().is_err(), "{named}");
+        }
+    }
+
+    /// `net.listen:<port>` (IC-987) names one port, 1024 or above, never
+    /// granted without asking, never in a tab, and its consent line is about
+    /// other devices on the network.
+    #[test]
+    fn a_listening_port_is_one_number_at_1024_or_above() {
+        let cap: Capability = "net.listen:08080".parse().expect("net.listen:08080");
+        assert_eq!(cap.to_string(), "net.listen:8080");
+        assert!(!cap.is_default_granted(), "never granted without asking");
+        assert!(!cap.works_in_a_tab(), "a tab cannot listen");
+        assert_eq!(
+            cap.plain(),
+            "let other devices on your network open this app on port 8080"
+        );
+        assert!("net.listen:1024".parse::<Capability>().is_ok());
+        assert!("net.listen:65535".parse::<Capability>().is_ok());
+        for refused in [
+            "net.listen",
+            "net.listen:0",
+            "net.listen:80",
+            "net.listen:1023",
+            "net.listen:65536",
+            "net.listen:*",
+            "net.listen:8080-8090",
+            "net.listen:+8080",
+            "net.listen:localhost:8080",
+        ] {
+            assert!(refused.parse::<Capability>().is_err(), "{refused}");
+        }
+        let low = "net.listen:443"
+            .parse::<Capability>()
+            .expect_err("a system port")
+            .to_string();
+        assert!(low.contains("below 1024"), "{low}");
     }
 
     /// `process.run` names one program by its bare name (IC-977): a folder,

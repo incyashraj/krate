@@ -34,6 +34,37 @@ pub enum UapiCall {
     Memory(MemoryCall),
     /// A program or a terminal on the computer (IC-977).
     Process(ProcessCall),
+    /// A device the person picks (IC-985): a serial port.
+    Device(DeviceCall),
+}
+
+/// Reaching a device the person picks (IC-985): a serial port, a printer
+/// (IC-986) or a USB device (IC-988), picked from the system's list, never
+/// named by the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceCall {
+    Serial,
+    /// A printer (IC-986), picked from the system's list the same way.
+    Printer,
+    /// A USB device (IC-988), picked from the devices whose vendor and
+    /// product ids the manifest names: `device.usb:1915:7777`.
+    Usb {
+        vendor_id: u16,
+        product_id: u16,
+    },
+}
+
+impl fmt::Display for DeviceCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Serial => "serial",
+            Self::Printer => "printer",
+            Self::Usb {
+                vendor_id,
+                product_id,
+            } => return write!(f, "usb:{vendor_id:04x}:{product_id:04x}"),
+        })
+    }
 }
 
 /// Starting something on the computer: one program by its bare name, or the
@@ -77,6 +108,7 @@ impl UapiCall {
             Self::Fs(call) => call.to_capability_string(),
             Self::Net(NetCall::Connect { host, port }) => format!("net.connect:{host}:{port}"),
             Self::Net(NetCall::Connection { name }) => format!("net.connection:{name}"),
+            Self::Net(NetCall::Listen { port }) => format!("net.listen:{port}"),
             Self::Time(call) => format!("time.{call}"),
             Self::Locale(call) => format!("locale.{call}"),
             Self::Ui(call) => call.to_capability_string(),
@@ -89,6 +121,7 @@ impl UapiCall {
             Self::Random(call) => format!("random.{call}"),
             Self::Memory(call) => format!("memory.{call}"),
             Self::Process(call) => format!("process.{call}"),
+            Self::Device(call) => format!("device.{call}"),
         }
     }
 }
@@ -297,6 +330,12 @@ pub enum NetCall {
     /// runtime add the connection's credential to a request to its address.
     Connection {
         name: String,
+    },
+    /// Listen on one port for other programs or devices to connect
+    /// (IC-987). The scope -- this computer or the network -- is the host's
+    /// to judge on top: the capability is the port.
+    Listen {
+        port: u16,
     },
 }
 
@@ -834,6 +873,13 @@ mod tests {
                 program: "cargo".to_string(),
             }),
             UapiCall::Process(ProcessCall::Terminal),
+            UapiCall::Device(DeviceCall::Serial),
+            UapiCall::Device(DeviceCall::Printer),
+            UapiCall::Device(DeviceCall::Usb {
+                vendor_id: 0x1915,
+                product_id: 0x7777,
+            }),
+            UapiCall::Net(NetCall::Listen { port: 8080 }),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

@@ -134,7 +134,17 @@ fn home(iface: &str) -> (&'static str, &'static str) {
     let pkg = iface.split('/').next().unwrap_or("");
     let phase2 = matches!(
         pkg,
-        "io" | "fs" | "net" | "time" | "locale" | "resources" | "store" | "random" | "process"
+        "io" | "fs"
+            | "net"
+            | "time"
+            | "locale"
+            | "resources"
+            | "store"
+            | "random"
+            | "process"
+            | "serial"
+            | "print"
+            | "usb"
     );
     if phase2 {
         ("crate::phase2_bindings", "phase2")

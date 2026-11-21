@@ -10,8 +10,8 @@ See also: [UAPI Freeze Lock](uapi-freeze-lock.md). The lock records the exact WI
 
 - App package: `krate:app@0.1.0`
 - World: `cli`
-- Imported interfaces: 26
-- Packages: 10
+- Imported interfaces: 29
+- Packages: 13
 
 ## Checks Passed
 
@@ -30,11 +30,14 @@ See also: [UAPI Freeze Lock](uapi-freeze-lock.md). The lock records the exact WI
 - `krate:io@0.1.0`
 - `krate:locale@0.1.0`
 - `krate:net@0.1.0`
+- `krate:print@0.1.0`
 - `krate:process@0.1.0`
 - `krate:random@0.1.0`
 - `krate:resources@0.1.0`
+- `krate:serial@0.1.0`
 - `krate:store@0.1.0`
 - `krate:time@0.1.0`
+- `krate:usb@0.1.0`
 
 ## Imported Interfaces
 
@@ -53,9 +56,11 @@ See also: [UAPI Freeze Lock](uapi-freeze-lock.md). The lock records the exact WI
 - `krate:net/sockets@0.1.0`
 - `krate:net/types@0.1.0`
 - `krate:net/ws@0.1.0`
+- `krate:print/printers@0.1.0`
 - `krate:process/processes@0.1.0`
 - `krate:random/bytes@0.1.0`
 - `krate:resources/assets@0.1.0`
+- `krate:serial/ports@0.1.0`
 - `krate:store/group@0.1.0`
 - `krate:store/kv@0.1.0`
 - `krate:store/org@0.1.0`
@@ -64,6 +69,7 @@ See also: [UAPI Freeze Lock](uapi-freeze-lock.md). The lock records the exact WI
 - `krate:store/sql@0.1.0`
 - `krate:time/clock@0.1.0`
 - `krate:time/sleep@0.1.0`
+- `krate:usb/devices@0.1.0`
 
 ## Freeze Note
 

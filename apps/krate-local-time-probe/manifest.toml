@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.local-time-probe"
+name = "local-time-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_local_time_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Say what time it is here"
+required = true
+
+[[capabilities]]
+cap = "time.clock"
+rationale = "Read the current time"
+required = true
+
+[[capabilities]]
+cap = "locale.info"
+rationale = "Read your time zone"
+required = true

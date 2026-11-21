@@ -659,6 +659,10 @@ fn function_notes(interface: &str, function: &str) -> &'static [&'static str] {
             "Returns the host timezone name.",
             "Expected form is an IANA name such as `Asia/Singapore` when the host can provide one.",
         ],
+        ("krate:locale/info@0.1.0", "utc-offset") => &[
+            "Returns minutes east of UTC in the person's timezone at a Unix-millisecond instant, daylight saving included.",
+            "Local time is `millis + offset * 60000`; use it for \"today\", streaks and schedules, never the UTC day.",
+        ],
         ("krate:locale/format@0.1.0", "format-date") => &[
             "Formats a timestamp using a requested timezone, date style, and locale.",
             "The host owns the native formatting behavior so output can match the platform.",

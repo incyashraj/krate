@@ -32,6 +32,9 @@ The current world imports these interfaces:
 - `krate:store/org@0.1.0`
 - `krate:random/bytes@0.1.0`
 - `krate:process/processes@0.1.0`
+- `krate:serial/ports@0.1.0`
+- `krate:print/printers@0.1.0`
+- `krate:usb/devices@0.1.0`
 
 The app exports:
 
@@ -568,6 +571,15 @@ let timezone = krate::locale::timezone();
 - `timezone() -> string`
   - Returns the host timezone name.
   - Expected form is an IANA name such as `Asia/Singapore` when the host can provide one.
+> Minutes east of UTC in the person's own timezone (the one `timezone`
+> names) at the instant `millis` (Unix epoch milliseconds), daylight
+> saving included: 60 in Zurich in January, 120 in July, -300 in New
+> York in January, 330 in India. Local time is `millis + offset * 60000`;
+> "today" for a person is the local day, never the UTC day.
+
+- `utc-offset(millis: u64) -> s32`
+  - Returns minutes east of UTC in the person's timezone at a Unix-millisecond instant, daylight saving included.
+  - Local time is `millis + offset * 60000`; use it for "today", streaks and schedules, never the UTC day.
 
 
 ## `krate:locale/types@0.1.0`
@@ -625,6 +637,7 @@ HTTP client calls. Phase 2 starts with simple request and response bodies.
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 - `get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.
@@ -689,6 +702,7 @@ krate::io::stdio::println(&body)?;
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 ### Functions
@@ -731,7 +745,47 @@ Accepted capability strings for this module, generated from the runtime manifest
 > to, or none. Never blocks.
 
 - `udp-receive(handle: u64) -> option<datagram>`
-> Close a TCP connection or UDP socket. Safe on a handle already closed.
+> Listen for TCP connections on `port` (IC-987). Only a port the
+> manifest declares as `net.listen:<port>`, never one below 1024, and
+> never one something else already listens on. `this-computer` binds the
+> loopback address and needs only the declaration; `local-network` binds
+> every address of this computer and needs the person's yes too.
+> Returns a listener handle at once.
+
+- `tcp-listen(port: u16, scope: listen-scope) -> result<u64, listen-error>`
+> The next connection waiting on a listener, or none. Never blocks: ask
+> from the app's loop. The handle it returns is a connection like one
+> `tcp-connect` made: `tcp-status` says who connected, `tcp-read`,
+> `tcp-write` and `close` work on it. At most 32 connections from other
+> devices are open at once; past that this answers `too-many` and the
+> device waits until the app closes one.
+
+- `tcp-accept(listener: u64) -> result<option<u64>, listen-error>`
+> The local port of a listener or a connected TCP connection.
+
+- `tcp-local-port(handle: u64) -> result<u16, listen-error>`
+> Where other devices on the local network reach a listener (IC-990):
+> this computer's private network addresses with the listener's port,
+> its main connection first, to show the person. Only for a listener
+> opened for `local-network`, which the person allowed; one for this
+> computer alone answers `not-allowed`. Never a public address, never a
+> hardware (MAC) address. Empty when the computer is on no local network
+> (offline, or only on a public address). Never blocks.
+
+- `tcp-addresses(listener: u64) -> result<list<listen-address>, listen-error>`
+> Let devices on the local network find a listener by name (IC-990):
+> DNS-SD over multicast DNS (Bonjour, Avahi), under the app's own name,
+> as `service-type` -- `_http._tcp` for web pages, or the app's own
+> (`_shopfloor._tcp`: 1 to 15 lowercase letters, digits and hyphens).
+> The same rule as `tcp-addresses`: a `local-network` listener only, so
+> the person's yes for the port covers it. Announcing again replaces the
+> announcement. Withdrawn when the listener closes or the app ends.
+> Returns at once; devices see it within a few seconds.
+
+- `tcp-announce(listener: u64, service-type: string) -> result<announcement, listen-error>`
+> Close a TCP connection, a UDP socket or a listener. Safe on a handle
+> already closed. Closing a listener leaves the connections it accepted
+> open until each is closed or the run ends.
 
 - `close(handle: u64)`
 
@@ -788,6 +842,87 @@ Accepted capability strings for this module, generated from the runtime manifest
 > The connection broke, with the reason.
 
 - `failed`: `net-error`
+
+#### `listen-scope` enum
+
+> Who may open a listener (IC-987).
+
+> Programs on this computer only: the listener is bound to the loopback
+> address (127.0.0.1), which nothing outside the computer can reach.
+> Needs `net.listen:<port>` declared; the person is not asked.
+
+- `this-computer`
+> Other devices on the same network too: tablets on a factory floor,
+> the lab's other computers. Needs `net.listen:<port>` declared and the
+> person's yes ("let other devices on your network open this app on
+> port N").
+
+- `local-network`
+
+#### `listen-error` variant
+
+> Why a listener could not be opened or used. Every case but
+> `unknown-handle` carries words to show the person.
+
+> The manifest does not declare `net.listen:<port>` for this port, the
+> person did not let other devices in, or the organisation that manages
+> the computer does not allow it. The words name the capability.
+
+- `not-allowed`: `string`
+> Another program on this computer, or another listener of this app,
+> already listens on the port.
+
+- `in-use`: `string`
+> The port is below 1024, which belongs to the system.
+
+- `bad-port`: `string`
+> This app already holds as many listeners, or as many connections from
+> other devices, as it may at once. Close one first.
+
+- `too-many`: `string`
+> Listening is not possible here: a browser tab or a phone.
+
+- `unavailable`: `string`
+> Never issued, already closed, or not a listener.
+
+- `unknown-handle`
+> The system refused, with its reason.
+
+- `failed`: `string`
+
+#### `listen-address` record
+
+> One address other devices on the local network reach a listener at
+> (IC-990).
+
+> This computer's address on the local network, as an IP:
+> "192.168.1.20". Always a private address, never a public one.
+
+- `ip`: `string`
+> The listener's port.
+
+- `port`: `u16`
+> What to open in a browser on another device when the app serves web
+> pages: "http://192.168.1.20:8080/".
+
+- `url`: `string`
+
+#### `announcement` record
+
+> A listener announced on the local network (IC-990).
+
+> The name devices on the network list it under: the app's own name,
+> "Shop Floor".
+
+- `name`: `string`
+> The name devices reach this computer by for it: "shop-floor.local".
+
+- `host`: `string`
+> What to open in a browser on another device when the app serves web
+> pages: "http://shop-floor.local:8080/". Computers and iPhones open
+> it; some Android browsers do not, so show `tcp-addresses` too.
+
+- `url`: `string`
 
 #### `datagram` record
 
@@ -944,6 +1079,7 @@ Shared network request, response, and error types.
 Accepted capability strings for this module, generated from the runtime manifest table:
 
 - `net.connect:<host>:<port>` - manifest or session grant
+- `net.listen:<port>` - manifest or session grant
 - `net.connection:<connection-name>` - manifest or session grant
 
 ### Functions
@@ -1006,6 +1142,167 @@ Accepted capability strings for this module, generated from the runtime manifest
 > Never opened, or already closed, cancelled, or retired.
 
 - `unknown-handle`
+
+
+## `krate:print/printers@0.1.0`
+
+### Functions
+
+> The printer the person picked for this app before, if it is still
+> set up on this computer. Never asks anyone: none when nothing was
+> picked, the pick was forgotten, or the printer is gone.
+
+- `remembered() -> result<option<printer>, print-error>`
+> Ask the person to choose a printer. `title` is a short line for the
+> list ("Choose the label printer"), at most 200 characters.
+> 
+> Some(printer) when they chose one, which is remembered for this app
+> in place of any earlier pick. None when they cancelled or no person
+> is there to choose (a run with no window and no display); an earlier
+> pick is then kept.
+
+- `pick(title: string) -> result<option<printer>, print-error>`
+> Print a document on a printer the person picked.
+
+- `print-document(printer: printer-handle, document: document) -> result<print-outcome, print-error>`
+> Send raw printer language -- ZPL, EPL, ESC/POS -- to a printer the
+> person picked, byte for byte, with no conversion: what a label or
+> receipt printer reads. `bytes` is at most 16 MiB; `copies` from 1 to
+> 100 sends it that many times; `title` names the job as for a
+> document.
+
+- `print-raw(printer: printer-handle, bytes: list<u8>, copies: u32, title: string) -> result<print-outcome, print-error>`
+
+### Types
+
+#### `printer-handle` type
+
+> A printer the person picked. Numbers are never reused within a run
+> and mean nothing to another run.
+
+`u64`
+
+#### `printer` record
+
+> A printer the person picked, now or on an earlier run.
+
+> The handle the app uses for this printer from now on.
+
+- `handle`: `printer-handle`
+> The printer's name as the computer shows it, to show the person:
+> "Zebra ZD421", "Office LaserJet".
+
+- `name`: `string`
+
+#### `document-format` enum
+
+> What a document's bytes are.
+
+> A PDF file, any number of pages.
+
+- `pdf`
+> One page as a PNG picture, scaled to fit the paper.
+
+- `png`
+
+#### `paper-mm` record
+
+> A paper or label size in millimetres.
+
+> Across, from 10 to 1000 millimetres.
+
+- `width`: `u32`
+> Down, from 10 to 1000 millimetres.
+
+- `height`: `u32`
+
+#### `paper-size` variant
+
+> The paper to print on.
+
+> Whatever the printer is set up with.
+
+- `printer-default`
+> A4, 210 by 297 millimetres.
+
+- `a4`
+> A5, 148 by 210 millimetres.
+
+- `a5`
+> A6, 105 by 148 millimetres.
+
+- `a6`
+> US Letter, 8.5 by 11 inches.
+
+- `letter`
+> US Legal, 8.5 by 14 inches.
+
+- `legal`
+> Any other size, such as a 100 by 150 millimetre label.
+
+- `custom`: `paper-mm`
+
+#### `document` record
+
+> A document to print.
+
+> What `bytes` are: they must start the way that format starts.
+
+- `format`: `document-format`
+> The document, at most 16 MiB.
+
+- `bytes`: `list<u8>`
+> How many copies, from 1 to 100.
+
+- `copies`: `u32`
+> The paper to print on.
+
+- `paper`: `paper-size`
+> The job's name in the printer's queue, at most 200 characters:
+> "Traveller WO-1042". Empty names it after the app.
+
+- `title`: `string`
+
+#### `print-outcome` variant
+
+> What became of a job the app sent.
+
+> The computer took the job into the printer's queue. The words are
+> the job as the computer names it ("Zebra_ZD421-42"), to show or log.
+
+- `queued`: `string`
+> The computer would not take the job, with its own words: the
+> printer is paused, out of paper, or refused the format.
+
+- `failed`: `string`
+> The printer is no longer set up on this computer: removed, renamed,
+> or its driver uninstalled. Offer to pick again. The words say which
+> printer.
+
+- `gone`: `string`
+
+#### `print-error` variant
+
+> Why a call was refused before any job was sent.
+
+> The app did not declare `device.printer`, the person did not allow
+> it, or the organisation that manages the computer does not allow
+> printing. The words say which and name the capability.
+
+- `not-allowed`: `string`
+> No printer is set up on this computer, or this place cannot print:
+> a browser tab, a phone.
+
+- `unavailable`: `string`
+> No printer has this handle in this run: never picked, or the app
+> made it up.
+
+- `unknown-handle`
+> A job Krate does not accept, with words: empty, larger than 16 MiB,
+> copies out of range, a paper size out of range, or bytes that are
+> not the format they claim.
+
+- `bad-job`: `string`
 
 
 ## `krate:process/processes@0.1.0`
@@ -1215,6 +1512,148 @@ Accepted capability strings for this module, generated from the runtime manifest
 > The host could not read the asset.
 
 - `io`: `string`
+
+
+## `krate:serial/ports@0.1.0`
+
+### Functions
+
+> Ask the person to choose one serial device. `title` is a short line
+> for the list ("Choose the plate reader"), at most 200 characters.
+> 
+> Some(port) when they chose one, none when they cancelled or no person
+> is there to choose (a run with no window and no display). Picking
+> does not open the port: call `open` with the settings the device
+> expects.
+
+- `pick(title: string) -> result<option<port>, serial-error>`
+> Open a picked port with `settings`. Called again on an open port, it
+> changes the settings in place.
+
+- `open(port: port-handle, settings: settings) -> result<_, serial-error>`
+> Read at most `max` bytes (at most 65536): wait up to `timeout-ms`
+> (none: the `read-timeout-ms` the port was opened with; at most 60000)
+> for the first byte, then answer with what has arrived. Empty when the
+> wait ran out with nothing.
+
+- `read(port: port-handle, max: u32, timeout-ms: option<u32>) -> result<list<u8>, serial-error>`
+> Write every byte of `bytes` (at most 65536) to the device. Returns once
+> the device has taken them, waiting at most the port's
+> `read-timeout-ms` (at least one second) plus the time the bytes take on
+> the wire at its baud rate; past that, `failed`.
+
+- `write(port: port-handle, bytes: list<u8>) -> result<_, serial-error>`
+> Close the port and give up the pick: the handle is spent, and talking
+> to the device again needs a new pick. Closing an unknown handle does
+> nothing.
+
+- `close(port: port-handle)`
+
+### Types
+
+#### `port-handle` type
+
+> A port the person picked. Numbers are never reused within a run and
+> mean nothing to another run.
+
+`u64`
+
+#### `port` record
+
+> A port the person picked.
+
+> The handle the app uses for this port from now on.
+
+- `handle`: `port-handle`
+> The device's name as the computer gives it, to show the person:
+> "USB Serial (FTDI)", "COM3", "/dev/cu.usbmodem1101".
+
+- `name`: `string`
+
+#### `parity` enum
+
+> Parity, the check bit after each character.
+
+> No parity bit. The usual setting (8N1).
+
+- `none`
+> An odd parity bit.
+
+- `odd`
+> An even parity bit.
+
+- `even`
+
+#### `stop-bits` enum
+
+> Stop bits after each character.
+
+> One stop bit. The usual setting (8N1).
+
+- `one`
+> Two stop bits.
+
+- `two`
+
+#### `settings` record
+
+> How to talk to the device. 9600 or 115200 baud, 8 data bits, no
+> parity and one stop bit (8N1) is what most devices expect.
+
+> Bits a second, from 50 to 4000000: 9600, 115200 and so on.
+
+- `baud-rate`: `u32`
+> Bits in a character: 5, 6, 7 or 8.
+
+- `data-bits`: `u8`
+> The parity bit.
+
+- `parity`: `parity`
+> The stop bits.
+
+- `stop-bits`: `stop-bits`
+> How long a `read` that names no wait of its own waits for the first
+> byte, in milliseconds, at most 60000. 0 answers at once with what
+> has already arrived.
+
+- `read-timeout-ms`: `u32`
+
+#### `serial-error` variant
+
+> Why a call was refused or failed. Each case carries words to show a
+> person, except `unknown-handle` and `not-open`, which are the app's own
+> mistakes.
+
+> The app did not declare `device.serial`, or the person did not allow
+> it. The words say which and name the capability.
+
+- `not-allowed`: `string`
+> No serial device is connected to this computer, or this place has
+> none: a browser tab, a phone.
+
+- `unavailable`: `string`
+> No port has this handle in this run: never picked, or closed.
+
+- `unknown-handle`
+> The port was picked and not opened yet: `open` it first.
+
+- `not-open`
+> A setting Krate does not accept, with words: a baud rate, data bits
+> or a wait out of range, or a write longer than 65536 bytes.
+
+- `bad-settings`: `string`
+> Another program has the device open.
+
+- `busy`: `string`
+> The device went away: unplugged, or switched off.
+
+- `disconnected`: `string`
+> The app already holds 8 ports; close one first.
+
+- `too-many`: `string`
+> The computer refused, with its words.
+
+- `failed`: `string`
 
 
 ## `krate:store/group@0.1.0`
@@ -1781,4 +2220,202 @@ krate::time::sleep_millis(100);
 - `sleep-millis(millis: u32)`
   - Blocks the calling component task for at least the requested milliseconds.
   - Requires `time.sleep`; hosts may wake slightly later than requested.
+
+
+## `krate:usb/devices@0.1.0`
+
+### Functions
+
+> Ask the person to choose one connected device whose ids the manifest
+> names. `title` is a short line for the list ("Choose the radio
+> dongle"), at most 200 characters.
+> 
+> Some(device) when they chose one, none when they cancelled or no
+> person is there to choose (a run with no window and no display).
+> Picking opens the device; `claim` an interface before any transfer.
+
+- `pick(title: string) -> result<option<device>, usb-error>`
+> Claim interface `number` of a picked device, so transfers can use it.
+> One interface a pick: claiming the same one again does nothing, and
+> another one is refused (pick again to reach it).
+
+- `claim(device: device-handle, number: u8) -> result<_, usb-error>`
+> Read from bulk endpoint `endpoint` (an IN address, 0x81 and up) of the
+> claimed interface: wait up to `timeout-ms` (1 to 60000) and answer what
+> arrived. At most `max` bytes (at most 65536), rounded up to whole
+> packets of the endpoint, since USB moves whole packets. Empty when the
+> wait ran out with nothing.
+
+- `bulk-in(device: device-handle, endpoint: u8, max: u32, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> Write `bytes` (at most 65536) to bulk endpoint `endpoint` (an OUT
+> address, 0x01 to 0x0f) of the claimed interface, waiting up to
+> `timeout-ms` (1 to 60000) for the device to take them; past that,
+> `timed-out`.
+
+- `bulk-out(device: device-handle, endpoint: u8, bytes: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> As `bulk-in`, from an interrupt endpoint of the claimed interface.
+
+- `interrupt-in(device: device-handle, endpoint: u8, max: u32, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> As `bulk-out`, to an interrupt endpoint of the claimed interface.
+
+- `interrupt-out(device: device-handle, endpoint: u8, bytes: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> A control request that reads up to `length` bytes (at most 4096) from
+> the claimed interface, one of its endpoints or the device, waiting up
+> to `timeout-ms` (1 to 60000).
+
+- `control-in(device: device-handle, setup: control-setup, length: u16, timeout-ms: u32) -> result<list<u8>, usb-error>`
+> A control request that writes `data` (at most 4096 bytes) to the
+> claimed interface, one of its endpoints or the device, waiting up to
+> `timeout-ms` (1 to 60000).
+
+- `control-out(device: device-handle, setup: control-setup, data: list<u8>, timeout-ms: u32) -> result<_, usb-error>`
+> Release the claimed interface, close the device and give up the pick:
+> the handle is spent, and reaching the device again needs a new pick.
+> Closing an unknown handle does nothing.
+
+- `close(device: device-handle)`
+
+### Types
+
+#### `device-handle` type
+
+> A device the person picked. Numbers are never reused within a run and
+> mean nothing to another run.
+
+`u64`
+
+#### `device` record
+
+> A device the person picked.
+
+> The handle the app uses for this device from now on.
+
+- `handle`: `device-handle`
+> The device's name as it gives it, to show the person: "Crazyradio
+> PA USB dongle", or its ids when it gives none.
+
+- `name`: `string`
+> The vendor id the device reports: one the manifest named.
+
+- `vendor-id`: `u16`
+> The product id the device reports: one the manifest named.
+
+- `product-id`: `u16`
+
+#### `request-type` enum
+
+> What kind of control request it is (bits 5-6 of bmRequestType).
+
+> A request the USB standard defines. Only reading the status
+> (GET_STATUS) and reading a descriptor (GET_DESCRIPTOR) are allowed:
+> the requests that would change the device's address, configuration,
+> interface setting or features are the computer's.
+
+- `standard`
+> A request the interface's class defines.
+
+- `class`
+> A request the device's maker defines.
+
+- `vendor`
+
+#### `recipient` enum
+
+> Who a control request is for (bits 0-4 of bmRequestType): the
+> claimed interface, one of its endpoints, or the whole device for a
+> class or vendor request.
+
+> The claimed interface: the low byte of `index` is its number.
+
+- `interface`
+> An endpoint of the claimed interface: the low byte of `index` is its
+> address.
+
+- `endpoint`
+> The whole device the person picked, for a class or vendor request:
+> a Crazyradio's channel and data rate are set this way. `index` is
+> the request's own. A standard request to the device is refused, except
+> the reads GET_STATUS and GET_DESCRIPTOR. An interface must still be
+> claimed first.
+
+- `device`
+
+#### `control-setup` record
+
+> The setup of a control request. The direction comes from the call:
+> `control-in` reads, `control-out` writes.
+
+> The kind of request.
+
+- `request-type`: `request-type`
+> Who it is for: the claimed interface, one of its endpoints, or the
+> device.
+
+- `recipient`: `recipient`
+> The request number (bRequest).
+
+- `request`: `u8`
+> The request's value (wValue).
+
+- `value`: `u16`
+> The request's index (wIndex). For the interface or an endpoint its
+> low byte names the claimed interface or one of its endpoints, as
+> `recipient` says; for the device it is the request's own.
+
+- `index`: `u16`
+
+#### `usb-error` variant
+
+> Why a call was refused or failed. Each case carries words to show a
+> person, except `unknown-handle` and `not-claimed`, which are the app's
+> own mistakes.
+
+> The app did not declare these ids as `device.usb:<vendor>:<product>`,
+> or the person did not allow it. The words say which and name the
+> capability.
+
+- `not-allowed`: `string`
+> No device the app named is connected, or this place has no USB: a
+> browser tab, a phone.
+
+- `unavailable`: `string`
+> No device has this handle in this run: never picked, or closed.
+
+- `unknown-handle`
+> No interface is claimed on this device yet: `claim` one first.
+
+- `not-claimed`
+> A device or interface the computer's own drivers serve: a keyboard
+> or mouse (any HID interface), storage, audio, video, or a hub. Krate
+> does not hand these to an app even when the manifest names its ids.
+
+- `not-for-apps`: `string`
+> A request Krate does not send, with words: an endpoint that is not
+> the claimed interface's or not of this kind or direction, a control
+> request for another interface, a standard request other than
+> GET_STATUS or GET_DESCRIPTOR, a size or a wait out of range.
+
+- `bad-request`: `string`
+> Another program or the computer's own driver has the device or the
+> interface.
+
+- `busy`: `string`
+> The device went away: unplugged, or switched off.
+
+- `disconnected`: `string`
+> The device refused the transfer (the endpoint stalled).
+
+- `stalled`: `string`
+> A transfer out did not finish within its wait. Some of the bytes may
+> have reached the device.
+
+- `timed-out`: `string`
+> The app already holds 8 devices; close one first.
+
+- `too-many`: `string`
+> The computer refused, with its words. On Linux this is often a
+> device the person's account may not open yet: the words say how to
+> allow it.
+
+- `failed`: `string`
 

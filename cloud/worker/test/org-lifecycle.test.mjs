@@ -12,6 +12,7 @@ import { orgEnv, call, acme, fixture, worker } from "./org-tools.mjs";
 import { directory } from "./zip-tools.mjs";
 import { sha256Hex } from "./r2-mock.mjs";
 import { RateGate } from "../src/index.js";
+import { assertLayout } from "./mail-layout-tools.mjs";
 
 const DAY = 24 * 60 * 60;
 const store = (env, slug = "acme") => env.ORGS.object(slug);
@@ -73,10 +74,13 @@ function fakeGmail(seen) {
   };
 }
 
-const mailText = (mail) => {
-  const [, body] = mail.data.split("\r\n\r\n");
-  return Buffer.from(body.replace(/\r\n\.?/g, ""), "base64").toString("utf8");
+// One part of a multipart/alternative message, decoded; null when absent.
+const mailPart = (mail, type) => {
+  const m = mail.data.match(new RegExp(`Content-Type: text/${type}; charset=UTF-8\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n([A-Za-z0-9+/=\\r\\n]+?)\\r\\n--`));
+  return m ? Buffer.from(m[1].replace(/\r\n/g, ""), "base64").toString("utf8") : null;
 };
+const mailText = (mail) => mailPart(mail, "plain");
+const mailHtml = (mail) => mailPart(mail, "html");
 
 function mailEnv(extra = {}) {
   const seen = { commands: [], mails: [] };
@@ -103,6 +107,12 @@ test("an email invitation is mailed from the founder's Gmail with krate.tech in 
   // The role in the dashboard's own words, the one link, no code to copy.
   for (const want of ["alice invited you to Acme on Krate. There you can build apps and send them.", `Join Acme: ${inv.body.join_url}`, "sign in with this address and press Join", "/download/", "only for erin@corp.example, until"]) {
     assert.ok(text.includes(want), `${want} in\n${text}`);
+  }
+  // The designed copy beside it: the same words, Join as the button.
+  const html = mailHtml(mail);
+  assertLayout(html, inv.body.join_url, "Join Acme");
+  for (const want of ["alice invited you to Acme on Krate. There you can build apps and send them.", "only for erin@corp.example, until"]) {
+    assert.ok(html.includes(want), `${want} in the HTML`);
   }
   // The same request again is the same answer, and no second mail.
   const key = { json: { email: "frank@corp.example", role: "reviewer" }, key: "inv-1" };
@@ -152,6 +162,7 @@ test("without Gmail an invitation goes through Resend from krate.tech, replies t
     assert.deepStrictEqual(mail.to, ["erin@corp.example"]);
     assert.strictEqual(mail.reply_to, "incyashraj@gmail.com");
     assert.ok(mail.text.includes(`Join Acme: ${inv.body.join_url}`), mail.text);
+    assertLayout(mail.html, inv.body.join_url, "Join Acme");
     // A refusal from Resend is the same plain answer, and the invitation stands.
     globalThis.fetch = async () => new Response("domain not verified", { status: 403 });
     const refused = await call(env, "alice", "POST", "/orgs/acme/invites", { json: { email: "frank@corp.example", role: "recipient" } });
@@ -396,6 +407,9 @@ test("a Krate admin restores a lost owner only after 72 hours with no objection,
   assert.deepStrictEqual(r.body.mailed, ["email:ops@acme.example"]);
   assert.deepStrictEqual(r.body.not_mailed, ["github:alice"], "GitHub principals have no address the hub proved");
   assert.match(mailText(seen.mails[0]), /It takes effect on .* unless an owner or admin objects/);
+  assert.ok(mailText(seen.mails[0]).includes("to make new-owner@acme.example an owner of Acme"), "the person as an address, not a principal");
+  assertLayout(mailHtml(seen.mails[0]), "https://krate.tech/org/?o=acme", "Open Acme");
+  assert.ok(mailHtml(seen.mails[0]).includes("checked with the company&#39;s IT lead by phone"), "the reason, escaped");
   // Shown to owners and admins only.
   assert.strictEqual((await call(env, "alice", "GET", "/orgs/acme")).body.org.recovery.id, r.body.recovery.id);
   assert.strictEqual((await call(env, "bob", "GET", "/orgs/acme")).body.org.recovery, null);

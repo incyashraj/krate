@@ -273,6 +273,189 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     std::fs::rename(&staging, path).with_context(|| format!("could not write {}", path.display()))
 }
 
+/* ---- a new key, and the handover -------------------------------------- */
+
+/// What a handover is signed under: never a bundle's, a lease's or a
+/// blocklist's, so no signature over one can pass as another.
+const SUCCESSION_DOMAIN: &str = "krate-maker-succession-v1\n";
+
+fn succession_file() -> PathBuf {
+    keys_dir().join("succession.json")
+}
+
+fn succession_statement(old: &str, new: &str, at: u64) -> Vec<u8> {
+    format!("{SUCCESSION_DOMAIN}{old}\n{new}\n{at}").into_bytes()
+}
+
+/// One handover from an old maker key to its successor, signed by both:
+/// the old key says the new one follows it, the new key says it accepts.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Succession {
+    pub(crate) old: String,
+    pub(crate) new: String,
+    pub(crate) at: u64,
+    pub(crate) old_signature: String,
+    pub(crate) new_signature: String,
+}
+
+impl Succession {
+    /// Both signatures hold over the same statement.
+    fn holds(&self) -> bool {
+        let statement = succession_statement(&self.old, &self.new, self.at);
+        let verify = |public: &str, signature: &str| match (
+            crate::keychain::unhex(public),
+            crate::keychain::unhex(signature),
+        ) {
+            (Some(key), Some(sig)) => {
+                ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key)
+                    .verify(&statement, &sig)
+                    .is_ok()
+            }
+            _ => false,
+        };
+        is_public_hex(&self.old)
+            && is_public_hex(&self.new)
+            && self.old != self.new
+            && verify(&self.old, &self.old_signature)
+            && verify(&self.new, &self.new_signature)
+    }
+}
+
+/// Every handover recorded on this computer whose signatures hold. One that
+/// does not is ignored, never trusted: a hand-edited file moves no data.
+pub(crate) fn successions() -> Vec<Succession> {
+    std::fs::read(succession_file())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<Succession>>(&bytes).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(Succession::holds)
+        .collect()
+}
+
+/// The keys `public` follows, newest first: the chain of handovers that
+/// ends at it, at most sixteen deep, never looping.
+pub(crate) fn predecessors_of(public: &str) -> Vec<String> {
+    let all = successions();
+    let mut chain: Vec<String> = Vec::new();
+    let mut at = public.to_string();
+    while chain.len() < 16 {
+        let Some(step) = all.iter().find(|s| s.new == at) else {
+            break;
+        };
+        if step.old == public || chain.contains(&step.old) {
+            break;
+        }
+        chain.push(step.old.clone());
+        at = step.old.clone();
+    }
+    chain
+}
+
+/// The handovers that lead to `public`, oldest first, as the hub reads them
+/// from a publish's `x-krate-succession` header (compact JSON). Empty when
+/// `public` took over from nothing.
+pub(crate) fn chain_to(public: &str) -> Vec<Succession> {
+    let all = successions();
+    let mut chain = Vec::new();
+    let mut at = public.to_string();
+    while chain.len() < 16 {
+        let Some(step) = all.iter().find(|s| s.new == at).cloned() else {
+            break;
+        };
+        if chain.iter().any(|s: &Succession| s.old == step.old) {
+            break;
+        }
+        at = step.old.clone();
+        chain.push(step);
+    }
+    chain.reverse();
+    chain
+}
+
+/// Retire this computer's maker key for a new one (K-1290): the old key and
+/// the new sign a handover, the old private half is removed (its public
+/// record is kept beside, as `maker.retired-<first 16>.pub`), and the new key
+/// is kept where the old one was. Apps signed with the new key take their
+/// data from the old key's stores the first time they open.
+///
+/// Refuses, changing nothing, when there is no readable key to hand over
+/// from: a key that cannot be read cannot vouch for its successor, and
+/// making one now would only be a first key, not a new one.
+pub(crate) fn rotate(at: u64) -> Result<(String, MakerKey)> {
+    let recorded = public();
+    let old = match recorded {
+        Some(_) => load_or_create()?,
+        None => bail!(
+            "this computer has no maker key yet, so there is nothing to replace. \
+             One is made the first time you make an app."
+        ),
+    };
+    let document = krate_bundle::signing::SigningKey::generate_pkcs8()
+        .map_err(|err| anyhow::anyhow!("could not make a new maker key: {err}"))?;
+    let (key, public) = from_pkcs8(&document)?;
+    let statement = succession_statement(&old.public, &public, at);
+    let handover = Succession {
+        old: old.public.clone(),
+        new: public.clone(),
+        at,
+        old_signature: hex(&old.key.sign_delegation_bytes(&statement)),
+        new_signature: hex(&key.sign_delegation_bytes(&statement)),
+    };
+    if !handover.holds() {
+        bail!("the handover from your old key to the new one did not verify; nothing was changed");
+    }
+    // The handover first: once it is written, the data can follow whatever
+    // happens next, and a handover naming a key that never got kept moves
+    // nothing anyone can sign for.
+    let mut all = std::fs::read(succession_file())
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<Succession>>(&bytes).ok())
+        .unwrap_or_default();
+    all.push(handover);
+    std::fs::create_dir_all(keys_dir())
+        .with_context(|| format!("could not make {}", keys_dir().display()))?;
+    let staging = succession_file().with_extension("json-new");
+    std::fs::write(&staging, serde_json::to_vec_pretty(&all)?)
+        .with_context(|| format!("could not write {}", staging.display()))?;
+    std::fs::rename(&staging, succession_file())
+        .with_context(|| format!("could not write {}", succession_file().display()))?;
+
+    // The old public record kept for the person's own audit.
+    let retired = keys_dir().join(format!("maker.retired-{}.pub", &old.public[..16]));
+    std::fs::copy(public_record(), &retired)
+        .with_context(|| format!("could not keep {}", retired.display()))?;
+
+    // Out with the old private half, in with the new, where the old was.
+    let kept = match old.kept {
+        Kept::Keychain => {
+            crate::keychain::remove(&KEYCHAIN_ITEM)?;
+            if keychain_write(&document).is_ok()
+                && keychain_read().ok().flatten().as_deref() == Some(document.as_slice())
+            {
+                Kept::Keychain
+            } else {
+                write_private(&private_file(), &document)?;
+                Kept::File(private_file())
+            }
+        }
+        Kept::File(path) => {
+            write_private(&path, &document)?;
+            Kept::File(path)
+        }
+    };
+    write_record(&public, &kept)?;
+    Ok((
+        old.public,
+        MakerKey {
+            key,
+            public,
+            kept,
+            new: true,
+        },
+    ))
+}
+
 /* ---- the keychain ------------------------------------------------------- */
 
 const KEYCHAIN_ITEM: crate::keychain::Item = crate::keychain::Item {

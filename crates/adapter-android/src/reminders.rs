@@ -25,7 +25,7 @@ pub(crate) fn prefix_for(app_id: &str) -> String {
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-fn current() -> Option<(String, String)> {
+pub(crate) fn current() -> Option<(String, String)> {
     CURRENT.lock().expect("current app lock").clone()
 }
 

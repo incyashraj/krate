@@ -40,6 +40,7 @@ import { orgLifecycleRoute, sweepOrgs } from "./org-lifecycle.js";
 import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
+import { emailHtml } from "./mail-layout.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
 import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
@@ -51,7 +52,19 @@ import { issueKeyChallenge, answerKeyChallenge } from "./key-challenge.js";
 // Release control and groups (IC-949, R). After org-lease.js: it guards
 // the lease command too.
 import { orgReleaseRoute } from "./org-releases.js";
-import { LINE_ID, advanceLine, currentHash, dropVersion, linesRoute, settleRows, storeTagOf, versionOf } from "./lines.js";
+import {
+  LINE_ID,
+  advanceLine,
+  currentHash,
+  dropVersion,
+  lineFor,
+  linesRoute,
+  publisherRefusal,
+  settleRows,
+  stepBackFrom,
+  storeTagOf,
+  versionOf,
+} from "./lines.js";
 // Staged rollout: a pilot group first, pinned groups (G10).
 import { orgRolloutRoute } from "./org-rollout.js";
 // What an approver sees and must confirm (IC-950); after release control.
@@ -107,6 +120,11 @@ import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./accoun
 // SQLite-backed Durable Object per account; wrangler.toml binds it as
 // SYNC_ACCOUNTS.
 import { accountSyncRoute, SyncAccount } from "./account-sync.js";
+// Krate as a remote MCP server (IC-989): the public gallery, read-only.
+import { mcpRoute, mcpCors, mcpPreflight } from "./mcp.js";
+// ... and its sign-in and builds (IC-989 phase 2).
+import { oauthRoute, bearerOf, connectorsRoute } from "./mcp-oauth.js";
+import { fetchGuide, buildAllowance, noteBuild, compile as compileOnBuilder, jobStatus, jobFile, readRecord, writeRecord } from "./mcp-build.js";
 export { SyncAccount };
 // The organisation store (IC-946), one SQLite-backed Durable Object per
 // organisation; wrangler.toml binds it as ORGS.
@@ -286,6 +304,15 @@ const RATE_LIMITS = {
   // Requests to /scim/v2/ with no token or a wrong one (IC-955). They are
   // never audited, so this is what bounds them.
   "scim/refused": 20,
+  // A compromised-key report reads every line the hub holds.
+  "publisher-keys/compromised": 5,
+  // The MCP endpoint (IC-989): every POST, reads only. A connector's calls
+  // come from its host's addresses, not each person's, so one address can
+  // carry many people: generous, and still a ceiling on the reads.
+  mcp: 120,
+  // Its OAuth doors (IC-989 phase 2): registering, approving and trading a
+  // code or refresh token. A client signs in once and refreshes hourly.
+  oauth: 30,
 };
 
 /// Who is asking, as far as the edge can tell.
@@ -438,6 +465,11 @@ export default {
 
     // The website and the CLI both call this from other origins.
     if (request.method === "OPTIONS") {
+      // An MCP client in a browser sends its own headers (IC-989).
+      if (pathname === "/mcp") return mcpPreflight();
+      if (pathname.startsWith("/oauth/") || pathname.startsWith("/.well-known/oauth-")) {
+        return await oauthRoute(request, url, env, oauthDeps(env));
+      }
       return cors(new Response(null, { status: 204 }));
     }
 
@@ -640,6 +672,31 @@ export default {
         // answer is kept two minutes per query (listBudget).
         return cors(await cachedPublic(env, `/apps${url.search}`, 120, () => list(env, url)));
       }
+      // Krate as a remote MCP server (IC-989, phase 1): the gallery's
+      // search, one app, and the front shelves, read-only, for Claude and
+      // any MCP client. Rate-limited per caller like the anonymous writes.
+      if (pathname === "/mcp") {
+        if (request.method === "POST") {
+          const over = await rateLimited(request, env, "mcp");
+          if (over) return mcpCors(over);
+        }
+        return await mcpRoute(request, mcpDeps(env));
+      }
+      // Its sign-in (IC-989 phase 2): OAuth metadata, registration, the
+      // consent page, codes and tokens (mcp-oauth.js).
+      if (pathname.startsWith("/oauth/") || pathname.startsWith("/.well-known/oauth-")) {
+        const res = await oauthRoute(request, url, env, oauthDeps(env));
+        if (res) return res;
+      }
+      // The connectors a person allowed, and taking one back.
+      {
+        const conn = /^\/me\/connectors(?:\/([0-9a-f]{32}))?$/.exec(pathname);
+        if (conn) {
+          const user = await authedUser(request, env);
+          if (!user) return cors(text("Sign in first.", 401));
+          return cors(await connectorsRoute(request, env, user, conn[1] || null));
+        }
+      }
       if (request.method === "GET" && pathname.startsWith("/meta/")) {
         // One app's public face, by hash or short alias -- name, size,
         // shot. This is what the receive page personalizes from, and it
@@ -739,6 +796,12 @@ export default {
       }
       if (request.method === "POST" && pathname === "/keys") {
         return cors(await putKey(request, env));
+      }
+      // A publisher reporting their own signing key compromised (IC-669).
+      if (request.method === "POST" && pathname === "/publisher-keys/compromised") {
+        const over = await rateLimited(request, env, "publisher-keys/compromised");
+        if (over) return cors(over);
+        return cors(await reportCompromisedKey(request, env));
       }
       if (request.method === "POST" && pathname === "/keys/forget") {
         return cors(await forgetKey(request, env));
@@ -874,6 +937,17 @@ export default {
       }
       if (request.method === "GET" && pathname.startsWith("/player/")) {
         return await playerAsset(request, url, env);
+      }
+      // The hub's own icon. Claude's connector directory and its chat show
+      // the favicon of the MCP server's address (hub.krate.tech), and a 404
+      // here listed Krate with a blank square.
+      if ((request.method === "GET" || request.method === "HEAD") && pathname === "/favicon.ico") {
+        const icon = await playerAsset(request, new URL("/player/krate-favicon.png", url), env);
+        if (!icon.ok) return icon;
+        const headers = new Headers(icon.headers);
+        headers.set("content-type", "image/png");
+        headers.set("cache-control", "public, max-age=86400");
+        return new Response(request.method === "HEAD" ? null : icon.body, { status: 200, headers });
       }
       if (request.method === "GET" && /^\/a\/[0-9a-f]{64}\/web$/.test(pathname)) {
         const hash = pathname.slice(3, 67);
@@ -1164,6 +1238,9 @@ function listingFields(request) {
     name: textHeader(request, "x-krate-name") || "",
     description: textHeader(request, "x-krate-description") || "",
     category: shelfOf(header(request, "x-krate-category")),
+    // A maker key's handover from the key before it, signed by both
+    // (K-1290): read by the publisher check, trusted only if it verifies.
+    succession: (header(request, "x-krate-succession") || "").slice(0, 16_384),
   };
 }
 
@@ -1194,8 +1271,15 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
       422,
     );
   }
+  // The validator's plain words for each one, the words the consent sheet
+  // shows, kept with the listing so a page or a connector can say what an
+  // app may do without a table of its own (IC-989).
+  const capWords = new Map(
+    (Array.isArray(judgement.capabilities) ? judgement.capabilities : []).map((c) => [c.cap, c.words]),
+  );
   const manifestCapabilities = judgement.manifest.capabilities.map((c) => ({
     cap: c.cap,
+    ...(typeof capWords.get(c.cap) === "string" && capWords.get(c.cap) ? { words: capWords.get(c.cap).slice(0, 200) } : {}),
     rationale: c.rationale || "",
     required: Boolean(c.required),
   }));
@@ -1232,6 +1316,40 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
         "these exact bytes are already published; the existing listing " +
         "and its author stand",
     });
+  }
+
+  // An update keeps the app's publisher (K-1286): the data people hold is
+  // under the current version's signing key. Asked before anything is
+  // written, so a refused update leaves nothing behind.
+  const signedBy = (judgement.release && judgement.release.authority) || null;
+  // A key its publisher reported compromised signs nothing more here
+  // (IC-669), whoever sends it.
+  if (signedBy) {
+    let reported = null;
+    try {
+      reported = JSON.parse((await env.APPS.get(`compromised:${signedBy}`)) || "null");
+    } catch (_) {
+      reported = null;
+    }
+    if (reported) {
+      return text(
+        `this app is signed by a publisher key reported compromised on ` +
+          `${new Date(reported.at * 1000).toISOString().slice(0, 10)}, so it is not published. ` +
+          "Sign it with a new key and publish it again.",
+        409,
+      );
+    }
+  }
+  const appIdForLine = judgement.manifest && judgement.manifest.app && judgement.manifest.app.id;
+  if (!fields.quiet && appIdForLine) {
+    let refusal = null;
+    try {
+      const { line: existing } = await lineFor(env, owner, appIdForLine);
+      refusal = await publisherRefusal(env, existing, signedBy, fields.succession || "");
+    } catch (_) {
+      refusal = null; // a quota day: the line is skipped below as well
+    }
+    if (refusal) return text(refusal, 409);
   }
 
   // Who published it, written BEFORE the bytes become public (IC-833,
@@ -1303,7 +1421,12 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     // channel can show it (IC-389 tests 468 and 476): the identities, the
     // signature's state and key, the signed release when there is one,
     // the fork record, and which validator said so.
+    // Two numbers over the same bytes, each under its own name (K-1284):
+    // sha256 is the plain hash the store and every URL key on; archive is
+    // the schema-tagged identity `krate run --json`, `krate inspect` and a
+    // fork's derived-from record carry.
     identity: {
+      sha256: judgement.sha256,
       archive: judgement.archive,
       execution: judgement.execution,
       project: judgement.project,
@@ -1333,6 +1456,10 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
         hash,
         version: manifestApp.version,
         size,
+        authority: signedBy,
+        content: judgement.release
+          ? `release:${judgement.release.id}`
+          : `content:${judgement.execution}:${judgement.project || ""}`,
       });
     } catch (_) {
       line = null;
@@ -1340,6 +1467,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     if (line) {
       meta.line = line.id;
       meta.version_n = line.n;
+      // Another file of a version the app already has (K-1285): it opens at
+      // its own address, and the app's row and link stay the original's.
+      if (!line.added && line.hash && line.hash !== hash) meta.superseded = true;
       // An update of an app in the gallery stays in the gallery, however it
       // was published: Studio's Link pane publishes unlisted, and sharing v3
       // by link must not take a public app off the shelf (IC-976).
@@ -1443,6 +1573,9 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     ...(line ? { line: line.id, version: line.n, updated: line.n > 1 } : {}),
     // The receipt: what the store holds, read back, not what was sent.
     stored: { size: stored.size, sha256: stored.sha256 },
+    // The archive identity the validator took from the bytes it judged,
+    // echoed so `krate publish` can match it to the file it sent (IC-212).
+    archive: judgement.archive,
   };
   // The moving name: this author's latest listed publish under this name
   // (IC-389, test 470). Only a listed publish moves it -- an unlisted one
@@ -1450,9 +1583,21 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // because the key is their login and the login came from their session.
   // A moving name lives under a developer namespace, which only a
   // GitHub-vouched owner has (K-1085): `/c/bob/notes` is github:bob's.
+  //
+  // One moving link per app (K-1287): an app with a line already has its
+  // own link (`url`), so the name only records which line it stands for
+  // and resolves through it -- a rename, a rollback and an unpublish all
+  // follow the line -- and is not offered as a second link.
   if (listed && !meta.unlisted && vouched) {
-    const channel = await moveChannel(env, identity.login, meta.name, hash, meta.release ? meta.release.id : null);
-    if (channel) {
+    const channel = await moveChannel(
+      env,
+      identity.login,
+      meta.name,
+      hash,
+      meta.release ? meta.release.id : null,
+      line ? line.id : null,
+    );
+    if (channel && !line) {
       result.channel = `${base}/c/${channel.login}/${channel.slug}`;
     }
   }
@@ -1723,7 +1868,7 @@ async function readChannel(env, login, slug) {
 }
 
 /// Point `login`'s channel for `name` at `hash`, recording the move.
-async function moveChannel(env, login, name, hash, releaseId = null) {
+async function moveChannel(env, login, name, hash, releaseId = null, lineId = null) {
   const slug = slugOf(name);
   if (!slug || !login) return null;
   const now = Math.floor(Date.now() / 1000);
@@ -1735,7 +1880,7 @@ async function moveChannel(env, login, name, hash, releaseId = null) {
     moved_at: null,
     history: [],
   };
-  if (existing.current === hash) {
+  if (existing.current === hash && (existing.line || null) === lineId) {
     return existing; // republishing the same bytes moves nothing
   }
   const move = { hash, at: now, previous: existing.current, release: releaseId };
@@ -1746,6 +1891,8 @@ async function moveChannel(env, login, name, hash, releaseId = null) {
     current: hash,
     moved_at: now,
     history: [...existing.history, move].slice(-CHANNEL_HISTORY),
+    // The app this name stands for (K-1287): resolved through its line.
+    ...(lineId ? { line: lineId } : existing.line ? { line: existing.line } : {}),
   };
   try {
     await env.APPS.put(channelKey(login, slug), JSON.stringify(channel));
@@ -1818,6 +1965,24 @@ async function resolveChannel(request, url, rest, env) {
     return text("not found", 404);
   }
   const stored = await readChannel(env, login, slug);
+  // A name that stands for an app opens what the app's line opens now
+  // (K-1287); one recorded before names knew their line finds it from the
+  // row of the build it points at.
+  if (stored && stored.current) {
+    let lineId = stored.line || null;
+    if (!lineId) {
+      try {
+        lineId = (JSON.parse((await env.APPS.get(`app:${stored.current}`)) || "null") || {}).line || null;
+      } catch (_) {
+        lineId = null;
+      }
+    }
+    const now = lineId ? await currentHash(env, lineId) : null;
+    if (now && (await namable(env, stored.login, now))) {
+      stored.current = now;
+      stored.line = lineId;
+    }
+  }
   const channel = stored && stored.current ? await settleChannel(env, stored, "gone") : null;
   if (!channel) return text("not found", 404);
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
@@ -1837,6 +2002,8 @@ async function resolveChannel(request, url, rest, env) {
     slug: channel.slug,
     current: channel.current,
     url: `${base}/a/${channel.current}`,
+    // The app's own link, when the name stands for an app (K-1287).
+    ...(channel.line ? { app_url: `${base}/a/${channel.line}` } : {}),
     moved_at: channel.moved_at,
     blocked: Boolean(takedown),
     history: channel.history,
@@ -1930,7 +2097,114 @@ async function takedownPut(request, hash, env) {
     await env.BUNDLES.delete(`shot:${hash}`);
     await env.BUNDLES.delete(`icon:${hash}`);
   }
+  // A blocked update is recoverable (IC-669, 1311): when it is the version
+  // an app's link opens, the link goes back to the newest earlier version
+  // that is not blocked, and the takedown records the move. Only the owner
+  // chooses a version current again after a restore.
+  let stepped = null;
+  try {
+    stepped = await stepBackFrom(env, hash);
+  } catch (_) {
+    stepped = null; // a quota day: the link answers 451 until the owner picks a version
+  }
+  if (stepped) {
+    record.stepped_back = stepped;
+    await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  }
   return json({ ok: true, takedown: record });
+}
+
+/// POST /publisher-keys/compromised {key, since?, reason?} (IC-669: publisher
+/// compromise). The account that published apps signed by `key` -- the
+/// publisher root, as `krate identity` shows it -- says it is no longer
+/// theirs alone. Every version of that account's apps signed by it that
+/// reached the hub at or after `since` (unix seconds; the hub's own arrival
+/// time, which a thief cannot backdate the way a signature's time can be)
+/// is taken down as an emergency, each app's link steps back to its newest
+/// safe version, and the hub refuses anything signed by the key from then
+/// on. The takedowns join the signed blocklist installed copies honour
+/// offline. Only that account's own apps are touched, so a stolen account
+/// can do no more with this than block its own apps, which an admin can
+/// restore. A line created in the last ~30 s may be missed: KV's listing
+/// lags its writes.
+async function reportCompromisedKey(request, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first: krate login", 401);
+  const owner = ownerOf(identity);
+  const body = await readJson(request);
+  const key = String((body && body.key) || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(key)) {
+    return text("name the key by its public key, 64 hex characters -- `krate identity` shows yours", 400);
+  }
+  const since = Number.isFinite(Number(body.since)) ? Math.max(0, Math.floor(Number(body.since))) : 0;
+  const reason = String(body.reason || "").trim().slice(0, 500) || "its publisher reported the signing key compromised";
+  const now = Math.floor(Date.now() / 1000);
+
+  // This account's versions signed by the key.
+  const hits = [];
+  let signedAny = false;
+  for (const name of await listAllKeys(env.APPS, "line:")) {
+    let line;
+    try {
+      line = JSON.parse((await env.APPS.get(name)) || "null");
+    } catch (_) {
+      line = null;
+    }
+    if (!line || line.owner !== owner) continue;
+    for (const v of line.versions || []) {
+      let authority = "authority" in v ? v.authority : null;
+      if (!("authority" in v)) {
+        try {
+          const row = JSON.parse((await env.APPS.get(`app:${v.hash}`)) || "null");
+          authority = (row && row.release && row.release.authority) || null;
+        } catch (_) {
+          authority = null;
+        }
+      }
+      if (authority !== key) continue;
+      signedAny = true;
+      if ((v.at || 0) >= since) hits.push(v.hash);
+    }
+  }
+  if (!signedAny) {
+    return text("none of your apps on this hub is signed by that key, so it is not yours to report", 403);
+  }
+  await env.APPS.put(
+    `compromised:${key}`,
+    JSON.stringify({ key, since, owner, by: identity.login, at: now, reason }),
+  );
+
+  const blocked = [];
+  for (const hash of hits) {
+    if (await env.APPS.get(`takedown:${hash}`)) continue;
+    await env.APPS.put(
+      `takedown:${hash}`,
+      JSON.stringify({
+        hash,
+        reason: `signed by a publisher key reported compromised (${key.slice(0, 16)}...): ${reason}`,
+        scope: "listing",
+        emergency: true,
+        notice: "",
+        by: `publisher:${identity.login}`,
+        at: now,
+        appeal: { state: "none" },
+        compromise: { key, since },
+      }),
+    );
+    blocked.push(hash);
+  }
+  // Every block first, so a step back never lands on a version blocked
+  // a moment later.
+  const moved = [];
+  for (const hash of blocked) {
+    const stepped = await stepBackFrom(env, hash);
+    if (!stepped) continue;
+    moved.push(stepped);
+    const record = JSON.parse(await env.APPS.get(`takedown:${hash}`));
+    record.stepped_back = stepped;
+    await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  }
+  return json({ ok: true, key, since, blocked, moved });
 }
 
 /// Every open takedown, for clients to hold and honour offline (IC-669,
@@ -2024,10 +2298,15 @@ async function takedownRestore(request, hash, env) {
   await env.APPS.put(`takedown-closed:${hash}`, JSON.stringify(record));
   await env.APPS.delete(`takedown:${hash}`);
   const bytes = await env.BUNDLES.head(hash);
+  const stepped = record.stepped_back && record.stepped_back.to ? record.stepped_back : null;
   return json({
     ok: true,
     restored: Boolean(bytes),
-    note: bytes ? "the listing is back as it was" : "the bytes were removed with the takedown; the author must publish again",
+    note: !bytes
+      ? "the bytes were removed with the takedown; the author must publish again"
+      : stepped
+        ? `the listing is back; the app's link stays on version ${stepped.to}, where the takedown moved it, until its publisher makes version ${stepped.from} current again`
+        : "the listing is back as it was",
   });
 }
 
@@ -2150,8 +2429,11 @@ async function fetchBundle(request, url, hash, env) {
   // A short link is the hash's own prefix; resolve it to the full content
   // address first. The strict hex checks stay -- they are the guard that
   // closes off every path-traversal shape at once.
-  // The app's own link: whichever version is current now (IC-976).
-  if (LINE_ID.test(hash)) {
+  // The app's own link: whichever version is current now (IC-976). It
+  // moves when the owner publishes, so its bytes are never cached as the
+  // address's forever (IC-389).
+  const moving = LINE_ID.test(hash);
+  if (moving) {
     const now = await currentHash(env, hash);
     if (!now) return text("not found", 404);
     hash = now;
@@ -2303,10 +2585,18 @@ async function fetchBundle(request, url, hash, env) {
 
   const headers = {
     "content-type": "application/octet-stream",
-    // Content-addressed, so a bundle at a given URL can never change and
-    // may be cached forever. Vary, because the same URL serves a phone a
+    // A content address can never change, so its bytes may be cached
+    // forever. The app's own link moves with each publish: it was sent the
+    // same year-long immutable header and a browser or proxy that fetched
+    // it kept the old build after an update (IC-389). It is asked again on
+    // every use, and the ETag (the exact file's SHA-256) makes that ask a
+    // 304 when nothing moved. Vary, because the same URL serves a phone a
     // landing page instead.
-    "cache-control": "public, max-age=31536000, immutable",
+    "cache-control": moving ? "no-cache" : "public, max-age=31536000, immutable",
+    etag: `"${hash}"`,
+    // The exact file served, so a client that fetched a moving link can
+    // check the bytes against the address they are really at.
+    "x-krate-sha256": hash,
     vary: "accept, user-agent",
     "content-disposition": `attachment; filename="${filename}"`,
     // The size up front, so a download can show its progress; and the
@@ -2315,6 +2605,12 @@ async function fetchBundle(request, url, hash, env) {
     ...(big ? { "x-krate-tier": "big" } : {}),
     ...(storeTag ? { "x-krate-store": storeTag } : {}),
   };
+  const asked = request.headers.get("if-none-match") || "";
+  if (asked.split(",").some((tag) => tag.trim().replace(/^W\//, "") === `"${hash}"`)) {
+    await dropBody(object);
+    const { "content-length": _, ...same } = headers;
+    return new Response(null, { status: 304, headers: same });
+  }
   if (request.method === "HEAD") {
     // The size is the one thing a HEAD is usually asked for, and the
     // object knows it without the body being read.
@@ -2415,29 +2711,75 @@ async function makeit(request, env) {
   return json({ ok: true });
 }
 
-async function meta(hash, env) {
+/// One app's listing by the app's own link, a short alias or its hash:
+/// `{ hash, row }`, `{ hash, takedown }` (the raw takedown record) for a
+/// removed app, or null. What /meta/ and the MCP endpoint's get_app share.
+async function findListing(ref, env) {
+  let hash = String(ref || "");
   // The app's own link: whichever version is current now (IC-976).
   if (LINE_ID.test(hash)) {
     const now = await currentHash(env, hash);
-    if (!now) return text("not found", 404);
+    if (!now) return null;
     hash = now;
   }
   if (/^[0-9a-f]{8,32}$/.test(hash)) {
     const full = await env.APPS.get(`alias:${hash}`);
-    if (!full) return text("not found", 404);
+    if (!full) return null;
     hash = full;
   }
-  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return null;
   const takedown = await env.APPS.get(`takedown:${hash}`);
-  if (takedown) return takedownResponse(takedown, env);
+  if (takedown) return { hash, takedown };
   const raw = await env.APPS.get(`app:${hash}`);
-  if (!raw) return text("not found", 404);
-  let m = {};
+  if (!raw) return null;
   try {
-    m = JSON.parse(raw);
+    const row = JSON.parse(raw);
+    return row && typeof row === "object" ? { hash, row } : null;
   } catch (_) {
-    return text("not found", 404);
+    return null;
   }
+}
+
+/// What the MCP endpoint reads the gallery through (IC-989): the same
+/// ranked list /apps answers, from the same two-minute cache, and the same
+/// lookup /meta/ makes. The owner principal never leaves: list() strips it
+/// and mcp.js names only the fields it shows.
+function mcpDeps(env) {
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  return {
+    base,
+    async gallery(params) {
+      const search = String(params) ? `?${params}` : "";
+      const res = await cachedPublic(env, `/apps${search}`, 120, () => list(env, new URL(`${base || "https://hub.invalid"}/apps${search}`)));
+      return res.status === 200 ? await res.json() : null;
+    },
+    async findApp(ref) {
+      const found = await findListing(ref, env);
+      if (found && found.row && !found.row.unlisted) {
+        found.shot = (await env.BUNDLES.head(`shot:${found.hash}`)) ? `${base}/shot/${found.hash}` : null;
+      }
+      return found;
+    },
+    versionInfo: (hash) => versionInfo(env, hash, base),
+    // Phase 2 (IC-989): who is signed in, the guide, and building.
+    authenticate: (request) => bearerOf(request, env, base),
+    guide: () => fetchGuide(env),
+    buildAllowance: (owner) => buildAllowance(env, owner),
+    noteBuild: (owner, held) => noteBuild(env, owner, held),
+    compile: (owner, name, files) => compileOnBuilder(env, owner, name, files),
+    jobStatus: (owner, id) => jobStatus(env, owner, id),
+    jobFile: (owner, id) => jobFile(env, owner, id),
+    readRecord: (id) => readRecord(env, id),
+    writeRecord: (id, record) => writeRecord(env, id, record),
+    publishBuilt: (who, bytes, name) => publishBuilt(env, who, bytes, name),
+  };
+}
+
+async function meta(ref, env) {
+  const found = await findListing(ref, env);
+  if (!found) return text("not found", 404);
+  if (found.takedown) return takedownResponse(found.takedown, env);
+  const { hash, row: m } = found;
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const shot = await env.BUNDLES.head(`shot:${hash}`);
   return json({
@@ -2481,6 +2823,35 @@ async function versionInfo(env, hash, base) {
 ///
 /// `?q=` searches and returns matches instead of shelves. `?cat=` returns one
 /// category. Both are capped, so no response is ever a thousand rows.
+/// How well an app's listing answers a search, or null when some word is
+/// nowhere in it (IC-669, 1315). A word that is the name, or a whole word of
+/// it, counts most; a part of the name less; the description and the author
+/// least. The whole query inside the name adds to it.
+function searchRelevance(meta, q, words) {
+  const name = String(meta.name || "").toLowerCase();
+  const description = String(meta.description || "").toLowerCase();
+  const author = String(meta.author || "").toLowerCase();
+  const nameWords = name.split(/[^a-z0-9]+/).filter(Boolean);
+  const matched = new Set();
+  let score = 0;
+  for (const w of words) {
+    let inName = 0;
+    if (name === w) inName = 8;
+    else if (nameWords.includes(w)) inName = 6;
+    else if (nameWords.some((t) => t.startsWith(w))) inName = 4;
+    else if (name.includes(w)) inName = 3;
+    const inDescription = description.includes(w) ? 1 : 0;
+    const inAuthor = author.includes(w) ? 1 : 0;
+    if (!inName && !inDescription && !inAuthor) return null;
+    if (inName) matched.add("name");
+    if (inDescription) matched.add("description");
+    if (inAuthor) matched.add("author");
+    score += inName + inDescription + inAuthor;
+  }
+  if (words.length > 1 && name.includes(q)) score += 4;
+  return { score, matched: [...matched] };
+}
+
 async function list(env, url) {
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const q = (url?.searchParams.get("q") || "").trim().toLowerCase().slice(0, 64);
@@ -2516,12 +2887,19 @@ async function list(env, url) {
 
   // Search and category filtering happen HERE, before any R2 work, so a
   // search for one app does not cost a thousand head requests.
+  //
+  // Ranked by relevance (IC-669, test 1315): every word must match; a word
+  // in the name counts for more than one in the description or the author.
+  // Relevance alone orders the results -- a verified publisher is shown on
+  // each row, never used to lift it, and nothing is paid for: Krate sells no
+  // placement. This used to be a substring of the whole query, newest first.
+  const relevanceOf = new Map();
   if (q) {
+    const words = q.split(/\s+/).filter(Boolean).slice(0, 8);
     apps = apps.filter((a) => {
-      const m = a.meta;
-      return `${m.name || ""} ${m.description || ""} ${m.author || ""}`
-        .toLowerCase()
-        .includes(q);
+      const r = searchRelevance(a.meta, q, words);
+      if (r) relevanceOf.set(a.id, r);
+      return Boolean(r);
     });
   }
   if (cat) apps = apps.filter((a) => (a.meta.category || "apps") === cat);
@@ -2541,8 +2919,25 @@ async function list(env, url) {
 
   let payload;
   if (q || cat) {
-    // A query wants results, not shelves.
-    payload = { query: q || null, category: cat || null, results: take(byNew, 60) };
+    // A query wants results, not shelves: the most relevant first, then the
+    // most opened, then the newest. A category alone is newest first.
+    const ranked = q
+      ? [...apps].sort(
+          (a, b) => relevanceOf.get(b.id).score - relevanceOf.get(a.id).score
+            || (opens.get(b.id) || 0) - (opens.get(a.id) || 0)
+            || (b.meta.published || 0) - (a.meta.published || 0),
+        )
+      : byNew;
+    payload = {
+      query: q || null,
+      category: cat || null,
+      results: take(ranked, 60),
+      ranking: {
+        order: q ? "relevance to the words searched, then opens, then newest" : "newest first",
+        verified_identity: "shown on every result; it never moves an app up",
+        paid_placement: "none: Krate sells no placement",
+      },
+    };
   } else {
     const cats = {};
     for (const a of apps) {
@@ -2616,6 +3011,13 @@ async function list(env, url) {
       url: a.meta.line ? `${base}/a/${a.meta.line}` : `${base}/a/${id}`,
       ...images.get(id),
       opens: opens.get(id) || 0,
+      // Who stands behind it, as facts apart from any ranking (1315): a
+      // publisher GitHub vouched for, and a signature that verified.
+      identity_checks: {
+        verified_publisher: Boolean(a.meta.author_url),
+        signed: Boolean(a.meta.signature && a.meta.signature.state === "valid"),
+      },
+      ...(relevanceOf.has(id) ? { matched: relevanceOf.get(id).matched } : {}),
       // The owner principal is for the hub's checks, not the gallery: an
       // account owner is a random account id that is nobody's business.
       meta: (({ owner, ...rest }) => rest)(a.meta),
@@ -3348,11 +3750,31 @@ function founderInboxes(env) {
 }
 
 /// The moment an account is made: who, how, when, and the welcome ready
-/// to send. Plain text so it reads at a glance on a phone.
+/// to send. Short lines so it reads at a glance on a phone, in the text
+/// and in the designed copy (mail-layout.js).
 ///
 /// ESSENTIAL (to the founder only, never a user): no unsubscribe switch.
 async function notifyFounderOfSignup(env, user) {
   if (!env.RESEND_API_KEY) return;
+  const mail = founderSignupMail(user);
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Krate <hello@krate.tech>",
+      to: founderInboxes(env),
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    }),
+  });
+}
+
+/// "New on Krate: <who>": subject, text and HTML.
+function founderSignupMail(user) {
   const who = user.name || user.login || user.email || "Someone";
   const how = (user.providers || []).join(", ") || "unknown";
   const at = new Date(user.created || Date.now()).toLocaleString("en-GB", {
@@ -3369,23 +3791,35 @@ async function notifyFounderOfSignup(env, user) {
     `When:   ${at} Singapore time`,
     "",
   ];
-  if (user.email) {
-    lines.push("Write them the welcome (opens Gmail, ready to send):", welcomeComposeUrl(user), "");
+  const compose = user.email ? welcomeComposeUrl(user) : null;
+  if (compose) {
+    lines.push("Write them the welcome (opens Gmail, ready to send):", compose, "");
   }
-  lines.push("Everyone, welcomed or not: https://hub.krate.tech/admin#welcome");
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      from: "Krate <hello@krate.tech>",
-      to: founderInboxes(env),
-      subject: `New on Krate: ${who}`,
-      text: lines.join("\n"),
-    }),
+  const desk = "https://hub.krate.tech/admin#welcome";
+  lines.push(`Everyone, welcomed or not: ${desk}`);
+  const subject = `New on Krate: ${who}`;
+  const html = emailHtml({
+    title: subject,
+    preheader: `Signed in with ${how}, ${at} Singapore time.`,
+    heading: `${who} just made a Krate account`,
+    blocks: [
+      {
+        rows: [
+          ["Name", user.name || "(none given)"],
+          ["Email", user.email || "(none)"],
+          ["Signed in with", how],
+          ["When", `${at} Singapore time`],
+        ],
+      },
+      ...(compose ? ["Write them the welcome. It opens Gmail, ready to send."] : []),
+    ],
+    // The compose link is a page of encoded text: on the button only (the
+    // text part spells it out).
+    button: compose ? { label: "Write the welcome", url: compose, written: false } : { label: "Open the desk", url: desk },
+    after: compose ? [`Everyone, welcomed or not: ${desk}`] : [],
+    footer: ["Sent to the founder only, when someone makes an account."],
   });
+  return { subject, text: lines.join("\n"), html };
 }
 
 /// Send one welcome; null when it went, else why not.
@@ -3539,8 +3973,9 @@ async function smtpSend(connect, msg) {
   }
 }
 
-// For scripts/send-welcome-test.mjs: the exact note, sent by hand.
-export { welcomeText, sendWelcome };
+// For scripts/send-welcome-test.mjs: the exact note, sent by hand. The two
+// designed mails built here, for the tests and the design previews.
+export { welcomeText, sendWelcome, signInEmailHtml, founderSignupMail };
 
 // ------------------------------------------------------ the KV list budget
 //
@@ -3692,7 +4127,10 @@ function signInStart(from, nonce, appNonce) {
   // `player:org/<slug>/<app-id>`: the same for an organisation's app as it
   // is now (the address a phone keeps on its home screen).
   const player = /^player:(?:[0-9a-f]{64}|org\/[a-z][a-z0-9-]{1,38}\/[a-z0-9][a-z0-9._-]{0,127})$/.test(from || "") ? from : null;
-  return { from: from === "app" ? "app" : player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
+  // `oauth`: a connector's consent page on this hub (IC-989), which takes
+  // the session only with its own nonce, as /login/done does.
+  const fixed = from === "app" || from === "oauth" ? from : null;
+  return { from: fixed || player || "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
 }
 
 /// What the company sign-in routes (org-sso.js) borrow from here: the same
@@ -3732,6 +4170,13 @@ function deliver(start, user, token) {
     return new Response(null, {
       status: 302,
       headers: { location: `/run/${start.from.slice("player:".length)}#${hand.toString()}`, "cache-control": "no-store" },
+    });
+  }
+  // A connector's consent page (IC-989): a fixed path on this hub.
+  if (start.from === "oauth") {
+    return new Response(null, {
+      status: 302,
+      headers: { location: `/oauth/authorize/done#${hand.toString()}`, "cache-control": "no-store" },
     });
   }
   const suffix = start.from === "app" ? "?app=1" : "";
@@ -3811,168 +4256,25 @@ async function googleCallback(url, env, request) {
 /// somebody signing in by email it is the FIRST thing Krate ever shows them,
 /// before the app, before the site.
 ///
-/// A terminal, because that is what Krate is: the site's own hero is a
-/// terminal window, and the people receiving this are developers. The
-/// palette is lifted from docs/landing/site.css rather than invented --
-/// --bg #0a0a0a, --panel #0f1012, --line #1f2228, --good #4ade80,
-/// --accent #6291ff, --warn #f4dc74, and the same traffic-light dots.
-///
-/// Written for mail clients, not browsers, which is why it looks like 2005:
-/// nested tables for layout, every style inline, no flexbox, no grid, no
-/// external stylesheet. Gmail strips <style> blocks, Outlook renders through
-/// Word, and anything clever silently collapses.
-///
-/// Dark mail has one extra trap on top of that: a client that forces its own
-/// light theme will repaint backgrounds and leave the text colours alone. So
-/// nothing here depends on the dark background for legibility -- every text
-/// colour is readable on white too, and the button's label is white on a
-/// solid cell that carries `bgcolor` as well as a CSS background, which is
-/// what survives Outlook.
+/// The look is the site's own, shared by every system email
+/// (mail-layout.js): the header's mark, a white card, a black pill button,
+/// dark mode from the site's dark tokens. It replaced a dark terminal
+/// window, which matched the site before its light redesign.
 ///
 /// Three things it must do even when images are blocked, which is the
-/// default in most clients:
-///   - the button still reads as a button (colour on the anchor itself),
+/// default in most clients -- the layout guarantees each:
+///   - the button still reads as a button (colour on the cell and anchor),
 ///   - the full URL is visible as text, so it can be copied,
 ///   - the logo has alt text that says the product's name.
 function signInEmailHtml(link) {
-  const BG = "#0a0a0a";
-  const PANEL = "#0f1012";
-  const LINE = "#1f2228";
-  const GOOD = "#4ade80";
-  const ACCENT = "#6291ff";
-  const WARN = "#f4dc74";
-  const DIM = "#8b8f98";
-  const TEXT = "#e8eaed";
-  const MONO =
-    "SFMono-Regular,'Cascadia Code',Menlo,Consolas,'Liberation Mono',monospace";
-  // Absolute: a mail client has no origin to resolve against.
-  const LOGO = "https://krate.tech/krate-logo.png";
-  const esc = (s) =>
-    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const href = esc(link);
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark light">
-<title>Sign in to Krate</title>
-</head>
-<body style="margin:0;padding:0;background:${BG};">
-<!-- Preheader: the grey line a client shows beside the subject. Hidden in
-     the body, or it prints twice. -->
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">krate account login &mdash; your link is good for 15 minutes.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
-<tr><td align="center" style="padding:32px 16px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
-
-    <!-- Wordmark above the window, so the sender is clear before anything
-         else renders. -->
-    <tr><td style="padding:0 4px 14px 4px;">
-      <img src="${LOGO}" width="26" height="26" alt="Krate"
-           style="display:inline-block;vertical-align:middle;border:0;">
-      <span style="display:inline-block;vertical-align:middle;padding-left:9px;font:600 16px/1 ${MONO};color:${TEXT};">krate</span>
-    </td></tr>
-
-    <tr><td style="background:${PANEL};border:1px solid ${LINE};border-radius:12px;">
-
-      <!-- Title bar: the same three dots as the site's terminal. -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="padding:11px 14px;border-bottom:1px solid ${LINE};">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <!-- The dots are CELLS, not spans.
-                 As spans they came out as elongated ovals on Gmail mobile:
-                 the &nbsp; inside inherits the body's 1.75 line-height, and
-                 a mobile client ignores width/height on an inline-block, so
-                 the box grew taller than it was wide. A td with width,
-                 height and line-height:0 is the shape email clients
-                 actually honour. Photographed on a phone before and after.
-
-                 The hexes are the real macOS traffic lights and were never
-                 wrong -- #FF5F57, #FEBC2E, #28C840. They read as dull in a
-                 dark-mode client because it repaints around them, which is
-                 why bgcolor is set as well as the CSS background: the
-                 attribute is what survives that. -->
-            <td width="12" height="12" bgcolor="#FF5F57" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FF5F57;">&#8203;</td>
-            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
-            <td width="12" height="12" bgcolor="#FEBC2E" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FEBC2E;">&#8203;</td>
-            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
-            <td width="12" height="12" bgcolor="#28C840" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#28C840;">&#8203;</td>
-            <td style="padding-left:14px;font:400 11.5px/1 ${MONO};color:${DIM};">krate &mdash; login</td>
-          </tr></table>
-        </td></tr>
-      </table>
-
-      <!-- Body: a session, read top to bottom. -->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr><td style="padding:20px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${TEXT};">
-          <span style="color:${GOOD};">$</span> <span style="color:${TEXT};">krate account login</span>
-        </td></tr>
-
-        <tr><td style="padding:6px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${DIM};">
-          <span style="color:${GOOD};">&#10003;</span> request received<br>
-          <span style="color:${GOOD};">&#10003;</span> link signed, valid for <span style="color:${WARN};">15 minutes</span><br>
-          <span style="color:${DIM};">&#8230;</span> waiting for you to confirm
-        </td></tr>
-
-        <!-- The button. bgcolor AND a CSS background: Outlook honours the
-             attribute, everything else the style. -->
-        <tr><td style="padding:22px 18px 0 18px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td align="center" bgcolor="${ACCENT}" style="border-radius:8px;">
-              <!-- A DARK label on the blue, and a border in the same blue.
-                   Email clients that force a light theme repaint backgrounds
-                   and leave text colours alone, so no single label colour is
-                   safe on its own: white vanished when the cell was
-                   repainted white, and dark-on-dark would vanish the other
-                   way. Dark ink reads on the blue AND on a repainted light
-                   cell, and the border keeps the shape either way. Checked
-                   by rendering with every background forced to #ffffff. -->
-              <a href="${href}"
-                 style="display:inline-block;padding:13px 26px;border-radius:8px;background:${ACCENT};border:1px solid ${ACCENT};color:#0a0a0a;text-decoration:none;font:700 14px/1 ${MONO};">
-                Sign in to Krate &rarr;
-              </a>
-            </td>
-          </tr></table>
-        </td></tr>
-
-        <tr><td style="padding:20px 18px 0 18px;font:400 12.5px/1.6 ${MONO};color:${DIM};">
-          <span style="color:${DIM};"># or paste this into your browser</span>
-        </td></tr>
-
-        <!-- word-break, or a long token pushes the card wider than a phone. -->
-        <tr><td style="padding:8px 18px 0 18px;">
-          <div style="padding:12px 13px;background:${BG};border:1px solid ${LINE};border-radius:8px;font:400 12.5px/1.7 ${MONO};color:${ACCENT};word-break:break-all;">
-            ${href}
-          </div>
-        </td></tr>
-
-        <tr><td style="padding:18px 18px 22px 18px;font:400 12.5px/1.7 ${MONO};color:${DIM};">
-          <span style="color:${DIM};"># the link works once. if you did not ask to sign in,</span><br>
-          <span style="color:${DIM};"># nothing has happened and you can ignore this.</span>
-        </td></tr>
-      </table>
-
-    </td></tr>
-
-    <tr><td style="padding:16px 4px 0 4px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="left" style="font:400 11.5px/1.5 ${MONO};color:${DIM};">
-          build once. run anywhere.
-        </td>
-        <td align="right" style="font:400 11.5px/1.5 ${MONO};">
-          <a href="https://krate.tech" style="color:${DIM};text-decoration:none;">krate.tech</a>
-          <span style="color:${LINE};">&nbsp;&middot;&nbsp;</span>
-          <a href="https://krate.tech/docs/" style="color:${DIM};text-decoration:none;">docs</a>
-        </td>
-      </tr></table>
-    </td></tr>
-
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  return emailHtml({
+    title: "Sign in to Krate",
+    preheader: "Your sign-in link works once, for 15 minutes.",
+    heading: "Sign in to Krate",
+    blocks: ["Press the button to sign in. The link works once and expires in 15 minutes."],
+    button: { label: "Sign in to Krate", url: link },
+    note: ["If you did not ask to sign in, nothing has happened and you can ignore this email."],
+  });
 }
 
 /// ESSENTIAL mail (mail-prefs.js): the person asked for this link, so the
@@ -4643,6 +4945,8 @@ async function bigStart(request, env) {
       name: String(ask.name || "").slice(0, 80),
       description: String(ask.description || "").slice(0, 280),
       category: shelfOf(ask.category),
+      // The maker key's handover, as the one-request door takes it (K-1290).
+      succession: String(ask.succession || "").slice(0, 16_384),
     },
     status: "uploading",
     created: Math.floor(Date.now() / 1000),
@@ -6716,8 +7020,26 @@ async function signWebBuild(request, env) {
   if (!user) return text("Sign in first.", 401);
   const bundle = new Uint8Array(await request.arrayBuffer());
   if (!bundle.length || bundle.length > WEB_SIGN_MAX_BYTES) return text("expected a .krate", 400);
-  const seed = await accountSigningSeed(env, user.id);
-  if (!seed) return text("this account's signing key is not available", 503);
+  const signed = await signAsAccount(env, user.id, bundle);
+  if (!signed.ok) return text(signed.problem, signed.status);
+  return new Response(signed.bytes, {
+    headers: {
+      "content-type": "application/vnd.krate",
+      "x-krate-publisher": signed.publicKey,
+      "x-krate-namespace": signed.namespace,
+    },
+  });
+}
+
+/// Sign a bundle as the account `userId` with the key the hub keeps for it
+/// (IC-983): `{ ok: true, bytes, publicKey, namespace }` or
+/// `{ ok: false, status, problem }`. A web build and a connector's build
+/// (IC-989) are the same publisher for the same account.
+async function signAsAccount(env, userId, bundle) {
+  const refuse = (status, problem) => ({ ok: false, status, problem });
+  const seed = await accountSigningSeed(env, userId);
+  if (!seed) return refuse(503, "this account's signing key is not available");
+  const user = { id: userId };
   // The validator takes the seed with its public half (ring checks the
   // pair); WebCrypto derives that half from the seed.
   const toHex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -6752,19 +7074,71 @@ async function signWebBuild(request, env) {
     v.krate_free(out, 4 + length);
     v.krate_free(input, frame.length);
   } catch (err) {
-    return text("the signing code stopped", 500);
+    return refuse(500, "the signing code stopped");
   }
   frame.fill(0, 0, 4 + header.length);
   const metaLength = new DataView(body.buffer).getUint32(0, true);
   const meta = JSON.parse(new TextDecoder().decode(body.subarray(4, 4 + metaLength)));
-  if (!meta.ok) return text(meta.problem || "the app could not be signed", 422);
-  return new Response(body.subarray(4 + metaLength), {
-    headers: {
-      "content-type": "application/vnd.krate",
-      "x-krate-publisher": meta.public_key,
-      "x-krate-namespace": meta.namespace,
-    },
+  if (!meta.ok) return refuse(422, meta.problem || "the app could not be signed");
+  return { ok: true, bytes: body.subarray(4 + metaLength), publicKey: meta.public_key, namespace: meta.namespace };
+}
+
+/// Publish a connector's finished build (IC-989 phase 2) for the person
+/// who signed in: signed as their account, judged by the validator, and
+/// admitted through admitJudged -- the publish door's own path -- unlisted.
+/// `who` is the identity the sign-in recorded. Answers `{ id, url, line }`
+/// or `{ problem }`.
+async function publishBuilt(env, who, bytes, name) {
+  let body = bytes;
+  const signed = await signAsAccount(env, who.uid, bytes);
+  // Not signed, the app goes out as it was made, as a web build does.
+  if (signed.ok) body = signed.bytes;
+  const problem = archiveProblem(body);
+  if (problem) return { problem: `not a valid .krate bundle: ${problem}` };
+  const judged = judgeBundle(body);
+  if (judged.crashed) return { problem: judged.problem };
+  if (!judged.ok) return { problem: `not a valid .krate bundle: ${judged.problem}` };
+  const identity = { login: who.login, name: who.name, avatar_url: who.avatar_url, github: who.github === true, id: who.iid };
+  if (!who.owner || ownerOf(identity) !== who.owner) return { problem: "this sign-in no longer names the account it was made for; sign in again" };
+  const hash = await sha256Hex(body);
+  const admitted = await admitJudged(env, {
+    identity,
+    judgement: judged.judgement,
+    hash,
+    size: body.length,
+    fields: { unlisted: true, quiet: false, name: String(name || "").slice(0, 80), description: "", category: "apps", succession: "" },
+    store: () => storeBundle(env, hash, body),
   });
+  const said = await admitted.text();
+  if (admitted.status !== 200) return { problem: said.slice(0, 500) };
+  // What a browser tab runs (IC-956), so the browser link opens it.
+  await ensureWebPack(env, hash, body, judgedComponent);
+  const out = JSON.parse(said);
+  return { id: out.id, url: out.url, line: out.line || null };
+}
+
+/// Who a hub session is, as a connector's grant records it (IC-989).
+async function connectorIdentity(request, env) {
+  const identity = await verifyGitHub(request, env).catch(() => null);
+  const user = identity ? await authedUser(request, env).catch(() => null) : null;
+  if (!identity || !user || !user.id) return null;
+  return {
+    owner: ownerOf(identity),
+    uid: user.id,
+    iid: identity.id || null,
+    login: identity.login || "",
+    name: identity.name || "",
+    avatar_url: identity.avatar_url || "",
+    github: identity.github === true,
+  };
+}
+
+function oauthDeps(env) {
+  return {
+    base: (env.PUBLIC_BASE || "").replace(/\/$/, ""),
+    rateLimited: (request, bucket) => rateLimited(request, env, bucket),
+    whoIs: (request) => connectorIdentity(request, env),
+  };
 }
 
 /* ---- what the builds cost ----------------------------------------------

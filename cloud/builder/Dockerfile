@@ -143,32 +143,112 @@ WORKDIR /srv
 COPY package.json ./
 COPY src ./src
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# The post-deploy check for K-1293: `fly ssh console -C krate-isolation-check`.
+COPY isolation-check.sh /usr/local/bin/krate-isolation-check
 
-# The service does not run as root: it spawns a compiler and an AI agent on
-# a stranger's words, and the blast radius of a bad day should not include
-# the machine. The container still STARTS as root, because a freshly created
-# Fly volume arrives root-owned and something has to chown it -- entrypoint.sh
-# does that and then drops to this user for good.
-RUN useradd --create-home --shell /bin/sh builder \
-    && chmod 0755 /usr/local/bin/entrypoint.sh \
-    && mkdir -p /work \
-    && chown -R builder:builder /srv /work
-
-# Where builds happen. A Fly volume mounts at /work, so scratch build dirs
-# and the downloaded-crate cache survive a machine stopping -- the difference
-# between a warm second build and re-fetching crates.io on every wake.
+# The service and a pool of build users: the line between them is K-1293,
+# the lines between the build users are K-1297.
 #
-# CARGO_HOME deliberately stays where the base image put it. Moving it to the
-# volume looks tidy and breaks the build: rustup and the pinned toolchain
-# live under /usr/local, `krate` shells out to `rustup` to find the toolchain
-# with the wasm targets, and a CARGO_HOME on an empty volume orphans all of
-# it -- producing "failed to find the wasm32-wasip1 target and rustup is not
+# The SERVICE runs as root. It holds the hub secret and the Anthropic key in
+# its environment, and it runs none of a stranger's code itself.
+#
+# Every BUILD runs as a build user: the engine, the AI agent loop inside it,
+# cargo, rustc, every dependency's build script and proc-macro, the app when
+# it is photographed, the judge reading an upload. All of that is code shaped
+# by a stranger's words or upload. When it ran as the service's own user it
+# could read /proc/<service>/environ -- `include_str!("/proc/1/environ")` was
+# enough -- and carry the secrets out in a bundle or a compiler error. A
+# process that root handed to another uid has no ptrace rights over root, so
+# root's environ, and /work/state (root's, 0700), are out of its reach.
+#
+# One build user for every build was not enough (K-1297): two builds at once
+# could read each other's environment (another person's own API key) and
+# folders. So there are BUILD_SLOTS of them, kratebuild1..N, and a running
+# job leases one for its life (src/sandbox.js): no two running jobs share a
+# uid, and the uid's home (/work/build/<n>, 0700) is emptied, after every
+# process of that uid is killed, before the next job gets it. N is also how
+# many jobs run at once; a job beyond it is told the box is busy.
+#
+# Root, not an unprivileged service user with CAP_SETUID: capabilities
+# granted that way survive the child's setuid and its exec, so the child
+# could switch straight back. A switch FROM root clears every capability.
+#
+# Each build user: its own group and nothing else, no login shell, no sudo
+# in the image. Every set-uid and set-gid bit in the image is cleared so no
+# program can lift a build back to root.
+#
+# What every build shares and none may change: the toolchain (RUSTUP_HOME),
+# the image's cargo home (cargo's bin, and nothing a build writes: each
+# build gets a CARGO_HOME of its own), the engine and cargo-component in
+# /usr/local/bin, and wasi-sdk. The rust base image ships RUSTUP_HOME and
+# CARGO_HOME world-writable (chmod -R a+w), so a build could have replaced
+# cargo, rustc or a crate for every build after it. Root's here, and not
+# group- or other-writable; the service refuses to build where that does
+# not hold (sandbox.js, sharedWritable).
+#
+# The last line proves, at image build, that every build user can run every
+# tool a build uses -- with a CARGO_HOME of its own, as a build gets -- that
+# none can write anything shared, and that none can read PID 1's
+# environment. If a base image change breaks any of it, the image does not
+# build -- rather than the first person's build failing on the live box.
+ARG BUILD_SLOTS=6
+RUN set -eu; \
+    i=1; while [ "$i" -le "${BUILD_SLOTS}" ]; do \
+      useradd --uid "$((10000 + i))" --user-group --no-create-home --home-dir "/work/build/$i" \
+        --shell /usr/sbin/nologin "kratebuild$i"; \
+      i=$((i + 1)); \
+    done; \
+    chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/krate-isolation-check; \
+    find / -xdev -type f -perm /6000 -exec chmod ug-s {} +; \
+    chown -R root:root "$RUSTUP_HOME" "$CARGO_HOME" /usr/local/bin /opt/wasi-sdk; \
+    chmod -R go-w "$RUSTUP_HOME" "$CARGO_HOME" /usr/local/bin /opt/wasi-sdk; \
+    mkdir -p /work; \
+    i=1; while [ "$i" -le "${BUILD_SLOTS}" ]; do \
+      HOME=/tmp setpriv --reuid="kratebuild$i" --regid="kratebuild$i" --clear-groups sh -euc '\
+        home="$(mktemp -d)"; export HOME="$home" CARGO_HOME="$home/.cargo"; \
+        mkdir "$CARGO_HOME"; ln -s /usr/local/cargo/bin "$CARGO_HOME/bin"; \
+        krate --version >/dev/null; \
+        cargo-component --version >/dev/null; \
+        cargo --version >/dev/null; \
+        rustup which cargo >/dev/null; \
+        rustup target list --installed | grep -qx wasm32-wasip1; \
+        /opt/wasi-sdk/bin/clang --version >/dev/null; \
+        for p in /usr/local/rustup /usr/local/cargo /usr/local/bin /opt/wasi-sdk; do \
+          w="$(find "$p" -writable -print -quit 2>/dev/null)"; \
+          if [ -n "$w" ]; then echo "$(id -un) can write $w" >&2; exit 1; fi; \
+        done; \
+        if cat /proc/1/environ >/dev/null 2>&1; then echo "$(id -un) can read PID 1s environment" >&2; exit 1; fi; \
+        rm -rf "$home"; \
+        echo "$(id -un): toolchain ok with its own cargo home, nothing shared writable, PID 1 environ unreadable"'; \
+      i=$((i + 1)); \
+    done
+
+# Where builds happen. A Fly volume mounts at /work: the service's state
+# (jobs, finished apps, ledgers) survives a machine stopping; the build
+# users' homes under /work/build do not need to, and are emptied at boot.
+#
+# CARGO_HOME deliberately stays where the base image put it, for the
+# service and for the image check above. Moving it to the volume looks tidy
+# and breaks the build: rustup and the pinned toolchain live under
+# /usr/local, `krate` shells out to `rustup` to find the toolchain with the
+# wasm targets, and a CARGO_HOME on an empty volume orphans all of it --
+# producing "failed to find the wasm32-wasip1 target and rustup is not
 # available" on a machine that plainly has both.
 #
-# HOME does the work instead, and that is enough: the engine already keeps a
-# shared dependency cache at $HOME/.cache/krate/build, keyed by SDK
-# fingerprint so a WIT change can never serve stale artifacts. Pointing HOME
-# at the volume puts that cache on the volume.
+# A BUILD gets a CARGO_HOME of its own (sandbox.js): <its home>/.cargo, with
+# bin/ a link to the image's (rustup finds the toolchain through RUSTUP_HOME
+# and PATH, which stay), so the crates it fetches land in its own home and
+# go with it. A registry shared between builds is a registry one build can
+# plant a crate in for the next. A read-only, pre-filled one would hold only
+# the crates known when the image was built, and an AI build picks crates
+# while it works -- so each build fetches its own (crates.io's sparse index,
+# a few seconds), and nothing it fetches outlives it.
+#
+# The engine keeps its SDK and its compile cache under $HOME/.cache/krate,
+# and a build's HOME is its lease's home, emptied after every job: each
+# build lays the SDK down from the engine binary (a few MB) and compiles the
+# SDK's crates itself. That costs the warm cache a second build used to
+# get; it is what leaves nothing one build writes where another build reads.
 #
 # Do NOT set CARGO_TARGET_DIR here to "help". The engine treats an explicit
 # one as the person overriding it and switches its own fingerprinted cache
@@ -180,10 +260,21 @@ RUN useradd --create-home --shell /bin/sh builder \
 # would sign every account's apps as one publisher, so it signs nothing
 # itself: the hub signs each finished build as that person's account
 # (/sign/web-build, IC-983 option B), and the key never comes here.
+#
+# KRATE_BUILD_USER and KRATE_BUILD_SLOTS name the pool (kratebuild1..N,
+# src/sandbox.js); with FLY_APP_NAME set, a box without all of them, or with
+# a shared path a build user could write, refuses every build instead of
+# running it as root or on a poisonable toolchain.
+# KRATE_JUDGE_DIR is where the hub's big uploads land for judging: root's,
+# 0711, so the judge (as a build user) reads a file by its exact path but can
+# neither list the folder nor swap a file after its hash was checked.
 ENV HOME=/work \
     TMPDIR=/work/tmp \
     PORT=8080 \
-    KRATE_MAKER_SIGNING=off
+    KRATE_MAKER_SIGNING=off \
+    KRATE_BUILD_USER=kratebuild \
+    KRATE_BUILD_SLOTS=${BUILD_SLOTS} \
+    KRATE_JUDGE_DIR=/work/judge
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

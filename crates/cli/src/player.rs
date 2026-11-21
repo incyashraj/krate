@@ -220,6 +220,8 @@ fn player_plist(icons: bool) -> String {
     <string>Krate tells an app where you are only when it asks, you allow it, and only while it is open.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Krate lets an app reach a Bluetooth device only when it asks, you allow it, and only the device you pick.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Krate lets other devices on your network find and open an app only when it asks and you allow it.</string>
 {app_icon}    <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

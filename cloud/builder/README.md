@@ -76,6 +76,15 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_PLAN_PER_HOUR` | Plans one account may ask for on our key per hour. Default 12, counted on the volume so a wake does not reset it |
 | `KRATE_PLAN_BUDGET_USD_PER_DAY` | What planning on our key may cost in one day, all accounts together. Default 10 |
 | `KRATE_PLAN_UNPRICED_USD` | What a plan is charged when the engine prints no `krate-spend:` line. Default 0.45, the old worst case |
+| `KRATE_COMPILE_PER_HOUR` / `KRATE_COMPILE_PER_DAY` | Compiles one account may start (`/compile`). Default 20 and 60, counted on the volume |
+| `KRATE_COMPILE_CONCURRENT` | Compiles running at once on the whole machine. Default 2 |
+| `KRATE_COMPILE_TIMEOUT_MS` | Wall clock for one compile, check and pack together. Default 10 minutes, for a cold dependency cache |
+| `KRATE_COMPILE_CRATES` | The crates.io crates uploaded source may depend on, comma-separated. Default `wit-bindgen-rt,libm` (K-1293) |
+| `KRATE_SDK_ROOT` | Where the SDK is, for `/compile`. Unset, the engine's own cache is used |
+| `KRATE_BUILD_USER` | The build users' name (K-1293): `kratebuild`, or with `KRATE_BUILD_SLOTS` the pool `kratebuild1..N`. The service must be root to hand builds to it; with `FLY_APP_NAME` set and no such user, every build door answers 503 |
+| `KRATE_BUILD_SLOTS` | How many build users, and so how many jobs at once (K-1297). The image sets it from `BUILD_SLOTS` (6) and makes that many users. Unset: the one `KRATE_BUILD_USER`, one job at a time |
+| `KRATE_BUILD_ENV_PASS` | Extra environment names a build may see, comma-separated (a new engine setting, a test hook). A name that reads like a credential is refused |
+| `KRATE_JUDGE_DIR` | Where uploads being judged land. `/work/judge` in the image: root's, 0711, so the judge reads by exact path only |
 | `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
 
 ## The doors
@@ -85,8 +94,95 @@ POST /build            { request }   -> { id }
 GET  /build/<id>                     -> { state, stage, line, shot, error, result }
 GET  /build/<id>/file                -> the .krate itself
 POST /build/<id>/stop                -> { ok }
-GET  /health                         -> { ok, building, authoring, agent }
+GET  /health                         -> { ok, building, authoring, agent, isolation }
+
+POST /compile          { name, files: [{ path, data }] }   -> 202 { id }  | 4xx { error }
+GET  /guide                          -> text/markdown
 ```
+
+`/compile` and `/guide` are the hub's (IC-989 phase 2, "Claude writes,
+Krate builds"). Both need the builder secret in `x-krate-builder`.
+`/compile`, and reading its job, also need `x-krate-account: hub:<owner>`
+-- `hub:github:alice`, `hub:account:<id>` -- the account the hub vouches
+for; there is no person's session on this path, and the per-account limits
+count on that account. `/compile` takes source a chat model wrote -- `data`
+is base64; Cargo.toml, Cargo.lock, manifest.toml, krate-check.toml,
+`src/**`, `assets/**` and nothing else -- runs `krate check-app --json` and
+`krate pack`, and never a model. It answers at once with a job id; the job
+reads through `GET /build/<id>` (same two headers) as
+`state: "building" | "done" | "failed"`, with `check` (check-app's own
+verdict: `stage`, `kind`, `detail`, `fix`) so the model can correct its
+code. `/build/<id>/file` is the UNSIGNED bundle: the hub signs it as the
+account (`signAsAccount`), judges it and publishes it unlisted. Write the
+SDK in Cargo.toml as `{KRATE_SDK}` (or Krate Mode's `PREFIX`); the builder
+puts its own path there. The guide is `krate krate-mode` (about 110 KB: the
+API, the permission catalog, the no_std rules, worked examples -- the
+authoring pack is 195 KB and written for an agent in a starter folder) with
+its "you cannot build this" handoff cut, then how to send the source and a
+Cargo.toml naming only the WIT packages this engine's SDK has. Made once
+per engine version. `cloud/worker/test/mcp-build-e2e.test.mjs` runs the
+hub's tools against this server.
+
+## What a build can reach (K-1293)
+
+A build runs code nobody here wrote: the engine's AI loop, cargo, rustc,
+every dependency's build script and proc-macro, the app when it is
+photographed, the judge reading an upload. Any of it could read a file at
+compile time -- `include_str!("/proc/1/environ")` -- and send the bytes
+back in the bundle or a compiler error.
+
+**The boundary is the uid.** The service runs as root and holds the hub
+secret and the Anthropic key; every build-time child runs as a build user
+leased for its job from a pool, `kratebuild1..N` (`KRATE_BUILD_SLOTS`,
+`src/sandbox.js`, the one place every such child is started through).
+A process root handed to another uid cannot read root's
+`/proc/<pid>/environ`, and `/work/state` -- jobs, other people's finished
+apps, the ledgers -- is root's and 0700. `/health` says
+`"isolation":"build-user"` when this holds, and a production box where it
+does not refuses every build rather than run it as root.
+
+**The environment is the second line.** A child gets an allow-list:
+the toolchain, the engine's settings, its own HOME and TMPDIR. Never
+`KRATE_BUILDER_SECRET`. A model key only on the paths that talk to a model:
+
+| Door | Key the child gets |
+|---|---|
+| `/build`, `/build/<id>/revise`, `/port`, `/plan` | the agent's own, the person's if they set one, else ours |
+| `/compile`, `/guide`, `/port/plan`, `/judge`, the picture of a built app | none |
+
+On the AI paths the key necessarily reaches the agent and everything it
+runs, its build scripts included: that is how it talks to the model. What
+never reaches any build is anything of the service's own.
+
+`/compile` also narrows what uploaded source may do (a crate allow-list, no
+build scripts, no path or git dependencies, `include_str!` only inside the
+app). That is defence in depth and stays; the uid is what holds.
+
+After a deploy, prove it on the machine itself:
+
+```bash
+fly ssh console --app krate-builder -C krate-isolation-check
+```
+
+It checks, as the build user and through `src/sandbox.js` exactly as the
+server spawns, that neither the service's nor PID 1's environ can be read,
+that `/work/state` cannot be listed, and that the secret appears nowhere a
+build can see. It never prints the secret.
+
+**One build user per running job (K-1297).** Two builds at once never
+share a uid, so neither can read the other's `/proc/<pid>/environ` (a
+person's own API key) or its folders: each lease's home,
+`/work/build/<n>`, is 0700 to its own uid and holds everything the build
+writes -- HOME, TMPDIR, its own `CARGO_HOME` (the crates it fetches), the
+engine's SDK and compile cache. When the job ends -- done, failed, stopped
+or timed out -- every process of that uid is killed and the home emptied
+before the uid goes back to the pool; a uid that will not let go is retired
+until restart. What every build shares -- `RUSTUP_HOME`, the image's
+`CARGO_HOME`, `/usr/local/bin`, wasi-sdk -- is root's and read-only to
+build users, and a production box where it is not refuses to build. With
+every build user leased, a door answers 503 "busy"; `/health` says
+`"slots":{"size":N,"free":n}`. The cost: no compile cache survives a job, so
+every build compiles the SDK's crates and fetches its crates itself.
 
 ## The two guards that matter
 

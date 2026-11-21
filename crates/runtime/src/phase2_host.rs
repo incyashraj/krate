@@ -10,7 +10,9 @@ use std::{
 };
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, process, random, resources, store, time},
+    phase2_bindings::krate::{
+        fs, io, locale, net, print, process, random, resources, serial, store, time, usb,
+    },
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -83,6 +85,32 @@ pub struct Phase2Host<'a> {
     /// with the run, which kills every one of them.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     processes: crate::process_host::Processes,
+    /// Serial ports the person picked this run (`krate:serial`, IC-985).
+    /// Dropped with the run, which closes every one.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    serial: crate::serial_host::SerialPorts,
+    /// Printers the person picked (`krate:print`, IC-986), and where a pick
+    /// is remembered for this app.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    printers: crate::printer_host::Printers,
+    /// USB devices the person picked this run (`krate:usb`, IC-988).
+    /// Dropped with the run, which releases and closes every one.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    usb: crate::usb_host::UsbDevices,
+    /// The app's name, for a print job that names itself nothing.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    app_name: String,
+    /// Nobody is there to pick a serial device: a headless windowed run.
+    /// A pick then answers "cancelled" rather than wait on a dialog nobody
+    /// can see.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    nobody_to_ask: std::cell::Cell<bool>,
     /// Requests started with `http-client.begin` and not yet answered.
     ///
     /// Lives here so it dies with the run: a handle cannot outlive the app
@@ -92,6 +120,10 @@ pub struct Phase2Host<'a> {
     /// TCP connections, UDP sockets and lookups (`krate:net/sockets`).
     #[cfg(not(target_arch = "wasm32"))]
     async_sockets: crate::async_sockets::AsyncSockets,
+    /// Listeners announced on the local network (IC-990): withdrawn as each
+    /// closes, and all of them as the run ends and this drops.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    discovery: crate::serve_discovery::Discovery,
     /// A threaded app (IC-940): a sleep is judged here and slept after the
     /// host is let go, so one thread's sleep never holds the others out.
     // Threaded apps only, which iOS and the web do not run.
@@ -133,10 +165,20 @@ impl<'a> Phase2Host<'a> {
             declared: None,
             #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
             processes: crate::process_host::Processes::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            serial: crate::serial_host::SerialPorts::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            printers: crate::printer_host::Printers::new(crate::printer_host::system_backend()),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            usb: crate::usb_host::UsbDevices::new(crate::usb_host::system_backend()),
+            app_name: String::new(),
+            nobody_to_ask: std::cell::Cell::new(false),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
             async_ws: crate::async_ws::AsyncWs::new(),
             #[cfg(not(target_arch = "wasm32"))]
             async_sockets: crate::async_sockets::AsyncSockets::new(),
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            discovery: crate::serve_discovery::Discovery::new(),
             default_http_timeout_millis,
             sleep_outside_host: false,
         }
@@ -358,6 +400,137 @@ impl<'a> Phase2Host<'a> {
         }
     }
 
+    /// Where this app's printer pick is remembered (IC-986): the CLI's file
+    /// for the app's principal, or `None` -- a pick then lasts for the run --
+    /// and the app's name, for a job that names itself nothing.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(unused_mut)
+    )]
+    pub fn with_printers(mut self, memory: Option<PathBuf>, app_name: Option<&str>) -> Self {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            self.printers =
+                crate::printer_host::Printers::new(crate::printer_host::system_backend())
+                    .with_memory(memory);
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        let _ = memory;
+        self.app_name = app_name.unwrap_or_default().to_string();
+        self
+    }
+
+    /// Print through `backend` instead of the system: a test's fake.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_print_backend(
+        mut self,
+        backend: Box<dyn crate::printer_host::Backend>,
+        memory: Option<PathBuf>,
+    ) -> Self {
+        self.printers = crate::printer_host::Printers::new(backend).with_memory(memory);
+        self
+    }
+
+    /// Reach USB devices through `backend` instead of the system: a test's
+    /// fake.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_usb_backend(mut self, backend: Box<dyn crate::usb_host::Backend>) -> Self {
+        self.usb = crate::usb_host::UsbDevices::new(backend);
+        self
+    }
+
+    /// Announce through `responder` instead of the network: a test's.
+    #[cfg(all(
+        test,
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
+    pub(crate) fn with_announcer(
+        mut self,
+        responder: Box<dyn crate::serve_discovery::Responder>,
+    ) -> Self {
+        self.discovery = crate::serve_discovery::Discovery::with_responder(responder);
+        self
+    }
+
+    /// Which port a listener for the local network holds, judged again
+    /// (IC-990): only such a listener says where it is reached or announces
+    /// itself, and only one the person let the network open. A listener for
+    /// this computer alone is refused in words; any other handle is unknown.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    fn network_listener(&self, listener: u64) -> Result<u16, net::sockets::ListenError> {
+        use net::sockets::{ListenError, ListenScope};
+        let (port, this_computer) = self
+            .async_sockets
+            .listener(listener)
+            .map_err(listen_fault_to_wit)?;
+        if this_computer {
+            return Err(ListenError::NotAllowed(format!(
+                "this app listens on port {port} for this computer only, so other devices on \
+                 your network cannot open it"
+            )));
+        }
+        self.admit_listen(port, ListenScope::LocalNetwork)?;
+        Ok(port)
+    }
+
+    /// May this run print (`device.printer`, IC-986)? Only when the manifest
+    /// declares it, the person allowed it, and the organisation that manages
+    /// the computer has not said no printing for this app. The words name
+    /// the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_printer(&self) -> Result<(), print::printers::PrintError> {
+        use krate_policy::{Decision, Refusal};
+        use print::printers::PrintError;
+        let cap = krate_manifest::Capability::new("device", "printer", None)
+            .expect("device.printer is a capability");
+        let undeclared = || {
+            PrintError::NotAllowed(
+                "this app did not ask for device.printer, so it cannot print".to_string(),
+            )
+        };
+        let organisation = || {
+            PrintError::NotAllowed(
+                "the organisation that manages this computer does not allow this app to print \
+                 (device.printer)"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        match self.guard.policy().decide(&cap, Some(declared)) {
+            // `[apps] printing = false` (G17) stops this kind of printing
+            // too, not only the print dialog.
+            Decision::Granted { .. }
+                if self
+                    .guard
+                    .policy()
+                    .organisation_blocks_call(krate_policy::PRINT_CALL) =>
+            {
+                Err(organisation())
+            }
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(organisation()),
+            Decision::Refused { .. } => Err(PrintError::NotAllowed(
+                "you did not allow this app to print (device.printer)".to_string(),
+            )),
+        }
+    }
+
     /// What the app's manifest declared (IC-977), as the caller read it.
     pub fn with_declared(
         mut self,
@@ -401,6 +574,192 @@ impl<'a> Phase2Host<'a> {
             Decision::Refused { .. } => Err(ProcessError::RefusedByPerson(format!(
                 "you did not allow this app to {what}"
             ))),
+        }
+    }
+
+    /// Nobody is there to pick a serial device (a headless windowed run):
+    /// a pick answers cancelled instead of showing a list (IC-985).
+    pub fn set_nobody_to_ask(&self, nobody: bool) {
+        self.nobody_to_ask.set(nobody);
+    }
+
+    /// May this run reach a serial device (`device.serial`, IC-985)? Only
+    /// when the manifest declares it and the person allowed it. The words
+    /// name the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_serial(&self) -> Result<(), serial::ports::SerialError> {
+        use krate_policy::{Decision, Refusal};
+        use serial::ports::SerialError;
+        let cap = krate_manifest::Capability::new("device", "serial", None)
+            .expect("device.serial is a capability");
+        let undeclared = || {
+            SerialError::NotAllowed(
+                "this app did not ask for device.serial, so it cannot talk to a serial device"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        match self.guard.policy().decide(&cap, Some(declared)) {
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(SerialError::NotAllowed(
+                "the organisation that manages this computer does not allow apps to talk to \
+                 serial devices (device.serial)"
+                    .to_string(),
+            )),
+            Decision::Refused { .. } => Err(SerialError::NotAllowed(
+                "you did not allow this app to talk to a serial device (device.serial)".to_string(),
+            )),
+        }
+    }
+
+    /// May this run reach any USB device (`device.usb`, IC-988)? Only when
+    /// the manifest names at least one model as `device.usb:<vendor>:<product>`
+    /// and the person allowed at least one of them. Asked before any list is
+    /// shown and before any handle is looked at, so a call without the grant
+    /// learns nothing. The words name the capability.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_any(&self) -> Result<(), usb::devices::UsbError> {
+        let undeclared = || {
+            usb::devices::UsbError::NotAllowed(
+                "this app did not ask for device.usb, so it cannot talk to a USB device"
+                    .to_string(),
+            )
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        let mut first_refusal = None;
+        for cap in declared
+            .iter()
+            .filter(|cap| (cap.module(), cap.action()) == ("device", "usb"))
+        {
+            match self.admit_usb_model(cap) {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    first_refusal.get_or_insert(err);
+                }
+            }
+        }
+        Err(first_refusal.unwrap_or_else(undeclared))
+    }
+
+    /// May this run reach the USB model `vendor`:`product` (IC-988)? Only
+    /// when the manifest names exactly those ids and the person allowed it.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb(&self, vendor: u16, product: u16) -> Result<(), usb::devices::UsbError> {
+        let ids = krate_manifest::usb_ids(vendor, product);
+        let cap = krate_manifest::Capability::new("device", "usb", Some(&ids))
+            .expect("two ids are a device.usb capability");
+        self.admit_usb_model(&cap)
+    }
+
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_model(
+        &self,
+        cap: &krate_manifest::Capability,
+    ) -> Result<(), usb::devices::UsbError> {
+        usb_model_decision(self.guard.policy(), self.declared.as_ref(), cap)
+    }
+
+    /// Every call after the pick: the grant still stands for the device the
+    /// handle names (and for some device, when the handle names none, so a
+    /// guessed handle learns nothing without the grant).
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_usb_call(&self, handle: u64) -> Result<(), usb::devices::UsbError> {
+        self.admit_usb_any()?;
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        if let Some((vendor, product)) = self.usb.ids(handle) {
+            self.admit_usb(vendor, product)?;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        let _ = handle;
+        Ok(())
+    }
+
+    /// May this run listen on `port` for this scope (`net.listen`, IC-987)?
+    ///
+    /// Always the declaration: an app listens only on a port its manifest
+    /// names as `net.listen:<port>`, and never on one below 1024. For other
+    /// devices on the network, the person's yes too. For this computer
+    /// alone the declaration is enough -- the person is not asked, because
+    /// nothing outside the computer reaches a loopback port -- so a person
+    /// who said no (or was never asked) still leaves the app its loopback
+    /// listener. An organisation that forbids it forbids both. The words name
+    /// the capability, so a refusal says what to declare or allow.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+        allow(dead_code)
+    )]
+    fn admit_listen(
+        &self,
+        port: u16,
+        scope: net::sockets::ListenScope,
+    ) -> Result<(), net::sockets::ListenError> {
+        use crate::uapi::{NetCall, UapiCall};
+        use krate_policy::{Decision, Refusal};
+        use net::sockets::{ListenError, ListenScope};
+        let lowest = crate::async_sockets::LOWEST_LISTEN_PORT;
+        if port < lowest {
+            return Err(ListenError::BadPort(format!(
+                "port {port} is below {lowest}: those ports belong to the system, so an app \
+                 listens on {lowest} or above (8080 is the usual choice)"
+            )));
+        }
+        let undeclared = || {
+            ListenError::NotAllowed(format!(
+                "this app did not declare net.listen:{port}, so it cannot listen on port {port}"
+            ))
+        };
+        let Some(declared) = self.declared.as_ref() else {
+            return Err(undeclared());
+        };
+        let decision = match self
+            .guard
+            .decide(&UapiCall::Net(NetCall::Listen { port }), Some(declared))
+        {
+            Ok((_, decision)) => decision,
+            Err(_) => return Err(undeclared()),
+        };
+        match decision {
+            Decision::Granted { .. } => Ok(()),
+            Decision::Refused {
+                reason: Refusal::Undeclared,
+            } => Err(undeclared()),
+            Decision::Refused {
+                reason: Refusal::Organisation,
+            } => Err(ListenError::NotAllowed(format!(
+                "the organisation that manages this computer does not allow apps to listen on \
+                 port {port} (net.listen:{port})"
+            ))),
+            Decision::Refused { .. } => match scope {
+                ListenScope::ThisComputer => Ok(()),
+                ListenScope::LocalNetwork => Err(ListenError::NotAllowed(format!(
+                    "you did not let other devices on your network open this app on port \
+                     {port} (net.listen:{port}); it can still listen for this computer only"
+                ))),
+            },
         }
     }
 
@@ -805,6 +1164,691 @@ impl process::processes::Host for Phase2Host<'_> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn not_on_this_device() -> process::processes::ProcessError {
     process::processes::ProcessError::Platform(PROCESS_ON_A_COMPUTER.to_string())
+}
+
+/// Serial devices the person picks (`krate:serial`, IC-985).
+///
+/// Every call is admitted here -- the manifest declares `device.serial` and
+/// the person allowed it -- before `serial_host` shows a list or touches a
+/// port. The app holds handles only; no call takes a path.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl serial::ports::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<serial::ports::Port>, serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        let picked = match crate::serial_host::choose(&title, self.nobody_to_ask.get()) {
+            Ok(picked) => picked,
+            Err(fault) => return Ok(Err(serial_fault_to_wit(fault))),
+        };
+        let Some((path, name)) = picked else {
+            return Ok(Ok(None));
+        };
+        Ok(self
+            .serial
+            .remember(path, name.clone())
+            .map(|handle| Some(serial::ports::Port { handle, name }))
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn open(
+        &mut self,
+        port: u64,
+        settings: serial::ports::Settings,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        use crate::serial_host::{Parity, Settings, StopBits};
+        let settings = Settings {
+            baud_rate: settings.baud_rate,
+            data_bits: settings.data_bits,
+            parity: match settings.parity {
+                serial::ports::Parity::None => Parity::None,
+                serial::ports::Parity::Odd => Parity::Odd,
+                serial::ports::Parity::Even => Parity::Even,
+            },
+            stop_bits: match settings.stop_bits {
+                serial::ports::StopBits::One => StopBits::One,
+                serial::ports::StopBits::Two => StopBits::Two,
+            },
+            read_timeout_ms: settings.read_timeout_ms,
+        };
+        Ok(self
+            .serial
+            .open(port, &settings)
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn read(
+        &mut self,
+        port: u64,
+        max: u32,
+        timeout_ms: Option<u32>,
+    ) -> wasmtime::Result<Result<Vec<u8>, serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .serial
+            .read(port, max, timeout_ms)
+            .map_err(serial_fault_to_wit))
+    }
+
+    fn write(
+        &mut self,
+        port: u64,
+        bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        if let Err(err) = self.admit_serial() {
+            return Ok(Err(err));
+        }
+        Ok(self.serial.write(port, &bytes).map_err(serial_fault_to_wit))
+    }
+
+    fn close(&mut self, port: u64) -> wasmtime::Result<()> {
+        self.serial.close(port);
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn serial_fault_to_wit(fault: crate::serial_host::Fault) -> serial::ports::SerialError {
+    use crate::serial_host::Fault;
+    use serial::ports::SerialError;
+    match fault {
+        Fault::Unavailable(words) => SerialError::Unavailable(words),
+        Fault::UnknownHandle => SerialError::UnknownHandle,
+        Fault::NotOpen => SerialError::NotOpen,
+        Fault::BadSettings(words) => SerialError::BadSettings(words),
+        Fault::Busy(words) => SerialError::Busy(words),
+        Fault::Disconnected(words) => SerialError::Disconnected(words),
+        Fault::TooMany(words) => SerialError::TooMany(words),
+        Fault::Failed(words) => SerialError::Failed(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:serial` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const SERIAL_ON_A_COMPUTER: &str =
+    "Serial devices work in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl serial::ports::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<serial::ports::Port>, serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn open(
+        &mut self,
+        _port: u64,
+        _settings: serial::ports::Settings,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn read(
+        &mut self,
+        _port: u64,
+        _max: u32,
+        _timeout_ms: Option<u32>,
+    ) -> wasmtime::Result<Result<Vec<u8>, serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn write(
+        &mut self,
+        _port: u64,
+        _bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), serial::ports::SerialError>> {
+        Ok(Err(serial_not_here()))
+    }
+
+    fn close(&mut self, _port: u64) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn serial_not_here() -> serial::ports::SerialError {
+    serial::ports::SerialError::Unavailable(SERIAL_ON_A_COMPUTER.to_string())
+}
+
+/// May a run under `policy`, whose manifest declared `declared`, reach the
+/// USB model `cap` (`device.usb:<vendor>:<product>`, IC-988)? Only when the
+/// manifest names exactly those ids and the person allowed it. The words
+/// name the capability.
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows")),
+    allow(dead_code)
+)]
+fn usb_model_decision(
+    policy: &krate_policy::SessionPolicy,
+    declared: Option<&std::collections::BTreeSet<krate_manifest::Capability>>,
+    cap: &krate_manifest::Capability,
+) -> Result<(), usb::devices::UsbError> {
+    use krate_policy::{Decision, Refusal};
+    use usb::devices::UsbError;
+    let ids = cap.resource().unwrap_or_default();
+    let Some(declared) = declared else {
+        return Err(UsbError::NotAllowed(
+            "this app did not ask for device.usb, so it cannot talk to a USB device".to_string(),
+        ));
+    };
+    match policy.decide(cap, Some(declared)) {
+        Decision::Granted { .. } => Ok(()),
+        Decision::Refused {
+            reason: Refusal::Undeclared,
+        } => Err(UsbError::NotAllowed(format!(
+            "this app did not ask for device.usb:{ids}, so it cannot talk to that USB device"
+        ))),
+        Decision::Refused {
+            reason: Refusal::Organisation,
+        } => Err(UsbError::NotAllowed(
+            "the organisation that manages this computer does not allow apps to talk to USB \
+             devices (device.usb)"
+                .to_string(),
+        )),
+        Decision::Refused { .. } => Err(UsbError::NotAllowed(format!(
+            "you did not allow this app to talk to the {ids} USB device (device.usb:{ids})"
+        ))),
+    }
+}
+
+/// USB devices the person picks (`krate:usb`, IC-988).
+///
+/// Every call is admitted here -- the manifest names the device's ids as
+/// `device.usb:<vendor>:<product>` and the person allowed it -- before
+/// `usb_host` shows a list or touches a device. The list shows only devices
+/// that pass the same rule. The app holds handles only; no call takes a
+/// device's address.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl usb::devices::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<usb::devices::Device>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_any() {
+            return Ok(Err(err));
+        }
+        let scripted = crate::usb_host::scripted_pick();
+        // The list shows only devices whose ids the manifest names and the
+        // person allowed: the same rule every later call is held to.
+        let (policy, declared) = (self.guard.policy(), self.declared.as_ref());
+        let admit = |vendor: u16, product: u16| {
+            let ids = krate_manifest::usb_ids(vendor, product);
+            let cap = krate_manifest::Capability::new("device", "usb", Some(&ids))
+                .expect("two ids are a device.usb capability");
+            usb_model_decision(policy, declared, &cap).map_err(|err| match err {
+                usb::devices::UsbError::NotAllowed(words) => {
+                    crate::usb_host::Fault::NotAllowed(words)
+                }
+                other => crate::usb_host::Fault::Failed(format!("{other:?}")),
+            })
+        };
+        Ok(self
+            .usb
+            .pick(
+                &title,
+                self.nobody_to_ask.get(),
+                scripted.as_deref(),
+                &admit,
+            )
+            .map(|picked| {
+                picked.map(|(handle, listed)| usb::devices::Device {
+                    handle,
+                    name: listed.name,
+                    vendor_id: listed.vendor_id,
+                    product_id: listed.product_id,
+                })
+            })
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn claim(
+        &mut self,
+        device: u64,
+        number: u8,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self.usb.claim(device, number).map_err(usb_fault_to_wit))
+    }
+
+    fn bulk_in(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        max: u32,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .read(
+                device,
+                crate::usb_host::Kind::Bulk,
+                endpoint,
+                max,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn bulk_out(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        bytes: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .write(
+                device,
+                crate::usb_host::Kind::Bulk,
+                endpoint,
+                &bytes,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn interrupt_in(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        max: u32,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .read(
+                device,
+                crate::usb_host::Kind::Interrupt,
+                endpoint,
+                max,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn interrupt_out(
+        &mut self,
+        device: u64,
+        endpoint: u8,
+        bytes: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .write(
+                device,
+                crate::usb_host::Kind::Interrupt,
+                endpoint,
+                &bytes,
+                timeout_ms,
+            )
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn control_in(
+        &mut self,
+        device: u64,
+        setup: usb::devices::ControlSetup,
+        length: u16,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .control_in(device, usb_setup(setup), length, timeout_ms)
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn control_out(
+        &mut self,
+        device: u64,
+        setup: usb::devices::ControlSetup,
+        data: Vec<u8>,
+        timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        if let Err(err) = self.admit_usb_call(device) {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .usb
+            .control_out(device, usb_setup(setup), &data, timeout_ms)
+            .map_err(usb_fault_to_wit))
+    }
+
+    fn close(&mut self, device: u64) -> wasmtime::Result<()> {
+        self.usb.close(device);
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn usb_setup(setup: usb::devices::ControlSetup) -> crate::usb_host::Setup {
+    use crate::usb_host::{Recipient, RequestType, Setup};
+    Setup {
+        request_type: match setup.request_type {
+            usb::devices::RequestType::Standard => RequestType::Standard,
+            usb::devices::RequestType::Class => RequestType::Class,
+            usb::devices::RequestType::Vendor => RequestType::Vendor,
+        },
+        recipient: match setup.recipient {
+            usb::devices::Recipient::Interface => Recipient::Interface,
+            usb::devices::Recipient::Endpoint => Recipient::Endpoint,
+            usb::devices::Recipient::Device => Recipient::Device,
+        },
+        request: setup.request,
+        value: setup.value,
+        index: setup.index,
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn usb_fault_to_wit(fault: crate::usb_host::Fault) -> usb::devices::UsbError {
+    use crate::usb_host::Fault;
+    use usb::devices::UsbError;
+    match fault {
+        Fault::NotAllowed(words) => UsbError::NotAllowed(words),
+        Fault::Unavailable(words) => UsbError::Unavailable(words),
+        Fault::UnknownHandle => UsbError::UnknownHandle,
+        Fault::NotClaimed => UsbError::NotClaimed,
+        Fault::NotForApps(words) => UsbError::NotForApps(words),
+        Fault::BadRequest(words) => UsbError::BadRequest(words),
+        Fault::Busy(words) => UsbError::Busy(words),
+        Fault::Disconnected(words) => UsbError::Disconnected(words),
+        Fault::Stalled(words) => UsbError::Stalled(words),
+        Fault::TimedOut(words) => UsbError::TimedOut(words),
+        Fault::TooMany(words) => UsbError::TooMany(words),
+        Fault::Failed(words) => UsbError::Failed(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:usb` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const USB_ON_A_COMPUTER: &str =
+    "USB devices work in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn usb_not_here<T>() -> wasmtime::Result<Result<T, usb::devices::UsbError>> {
+    Ok(Err(usb::devices::UsbError::Unavailable(
+        USB_ON_A_COMPUTER.to_string(),
+    )))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl usb::devices::Host for Phase2Host<'_> {
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<usb::devices::Device>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn claim(
+        &mut self,
+        _device: u64,
+        _number: u8,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn bulk_in(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _max: u32,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn bulk_out(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _bytes: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn interrupt_in(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _max: u32,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn interrupt_out(
+        &mut self,
+        _device: u64,
+        _endpoint: u8,
+        _bytes: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn control_in(
+        &mut self,
+        _device: u64,
+        _setup: usb::devices::ControlSetup,
+        _length: u16,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<Vec<u8>, usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn control_out(
+        &mut self,
+        _device: u64,
+        _setup: usb::devices::ControlSetup,
+        _data: Vec<u8>,
+        _timeout_ms: u32,
+    ) -> wasmtime::Result<Result<(), usb::devices::UsbError>> {
+        usb_not_here()
+    }
+
+    fn close(&mut self, _device: u64) -> wasmtime::Result<()> {
+        Ok(())
+    }
+}
+
+/// Printers the person picks (`krate:print`, IC-986).
+///
+/// Every call is admitted here -- the manifest declares `device.printer`,
+/// the person allowed it, the organisation allows printing -- before
+/// `printer_host` shows a list or sends a job. The app holds handles only;
+/// no call takes a printer's name.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+impl print::printers::Host for Phase2Host<'_> {
+    fn remembered(
+        &mut self,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        Ok(self
+            .printers
+            .remembered()
+            .map(|found| found.map(|(handle, name)| print::printers::Printer { handle, name }))
+            .map_err(print_fault_to_wit))
+    }
+
+    fn pick(
+        &mut self,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        let nobody = self.nobody_to_ask.get();
+        Ok(self
+            .printers
+            .pick(&title, nobody)
+            .map(|found| found.map(|(handle, name)| print::printers::Printer { handle, name }))
+            .map_err(print_fault_to_wit))
+    }
+
+    fn print_document(
+        &mut self,
+        printer: u64,
+        document: print::printers::Document,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        use crate::printer_host::{Job, JobKind, Paper};
+        use print::printers::{DocumentFormat, PaperSize};
+        let job = Job {
+            kind: match document.format {
+                DocumentFormat::Pdf => JobKind::Pdf,
+                DocumentFormat::Png => JobKind::Png,
+            },
+            bytes: document.bytes,
+            copies: document.copies,
+            paper: match document.paper {
+                PaperSize::PrinterDefault => Paper::PrinterDefault,
+                PaperSize::A4 => Paper::A4,
+                PaperSize::A5 => Paper::A5,
+                PaperSize::A6 => Paper::A6,
+                PaperSize::Letter => Paper::Letter,
+                PaperSize::Legal => Paper::Legal,
+                PaperSize::Custom(mm) => Paper::Custom {
+                    width_mm: mm.width,
+                    height_mm: mm.height,
+                },
+            },
+            title: document.title,
+        };
+        Ok(self
+            .printers
+            .print(printer, job, &self.app_name)
+            .map(print_outcome_to_wit)
+            .map_err(print_fault_to_wit))
+    }
+
+    fn print_raw(
+        &mut self,
+        printer: u64,
+        bytes: Vec<u8>,
+        copies: u32,
+        title: String,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        if let Err(err) = self.admit_printer() {
+            return Ok(Err(err));
+        }
+        let job = crate::printer_host::Job {
+            kind: crate::printer_host::JobKind::Raw,
+            bytes,
+            copies,
+            paper: crate::printer_host::Paper::PrinterDefault,
+            title,
+        };
+        Ok(self
+            .printers
+            .print(printer, job, &self.app_name)
+            .map(print_outcome_to_wit)
+            .map_err(print_fault_to_wit))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn print_fault_to_wit(fault: crate::printer_host::Fault) -> print::printers::PrintError {
+    use crate::printer_host::Fault;
+    use print::printers::PrintError;
+    match fault {
+        Fault::Unavailable(words) => PrintError::Unavailable(words),
+        Fault::UnknownHandle => PrintError::UnknownHandle,
+        Fault::BadJob(words) => PrintError::BadJob(words),
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn print_outcome_to_wit(outcome: crate::printer_host::Outcome) -> print::printers::PrintOutcome {
+    use crate::printer_host::Outcome;
+    use print::printers::PrintOutcome;
+    match outcome {
+        Outcome::Queued(words) => PrintOutcome::Queued(words),
+        Outcome::Failed(words) => PrintOutcome::Failed(words),
+        Outcome::Gone(words) => PrintOutcome::Gone(words),
+    }
+}
+
+/// What a phone or a browser tab says to every `krate:print` call.
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+const PRINT_ON_A_COMPUTER: &str =
+    "Printing to a printer you pick works in Krate on a computer (macOS, Windows, Linux), not here.";
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn print_not_here() -> print::printers::PrintError {
+    print::printers::PrintError::Unavailable(PRINT_ON_A_COMPUTER.to_string())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+impl print::printers::Host for Phase2Host<'_> {
+    fn remembered(
+        &mut self,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        Ok(Err(print_not_here()))
+    }
+
+    fn pick(
+        &mut self,
+        _title: String,
+    ) -> wasmtime::Result<Result<Option<print::printers::Printer>, print::printers::PrintError>>
+    {
+        Ok(Err(print_not_here()))
+    }
+
+    fn print_document(
+        &mut self,
+        _printer: u64,
+        _document: print::printers::Document,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        Ok(Err(print_not_here()))
+    }
+
+    fn print_raw(
+        &mut self,
+        _printer: u64,
+        _bytes: Vec<u8>,
+        _copies: u32,
+        _title: String,
+    ) -> wasmtime::Result<Result<print::printers::PrintOutcome, print::printers::PrintError>> {
+        Ok(Err(print_not_here()))
+    }
 }
 
 impl random::bytes::Host for Phase2Host<'_> {
@@ -2014,10 +3058,161 @@ impl net::sockets::Host for Phase2Host<'_> {
             }))
     }
 
+    fn tcp_listen(
+        &mut self,
+        port: u16,
+        scope: net::sockets::ListenScope,
+    ) -> wasmtime::Result<Result<u64, net::sockets::ListenError>> {
+        if !LISTENS_HERE {
+            return Ok(Err(no_listening_here()));
+        }
+        if let Err(err) = self.admit_listen(port, scope) {
+            return Ok(Err(err));
+        }
+        let this_computer = matches!(scope, net::sockets::ListenScope::ThisComputer);
+        Ok(self
+            .async_sockets
+            .tcp_listen(port, this_computer)
+            .map_err(listen_fault_to_wit))
+    }
+
+    fn tcp_accept(
+        &mut self,
+        listener: u64,
+    ) -> wasmtime::Result<Result<Option<u64>, net::sockets::ListenError>> {
+        if !LISTENS_HERE {
+            return Ok(Err(no_listening_here()));
+        }
+        Ok(self
+            .async_sockets
+            .tcp_accept(listener)
+            .map_err(listen_fault_to_wit))
+    }
+
+    fn tcp_local_port(
+        &mut self,
+        handle: u64,
+    ) -> wasmtime::Result<Result<u16, net::sockets::ListenError>> {
+        Ok(self
+            .async_sockets
+            .tcp_local_port(handle)
+            .map_err(listen_fault_to_wit))
+    }
+
+    fn tcp_addresses(
+        &mut self,
+        listener: u64,
+    ) -> wasmtime::Result<Result<Vec<net::sockets::ListenAddress>, net::sockets::ListenError>> {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            use crate::serve_discovery as found;
+            let port = match self.network_listener(listener) {
+                Ok(port) => port,
+                Err(err) => return Ok(Err(err)),
+            };
+            Ok(Ok(found::local_network_addresses()
+                .into_iter()
+                .map(|ip| net::sockets::ListenAddress {
+                    ip: ip.to_string(),
+                    port,
+                    url: found::url(&ip.to_string(), port),
+                })
+                .collect()))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            let _ = listener;
+            Ok(Err(no_listening_here()))
+        }
+    }
+
+    fn tcp_announce(
+        &mut self,
+        listener: u64,
+        service_type: String,
+    ) -> wasmtime::Result<Result<net::sockets::Announcement, net::sockets::ListenError>> {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        {
+            use crate::serve_discovery as found;
+            use net::sockets::ListenError;
+            let port = match self.network_listener(listener) {
+                Ok(port) => port,
+                Err(err) => return Ok(Err(err)),
+            };
+            let service_type = match found::service_type(&service_type) {
+                Ok(ty) => ty,
+                Err(words) => return Ok(Err(ListenError::Failed(words))),
+            };
+            let ips = found::local_network_addresses();
+            if ips.is_empty() {
+                return Ok(Err(ListenError::Failed(
+                    "this computer is not on a local network right now, so no device could find \
+                     the app: connect it to Wi-Fi or a network cable, then announce again"
+                        .to_string(),
+                )));
+            }
+            let announced = found::Announcement {
+                name: found::instance_name(&self.app_name),
+                host: format!("{}.local", found::host_label(&self.app_name)),
+                service_type,
+                port,
+                ips,
+            };
+            if let Err(why) = self.discovery.announce(listener, &announced) {
+                return Ok(Err(ListenError::Failed(format!(
+                    "could not announce the app on your network: {why}"
+                ))));
+            }
+            Ok(Ok(net::sockets::Announcement {
+                url: found::url(&announced.host, port),
+                name: announced.name,
+                host: announced.host,
+            }))
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        {
+            let _ = (listener, service_type);
+            Ok(Err(no_listening_here()))
+        }
+    }
+
     fn close(&mut self, handle: u64) -> wasmtime::Result<()> {
         self.async_sockets.close(handle);
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        self.discovery.withdraw(handle);
         Ok(())
     }
+}
+
+/// Listening is for Krate on a computer (IC-987): a phone answers every
+/// listen in words, as a tab does.
+#[cfg(not(target_arch = "wasm32"))]
+const LISTENS_HERE: bool = cfg!(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "windows"
+));
+
+#[cfg(not(target_arch = "wasm32"))]
+fn listen_fault_to_wit(fault: crate::async_sockets::ListenFault) -> net::sockets::ListenError {
+    use crate::async_sockets::ListenFault;
+    use net::sockets::ListenError;
+    match fault {
+        ListenFault::InUse(why) => ListenError::InUse(why),
+        ListenFault::BadPort(why) => ListenError::BadPort(why),
+        ListenFault::TooMany(why) => ListenError::TooMany(why),
+        ListenFault::UnknownHandle => ListenError::UnknownHandle,
+        ListenFault::Failed(why) => ListenError::Failed(why),
+    }
+}
+
+/// Where listening is not possible: a browser tab or a phone (IC-987).
+fn no_listening_here() -> net::sockets::ListenError {
+    net::sockets::ListenError::Unavailable(
+        "other devices can open an app only in Krate on a computer (macOS, Windows or Linux), \
+         not in a browser tab or on a phone"
+            .to_string(),
+    )
 }
 
 /// A browser tab has no raw sockets; every call says so.
@@ -2074,6 +3269,38 @@ impl net::sockets::Host for Phase2Host<'_> {
     fn udp_receive(&mut self, _handle: u64) -> wasmtime::Result<Option<net::sockets::Datagram>> {
         Ok(None)
     }
+    fn tcp_listen(
+        &mut self,
+        _port: u16,
+        _scope: net::sockets::ListenScope,
+    ) -> wasmtime::Result<Result<u64, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_accept(
+        &mut self,
+        _listener: u64,
+    ) -> wasmtime::Result<Result<Option<u64>, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_local_port(
+        &mut self,
+        _handle: u64,
+    ) -> wasmtime::Result<Result<u16, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_addresses(
+        &mut self,
+        _listener: u64,
+    ) -> wasmtime::Result<Result<Vec<net::sockets::ListenAddress>, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
+    fn tcp_announce(
+        &mut self,
+        _listener: u64,
+        _service_type: String,
+    ) -> wasmtime::Result<Result<net::sockets::Announcement, net::sockets::ListenError>> {
+        Ok(Err(no_listening_here()))
+    }
     fn close(&mut self, _handle: u64) -> wasmtime::Result<()> {
         Ok(())
     }
@@ -2129,6 +3356,12 @@ impl locale::info::Host for Phase2Host<'_> {
     fn timezone(&mut self) -> wasmtime::Result<String> {
         self.dispatcher()
             .timezone()
+            .map_err(bridge::dispatch_error_to_trap)
+    }
+
+    fn utc_offset(&mut self, millis: u64) -> wasmtime::Result<i32> {
+        self.dispatcher()
+            .utc_offset(millis)
             .map_err(bridge::dispatch_error_to_trap)
     }
 }

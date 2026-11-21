@@ -317,7 +317,7 @@ pub fn notify_as(
     // (IC-918). No helper process exists on a phone.
     #[cfg(target_os = "ios")]
     {
-        return krate_adapter_ios::uikit_native::notify(app_name, title, body)
+        return krate_adapter_ios::uikit_native::notify(app_name, title, body, id)
             .map_err(NotifyError::Unavailable);
     }
 
@@ -325,7 +325,7 @@ pub fn notify_as(
     // sender line, the phone asked first on Android 13 and up (IC-918).
     #[cfg(target_os = "android")]
     {
-        return krate_adapter_android::phone::notify(app_name, title, body)
+        return krate_adapter_android::phone::notify(app_name, title, body, id)
             .map_err(NotifyError::Unavailable);
     }
 
@@ -406,7 +406,25 @@ pub fn withdraw(identity: &str, id: &str) {
                 .status();
         }
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    // Phones: the running app's tag (Android) or identifier (iOS) for the
+    // id, kept apart from every other app's.
+    #[cfg(target_os = "ios")]
+    {
+        let _ = identity;
+        krate_adapter_ios::uikit_native::withdraw_notice(id);
+    }
+    #[cfg(target_os = "android")]
+    {
+        let _ = identity;
+        krate_adapter_android::phone::withdraw(id);
+    }
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     {
         let _ = (identity, id);
     }

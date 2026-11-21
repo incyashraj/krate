@@ -40,6 +40,13 @@ interface info {
 
   /// IANA timezone name, for example "Asia/Singapore".
   timezone: func() -> string;
+
+  /// Minutes east of UTC in the person's own timezone (the one `timezone`
+  /// names) at the instant `millis` (Unix epoch milliseconds), daylight
+  /// saving included: 60 in Zurich in January, 120 in July, -300 in New
+  /// York in January, 330 in India. Local time is `millis + offset * 60000`;
+  /// "today" for a person is the local day, never the UTC day.
+  utc-offset: func(millis: u64) -> s32;
 }
 
 /// Host-backed date and number formatting.

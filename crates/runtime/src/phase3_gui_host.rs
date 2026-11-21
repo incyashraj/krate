@@ -1608,6 +1608,13 @@ impl Phase3GuiHost {
             .map_err(|why| (true, why))
     }
 
+    /// Whether this run has no window and nobody at it: a pick (a serial
+    /// device, IC-985; a printer, IC-986) then answers cancelled instead of
+    /// waiting on a list.
+    pub(crate) fn is_headless(&self) -> bool {
+        self.headless
+    }
+
     /// Whether `bluetooth.connect` was granted (IC-917).
     fn bluetooth_granted(&self) -> bool {
         self.runtime

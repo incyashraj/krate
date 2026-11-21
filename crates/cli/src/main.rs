@@ -702,6 +702,24 @@ enum Command {
         /// finds it empty.
         #[arg(long, value_name = "APP_ID")]
         adopt: Option<String>,
+
+        /// Replace this computer's publisher key with a new one. The old key
+        /// and the new sign a handover, so every app you made keeps its data
+        /// when you next rebuild it; the old private half is removed.
+        #[arg(long)]
+        new_key: bool,
+
+        /// Your publisher key may be in someone else's hands. Tells Krate
+        /// Cloud first -- every release it signed that reached the hub since
+        /// --since is blocked, and each app goes back to its last safe
+        /// version -- then makes you a new key, as --new-key does.
+        #[arg(long)]
+        report_compromised: bool,
+
+        /// With --report-compromised: from when (YYYY-MM-DD, UTC) releases
+        /// signed by the old key are not to be trusted. Default: all of them.
+        #[arg(long, value_name = "DATE", requires = "report_compromised")]
+        since: Option<String>,
     },
 
     /// Sign a bundle with a publisher key, so a recipient can check it came
@@ -2308,7 +2326,16 @@ fn run() -> Result<u8> {
             isolate,
             share,
             adopt,
-        } => identity_command(isolate, share, adopt.as_deref()),
+            new_key,
+            report_compromised,
+            since,
+        } => {
+            if new_key || report_compromised {
+                new_key_command(report_compromised, since.as_deref())
+            } else {
+                identity_command(isolate, share, adopt.as_deref())
+            }
+        }
         Command::Card {
             bundle,
             output,
@@ -5463,19 +5490,50 @@ fn claim_destination(destination: &Path) -> Result<RevisionClaim> {
     }
 }
 
-/// Who signed this bundle, if anyone (K-311).
-///
-/// `None` is unsigned. A signature that is present but does not verify is
-/// still a signature the person should hear about, so it is reported in
-/// the verdict's own words rather than folded into "unsigned".
-fn signer_of(bundle: &Path) -> Result<Option<String>> {
+/// Who signed this bundle, when it is not this computer's own maker key
+/// (K-1289). Since IC-983 every app a person makes is signed with their
+/// maker key, and a revision is signed with it again -- so their own app,
+/// changed, is still theirs and signed. Calling that an "unsigned fork" and
+/// keeping a `.signed.krate` copy on every change (even a change that
+/// failed) was K-311's rule applied to the person's own releases. A file
+/// signed by anyone else -- or by this key with maker signing off -- is a
+/// fork as before.
+fn someone_elses_signature(bundle: &Path) -> Result<Option<String>> {
     let opened = krate_bundle::open(bundle)?;
-    Ok(opened.signature_verdict()?.map(|verdict| match verdict {
-        krate_bundle::signing::Verdict::Valid { public_key } => {
-            format!("key {}", &hex_of(&public_key)[..12])
+    let mine = (!maker_key::signing_off())
+        .then(maker_key::public)
+        .flatten();
+    Ok(opened
+        .signature_verdict()?
+        .and_then(|verdict| match verdict {
+            krate_bundle::signing::Verdict::Valid { public_key } => {
+                let hex = hex_of(&public_key);
+                (mine.as_deref() != Some(hex.as_str())).then(|| format!("key {}", &hex[..12]))
+            }
+            other => Some(format!("a signature that does not verify ({other})")),
+        }))
+}
+
+/// Removes `copy` when it is byte-for-byte the file at `original`, which is
+/// what a kept signed original is when the change it was kept for never
+/// replaced anything (K-1289). After a change that landed -- or a file
+/// something else rewrote meanwhile -- they differ and the copy stays.
+struct DropIfIdentical {
+    copy: Option<PathBuf>,
+    original: PathBuf,
+}
+
+impl Drop for DropIfIdentical {
+    fn drop(&mut self) {
+        let Some(copy) = &self.copy else {
+            return;
+        };
+        if let (Ok(a), Ok(b)) = (fs::read(copy), fs::read(&self.original)) {
+            if a == b {
+                let _ = fs::remove_file(copy);
+            }
         }
-        other => format!("a signature that does not verify ({other})"),
-    }))
+    }
 }
 
 /// Keep a signed original beside the file a revision is about to replace
@@ -5708,10 +5766,16 @@ fn revise_cli(
     // fork, and the person is told so rather than left holding an unsigned
     // file where a signed one used to be (K-311). When the result replaces
     // the input, the signed original is kept beside it first.
-    let signer = signer_of(bundle)?;
+    let signer = someone_elses_signature(bundle)?;
     let kept = match &signer {
         Some(_) if out == bundle => Some(keep_signed_original(bundle)?),
         _ => None,
+    };
+    // A change that did not land leaves the original where it was, so its
+    // copy would be a second identical file (K-1289).
+    let _tidy = DropIfIdentical {
+        copy: kept.clone(),
+        original: bundle.to_path_buf(),
     };
     // The result says what it was changed from (IC-397, test 494).
     let derived_from = derived_from_of(bundle);
@@ -7057,6 +7121,14 @@ fn revoke_command(
     Ok(0)
 }
 
+/// The app id a remembered-grants file is for, from its name: the storage
+/// key before the separator that names whose app it is -- `@` a publisher,
+/// `+` this computer's own developer, `~` a hub account (K-1296). A
+/// sanitised id never holds any of the three.
+fn app_id_of_grants_file(stem: &str) -> &str {
+    stem.split(['@', '+', '~']).next().unwrap_or_default()
+}
+
 /// `krate permissions`: what apps have been allowed, and taking it back.
 ///
 /// A remembered grant with no way to see or withdraw it is a wall that
@@ -7076,21 +7148,35 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
         return Ok(0);
     }
 
-    let mut entries: Vec<PathBuf> = match fs::read_dir(&dir) {
-        Ok(read) => read.flatten().map(|e| e.path()).collect(),
-        Err(_) => Vec::new(),
+    let files_in = |dir: &Path| -> Vec<PathBuf> {
+        let mut entries: Vec<PathBuf> = match fs::read_dir(dir) {
+            Ok(read) => read
+                .flatten()
+                .map(|e| e.path())
+                .filter(|path| path.is_file())
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        entries.sort();
+        entries
     };
-    entries.sort();
+    let entries = files_in(&dir);
+    // The printer each app was given (krate:print, IC-986), kept beside its
+    // grants under the same file name.
+    let printers = files_in(&dir.join(PRINTERS_DIR));
 
     if let Some(app_id) = forget {
         // The file name is "<app id>@<publisher>", and one app id can have
         // more than one publisher. Forgetting by id forgets every one of
-        // them, which is what a person asking to forget an app means.
+        // them, which is what a person asking to forget an app means -- and
+        // the printer it was given goes with its grants, so its next print
+        // asks again.
         let mut forgotten = 0;
-        for path in &entries {
+        for path in entries.iter().chain(&printers) {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
-            let id = name.split('@').next().unwrap_or_default();
-            if id == sanitize_storage_name(app_id) && fs::remove_file(path).is_ok() {
+            if app_id_of_grants_file(&name) == sanitize_storage_name(app_id)
+                && fs::remove_file(path).is_ok()
+            {
                 forgotten += 1;
             }
         }
@@ -7121,6 +7207,13 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
         }
         for cap in &record.granted {
             println!("  - {cap}");
+        }
+        let printer = path
+            .file_name()
+            .map(|file| dir.join(PRINTERS_DIR).join(file))
+            .and_then(|memory| krate_runtime::printer_host::remembered_in(&memory));
+        if let Some((_, name)) = printer {
+            println!("  - prints to {name} without asking (device.printer)");
         }
     }
     if shown == 0 {
@@ -7390,6 +7483,109 @@ fn revocations_command(import: Option<&Path>) -> Result<u8> {
 }
 
 /// Show and set this machine's development identity (IC-737).
+/// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's
+/// days_from_civil), so a date needs no calendar crate.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// `YYYY-MM-DD` (UTC midnight) as unix seconds.
+fn since_date(text: &str) -> Result<u64> {
+    let parts: Vec<&str> = text.trim().split('-').collect();
+    let bad = || anyhow::anyhow!("--since takes a date like 2026-11-01, not \"{text}\"");
+    let [y, m, d] = parts.as_slice() else {
+        return Err(bad());
+    };
+    let (y, m, d): (i64, i64, i64) = (
+        y.parse().map_err(|_| bad())?,
+        m.parse().map_err(|_| bad())?,
+        d.parse().map_err(|_| bad())?,
+    );
+    if !(1970..=9999).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return Err(bad());
+    }
+    Ok((days_from_civil(y, m, d) * 86_400) as u64)
+}
+
+/// `krate identity --new-key` and `--report-compromised` (K-1290, IC-669).
+fn new_key_command(report: bool, since: Option<&str>) -> Result<u8> {
+    let Some(old) = maker_key::public() else {
+        anyhow::bail!(
+            "this computer has no publisher key yet, so there is nothing to replace. \
+             One is made the first time you make an app."
+        );
+    };
+    let since = since.map(since_date).transpose()?.unwrap_or(0);
+    if report {
+        // The hub first, while the old key is still the one on record: if
+        // the report cannot be made, nothing here changes either.
+        let Some(identity) = github_auth::current() else {
+            anyhow::bail!(
+                "reporting your key needs a sign-in to Krate Cloud -- run `krate login`, then \
+                 this again. (`krate identity --new-key` replaces the key without telling the hub.)"
+            );
+        };
+        let hub = org::hub_url(None)?;
+        let endpoint = format!("{}/publisher-keys/compromised", hub.trim_end_matches('/'));
+        let body = serde_json::json!({ "key": old, "since": since });
+        let answer = ureq::post(&endpoint)
+            .set("Authorization", &format!("Bearer {}", identity.token))
+            .set("Content-Type", "application/json")
+            .send_string(&body.to_string());
+        match answer {
+            Ok(response) => {
+                let value: serde_json::Value =
+                    serde_json::from_str(&response.into_string().unwrap_or_default())
+                        .unwrap_or_default();
+                let blocked = value["blocked"].as_array().map(Vec::len).unwrap_or(0);
+                let moved = value["moved"].as_array().map(Vec::len).unwrap_or(0);
+                println!(
+                    "Krate Cloud blocked {blocked} release{} signed by your old key{}.",
+                    if blocked == 1 { "" } else { "s" },
+                    if moved > 0 {
+                        format!("; {moved} app{} went back to its last safe version", if moved == 1 { "" } else { "s" })
+                    } else {
+                        String::new()
+                    }
+                );
+            }
+            Err(ureq::Error::Status(403, response)) => {
+                // Not this account's key on the hub: nothing there to block,
+                // and the key here is still worth replacing.
+                println!(
+                    "Krate Cloud: {}",
+                    response.into_string().unwrap_or_default().trim()
+                );
+            }
+            Err(ureq::Error::Status(code, response)) => anyhow::bail!(
+                "Krate Cloud did not take the report ({code}): {}. Nothing was changed.",
+                response.into_string().unwrap_or_default().trim()
+            ),
+            Err(err) => anyhow::bail!(
+                "could not reach Krate Cloud at {hub} to report the key ({err}). Nothing was changed."
+            ),
+        }
+    }
+    let (old, new) = maker_key::rotate(unix_now())?;
+    println!(
+        "Your new publisher key is {}..., kept {}.",
+        &new.public[..12],
+        new.kept.describe()
+    );
+    println!(
+        "The old one ({}...) signed the handover and its private half is gone from this computer.",
+        &old[..12]
+    );
+    println!("Apps you made keep their data: rebuild or change one and it moves to the new key when it next opens.");
+    Ok(0)
+}
+
 fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u8> {
     let flag = krate_home().join("keys").join("isolate-development");
     if isolate && share {
@@ -9762,13 +9958,31 @@ fn publish_bundle(
         // a header, so the author shown on an app's page is a real account.
         request = request.set("Authorization", &format!("Bearer {}", identity.token));
     }
+    // A maker key that took over from an older one carries the handover,
+    // signed by both, so the hub takes the new key as the same publisher
+    // for apps the old one signed (K-1290). Public facts only: two public
+    // keys, a time and two signatures.
+    if let Some(maker) = maker_key::public() {
+        let chain = maker_key::chain_to(&maker);
+        if !chain.is_empty() {
+            if let Ok(header) = serde_json::to_string(&chain) {
+                request = request.set("X-Krate-Succession", &header);
+            }
+        }
+    }
 
     // Over the door's one request: the big-file path, in parts (IC-945).
     let big_body = if bytes.len() > PUBLISH_DOOR_BYTES {
         let Some(identity) = &identity else {
             anyhow::bail!("not signed in. Sign in first, then publish again.");
         };
+        let succession = maker_key::public()
+            .map(|maker| maker_key::chain_to(&maker))
+            .filter(|chain| !chain.is_empty())
+            .and_then(|chain| serde_json::to_string(&chain).ok())
+            .unwrap_or_default();
         let fields = serde_json::json!({
+            "succession": succession,
             "name": app_name,
             "description": description.unwrap_or(""),
             "category": classify_app(&app_name, description.unwrap_or("")),
@@ -10865,9 +11079,11 @@ impl Wall {
                  result where you need it."
             }
             Wall::Hardware => {
-                "Krate has no capability for MIDI, Bluetooth, USB or serial \
-                 devices, so an app cannot reach one. I can build the same idea \
-                 driven by the keyboard, the mouse, or a file you give it."
+                "Krate has no capability for MIDI or Bluetooth devices, game \
+                 controllers, or USB keyboards, mice, drives, cameras and \
+                 microphones (the computer's own drivers keep those), so an app \
+                 cannot reach one. I can build the same idea driven by the \
+                 keyboard, the mouse, or a file you give it."
             }
             Wall::Background => {
                 "A Krate app is one window and one run: it cannot keep working \
@@ -10938,28 +11154,48 @@ fn wall_in_request(request: &str) -> Option<Wall> {
         return Some(Wall::OtherApps);
     }
 
-    // Physical devices with no capability of any kind.
-    if any(&[
-        "midi",
-        "bluetooth",
-        " usb",
-        "usb ",
-        "serial port",
-        "gamepad",
-        "game controller",
-        "arduino",
-    ]) && any(&[
-        "connect",
-        "connected",
-        "my ",
-        "read",
-        "listen",
-        "play",
-        "device",
-        "controller",
-        "keyboard",
-        "piano",
-    ]) {
+    // Physical devices with no capability of any kind. A serial device has
+    // one now (device.serial, IC-985) -- an Arduino, an instrument, a board
+    // on a USB serial line -- so a request that names serial is buildable.
+    // So is a USB device the computer has no driver for (device.usb,
+    // IC-988): a radio dongle, an instrument; the USB devices the computer
+    // keeps for itself are the wall below.
+    if any(&[" usb", "usb "])
+        && any(&[
+            "keyboard",
+            "mouse",
+            "flash drive",
+            "thumb drive",
+            "usb stick",
+            "usb drive",
+            "hard drive",
+            "webcam",
+            "microphone",
+            "headset",
+            "security key",
+            "yubikey",
+            "gamepad",
+            "game controller",
+            "joystick",
+        ])
+    {
+        return Some(Wall::Hardware);
+    }
+    if !any(&["serial"])
+        && any(&["midi", "bluetooth", "gamepad", "game controller"])
+        && any(&[
+            "connect",
+            "connected",
+            "my ",
+            "read",
+            "listen",
+            "play",
+            "device",
+            "controller",
+            "keyboard",
+            "piano",
+        ])
+    {
         return Some(Wall::Hardware);
     }
 
@@ -11919,6 +12155,47 @@ impl StagedOutput {
     }
 }
 
+/// When `destination` is no longer the file a change began from -- its
+/// archive digest is not `parent_archive` -- move the finished build to a
+/// numbered `<name>.changed.krate` beside it instead, and say where
+/// (IC-397). None when the parent is unchanged and the build may replace it.
+fn keep_if_parent_moved(
+    staged: &mut StagedOutput,
+    destination: &Path,
+    parent_archive: &str,
+) -> Result<Option<PathBuf>> {
+    let now = fs::read(destination)
+        .with_context(|| format!("read {} before replacing it", destination.display()))?;
+    if krate_bundle::provenance::digest_archive_bytes(&now).digest == parent_archive {
+        return Ok(None);
+    }
+    let dir = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let stem = destination
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let mut n = 1;
+    let kept = loop {
+        let name = if n == 1 {
+            format!("{stem}.changed.krate")
+        } else {
+            format!("{stem}.changed-{n}.krate")
+        };
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            break candidate;
+        }
+        n += 1;
+    };
+    staged.destination = kept.clone();
+    staged.promote()?;
+    Ok(Some(kept))
+}
+
 /// Whether a finished build should take the destination's place
 /// (IC-397, test 491).
 ///
@@ -12549,6 +12826,26 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     let replacing_existing = req.output.exists();
     let committed = should_commit(acceptance.accepted, replacing_existing);
     if committed {
+        // The app being changed must still be the one this change was made
+        // from (IC-397). The lock on the destination keeps a second `krate`
+        // out (K-310), not another program: a file synced, copied over or
+        // saved by something else while the AI worked would be replaced
+        // without anyone knowing what was lost. Its bytes are held to the
+        // digest the fork record took when the change began.
+        if replacing_existing && req.changed_from.as_deref() == Some(req.output.as_path()) {
+            if let Some(parent) = &req.derived_from {
+                if let Some(kept) = keep_if_parent_moved(&mut staged, &req.output, &parent.archive)?
+                {
+                    anyhow::bail!(
+                        "{} changed while this change was being made -- something else wrote \
+                         to it -- so it was not replaced. The changed app is kept at {}; \
+                         open both and keep the one you want.",
+                        req.output.display(),
+                        kept.display()
+                    );
+                }
+            }
+        }
         staged.promote()?;
     }
 
@@ -16243,6 +16540,31 @@ have permission to execute."
     }
 }
 
+/// Before an app builds: if its Cargo.toml names Krate's SDK copy from
+/// another version, point it at this binary's own (K-1311). Without this an
+/// app made with an older Krate kept building against that version's SDK
+/// forever, and a cleared cache broke it.
+fn repoint_app_sdk(app_dir: &Path) {
+    let cargo = app_dir.join("Cargo.toml");
+    let Ok(text) = std::fs::read_to_string(&cargo) else {
+        return;
+    };
+    if !text.contains("krate") {
+        return;
+    }
+    let Ok(current) = sdk::ensure_materialized() else {
+        return;
+    };
+    if let Some((repointed, old)) = sdk::repoint_cached_sdk(&text, &current) {
+        if std::fs::write(&cargo, repointed).is_ok() {
+            eprintln!(
+                "note: this app was set up with another Krate's SDK ({}); it now builds with this Krate's",
+                old.join(", ")
+            );
+        }
+    }
+}
+
 /// Build the app dir to a wasm component with cargo-component, returning the
 /// path to the produced wasm.
 ///
@@ -16253,6 +16575,7 @@ have permission to execute."
 /// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
 ///   that shadows rustup (and lacks the wasm target) does not get used.
 fn component_build_command(app_dir: &Path) -> ProcessCommand {
+    repoint_app_sdk(app_dir);
     let resolved = resolve_tool("cargo-component");
     let program: std::ffi::OsString = match &resolved {
         Some(path) => path.clone().into_os_string(),
@@ -16893,6 +17216,7 @@ fn build_threaded(app_dir: &Path) -> std::result::Result<PathBuf, String> {
             " -C link-arg=--export=__imported_wasi_snapshot_preview1_{name}"
         ));
     }
+    repoint_app_sdk(app_dir);
     let mut command = ProcessCommand::new("cargo");
     command
         .args(["build", "--release", "--target", "wasm32-wasip1-threads"])
@@ -18637,6 +18961,27 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // of an unsigned app a hub vouched for gets a copy of it, once (K-1172).
     // Before anything reads a store, so the app never starts on a second,
     // empty one beside its data.
+    // An app signed by a maker key that took over from older ones takes
+    // their data first (K-1290), so the id-keyed move below never fills the
+    // new store ahead of it.
+    if let Some(principal @ StoragePrincipal::Verified { publisher, .. }) = &storage {
+        if maker_key::public().as_deref() == Some(publisher.as_str()) {
+            match adopt_predecessor_key_data(
+                &store_home,
+                principal,
+                &maker_key::predecessors_of(publisher),
+                &machine_key,
+            ) {
+                Ok(pieces) if !pieces.is_empty() => eprintln!(
+                    "krate: {} is signed with your new key; its saved data ({}) moved with it",
+                    manifest.map(|m| m.app.name.as_str()).unwrap_or("this app"),
+                    pieces.join(", ")
+                ),
+                Ok(_) => {}
+                Err(words) => anyhow::bail!("{words}. Nothing was lost; open it again to finish."),
+            }
+        }
+    }
     if let Some(principal) = &storage {
         match adopt_id_keyed_data_here(
             &store_home,
@@ -19041,6 +19386,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // What the manifest names, so a program it does not name is refused
         // as never asked for (krate:process, IC-977).
         declared_capabilities: declared_set(manifest),
+        // The printer the person picked for this app, remembered beside its
+        // grants (krate:print, IC-986) on the grants' own terms: a lineage
+        // that can be checked again, and a person deciding -- an
+        // --auto-grant run's pick lasts for that run alone.
+        printer_memory: storage
+            .as_ref()
+            .filter(|_| !request.auto_grant)
+            .and_then(|principal| remembered_printer_path(&store_home, principal)),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -20076,12 +20429,10 @@ fn uninstall_app(
             if let Some(entry) = owned_desktop_entry(&root, path) {
                 let _ = fs::remove_file(entry);
             }
-            // The Start menu entry is named after the app's folder, in the
-            // folder only Krate writes to.
+            // The Start menu entries that open this app's own copy, in
+            // the folder only Krate writes to.
             #[cfg(windows)]
-            if let Some(folder) = path.file_name() {
-                let mut entry = start_menu_dir(prefix)?.join(folder);
-                entry.as_mut_os_string().push(".lnk");
+            for entry in owned_start_menu_entries(&start_menu_dir(prefix)?, path) {
                 let _ = fs::remove_file(entry);
             }
             fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
@@ -20699,6 +21050,24 @@ fn install_name_part(name: &str) -> String {
     }
 }
 
+/// Text inside a double-quoted `.strings` value: backslash, quote and the
+/// line breaks escaped, everything else as it is (the file is UTF-8).
+#[cfg(any(target_os = "macos", test))]
+fn strings_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// The wrapper's executable file name (IC-278): the app's own name, which
 /// is what the dock shows, wherever that is one safe file name.
 ///
@@ -20844,6 +21213,39 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     // Identifier derived from the app's own id, so two different apps are two
     // different apps to Launch Services rather than one overwriting the other.
     let ident = format!("dev.krate.app.{}", manifest.app.id.replace('/', "."));
+    // The folder carries the lineage tag ("Notes (3f9a1c2e).app") so two
+    // publishers' Notes never collide, and Finder, Spotlight and Launchpad
+    // showed exactly that. The name a person sees comes from a localized
+    // display name instead: macOS shows it only while the folder name still
+    // equals the plist's CFBundleDisplayName, so the plist names the folder
+    // and InfoPlist.strings the app. A person who renames the folder sees
+    // their own name, as with any Mac app.
+    //
+    // Not for a name of dots alone: macOS shows ".." as "...app.app", so
+    // that app keeps showing its folder name.
+    let localized = !name.chars().all(|c| c == '.');
+    let folder_name = install_directory_name(&opened);
+    let shown_name = if localized {
+        folder_name.as_str()
+    } else {
+        name
+    };
+    if localized {
+        let english = resources.join("en.lproj");
+        fs::create_dir_all(&english)?;
+        fs::write(
+            english.join("InfoPlist.strings"),
+            format!(
+                "CFBundleDisplayName = \"{shown}\";\nCFBundleName = \"{shown}\";\n",
+                shown = strings_escape(name)
+            ),
+        )?;
+    }
+    let localized_key = if localized {
+        "    <key>LSHasLocalizedDisplayName</key>\n    <true/>\n"
+    } else {
+        ""
+    };
     fs::write(
         staging.join("Contents/Info.plist"),
         format!(
@@ -20854,7 +21256,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <key>CFBundleName</key>
     <string>{name}</string>
     <key>CFBundleDisplayName</key>
-    <string>{name}</string>
+    <string>{shown_name}</string>
+{localized_key}    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
     <key>CFBundleExecutable</key>
     <string>{executable}</string>
     <key>CFBundleIdentifier</key>
@@ -20881,10 +21285,13 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>{name} asked where you are, and you allowed it in Krate's permission window. It is told only while it is open.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>{name} asked to reach a Bluetooth device, and you allowed it in Krate's permission window. It reaches only the device you pick.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>{name} asked to let other devices on your network find and open it, and you allowed it in Krate's permission window.</string>
 {icon_entry}</dict>
 </plist>
 "#,
             name = xml_escape(name),
+            shown_name = xml_escape(shown_name),
             executable = xml_escape(&executable),
             ident = xml_escape(&ident),
             version = xml_escape(&manifest.app.version),
@@ -21079,7 +21486,9 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     let apps = install_root(prefix)?.join("Krate").join("apps");
     let app_dir = apps.join(&folder);
     let menu = start_menu_dir(prefix)?;
-    let shortcut = menu.join(format!("{folder}.lnk"));
+    let app_id =
+        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    let shortcut = start_menu_entry_path(&menu, &name, &folder, &app_id);
     if dry_run {
         println!("{}", shortcut.display());
         return Ok(0);
@@ -21118,8 +21527,14 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     };
     fs::create_dir_all(&menu).with_context(|| format!("creating {}", menu.display()))?;
     let icon = app_dir.join("app.ico");
-    let app_id =
-        krate_adapter_windows::toast::app_user_model_id(&principal_of(&opened).storage_key());
+    // An entry this app had under another name (the tagged one an older
+    // Krate wrote, or the tagged one a name clash made and the clash is
+    // gone) goes, so the app is in the menu once.
+    for older in owned_start_menu_entries(&menu, &app_dir) {
+        if older != shortcut {
+            let _ = fs::remove_file(older);
+        }
+    }
     krate_adapter_windows::shortcut::write(&krate_adapter_windows::shortcut::Shortcut {
         path: &shortcut,
         target: &target,
@@ -21131,6 +21546,49 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     .map_err(anyhow::Error::msg)?;
     println!("Installed {name}: it is in your Start menu with its own name and icon.");
     Ok(0)
+}
+
+/// Where an app's Start menu entry goes (IC-278): the Start menu shows an
+/// entry's file name, so it is the app's own name -- "Notes", not the
+/// lineage-tagged folder "Notes (3f9a1c2e)" it used to read as. Only when
+/// another app's entry already holds that name does this one take the
+/// tagged name, so two publishers' Notes are still two entries.
+#[cfg(windows)]
+fn start_menu_entry_path(menu: &Path, name: &str, folder: &str, app_id: &str) -> PathBuf {
+    let plain = menu.join(format!("{}.lnk", install_name_part(name)));
+    match krate_adapter_windows::shortcut::read(&plain) {
+        Ok((holder, _)) if holder != app_id => menu.join(format!("{folder}.lnk")),
+        _ => plain,
+    }
+}
+
+/// The Start menu entries that open this installed app: those whose
+/// arguments name its own copy. Read from the entry, never guessed from a
+/// file name, so uninstall takes what install made and nothing else.
+#[cfg(windows)]
+fn owned_start_menu_entries(menu: &Path, app_dir: &Path) -> Vec<PathBuf> {
+    let payload = shell_path(&app_dir.join("app.krate"))
+        .to_string_lossy()
+        .to_lowercase();
+    let Ok(entries) = fs::read_dir(menu) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("lnk"))
+        })
+        .filter(|path| {
+            krate_adapter_windows::shortcut::read(path).is_ok_and(|(_, arguments)| {
+                arguments
+                    .to_lowercase()
+                    .split('"')
+                    .any(|part| part == payload)
+            })
+        })
+        .collect()
 }
 
 /// A path the Windows shell accepts in a shortcut: without the `\\?\`
@@ -21627,7 +22085,7 @@ fn open_studio() -> bool {
 /// before touching the framework, and answer unavailable without it. The
 /// tests below hold every bundle writer to this list.
 #[cfg(all(test, target_os = "macos"))]
-pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
+pub(crate) const HARDWARE_USAGE_KEYS: [&str; 8] = [
     "NSCameraUsageDescription",
     "NSMicrophoneUsageDescription",
     "NSSpeechRecognitionUsageDescription",
@@ -21635,6 +22093,9 @@ pub(crate) const HARDWARE_USAGE_KEYS: [&str; 7] = [
     "NSLocationWhenInUseUsageDescription",
     "NSLocationUsageDescription",
     "NSBluetoothAlwaysUsageDescription",
+    // Announcing a listener by multicast DNS (IC-990): macOS asks the
+    // person before anything on the computer reaches its local network.
+    "NSLocalNetworkUsageDescription",
 ];
 
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
@@ -21713,6 +22174,9 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
          \u{20}   <key>NSBluetoothAlwaysUsageDescription</key>\n\
          \u{20}   <string>{name} asked to reach a Bluetooth device, and you allowed it \
          in Krate's permission window. It reaches only the device you pick.</string>\n\
+         \u{20}   <key>NSLocalNetworkUsageDescription</key>\n\
+         \u{20}   <string>{name} asked to let other devices on your network find and \
+         open it, and you allowed it in Krate's permission window.</string>\n\
          </dict>\n</plist>\n"
     );
     fs::write(app.join("Contents/Info.plist"), plist)?;
@@ -22690,6 +23154,20 @@ fn remembered_grants_path(home: &Path, principal: &StoragePrincipal) -> Option<P
         ),
     }
 }
+
+/// Where the printer the person picked for this app is remembered
+/// (krate:print, IC-986): beside its remembered grants, on the same terms --
+/// none for an unverified id -- so `krate permissions --forget` takes both
+/// back together.
+fn remembered_printer_path(home: &Path, principal: &StoragePrincipal) -> Option<PathBuf> {
+    remembered_grants_path(home, principal).map(|grants| {
+        let file = grants.file_name().map(PathBuf::from).unwrap_or_default();
+        home.join("grants").join(PRINTERS_DIR).join(file)
+    })
+}
+
+/// The folder under `grants/` that holds remembered printers.
+const PRINTERS_DIR: &str = "printers";
 
 /// What this person has already granted this app, as a policy.
 ///
@@ -24056,6 +24534,13 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
             "process.run" | "process.terminal" => Some(":process/"),
+            "device.serial" => Some(":serial/"),
+            "device.printer" => Some(":print/"),
+            "device.usb" => Some(":usb/"),
+            // Listening (IC-987): the sockets interface, not just any of net.
+            // Optional is fine here -- it is how an app that serves only this
+            // computer declares its port without a question.
+            "net.listen" => Some(":net/sockets"),
             // System and always-on families carry no signal here.
             _ => None,
         };
@@ -24082,7 +24567,13 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
         // an app reaches for in passing.
         let defining = matches!(
             family,
-            "camera.capture" | "audio.capture" | "location.read" | "bluetooth.connect"
+            "camera.capture"
+                | "audio.capture"
+                | "location.read"
+                | "bluetooth.connect"
+                | "device.serial"
+                | "device.printer"
+                | "device.usb"
         );
         if defining && !request.required {
             return Some(format!(
@@ -24235,7 +24726,74 @@ fn build_fix(detail: &str) -> String {
                 the `krate` dependency in Cargo.toml."
             .to_string();
     }
+    // `std`'s float maths called in a no_std guest: `x.floor()` on an f32.
+    // The SDK has every one of them behind one import, so the fix is a line,
+    // not a rewrite -- and without saying so an author hand-writes a floor
+    // by casting, which rounds negatives the wrong way. The first app Claude
+    // built through the hub's connector failed exactly here (2026-11-20).
+    if let Some(method) = missing_float_method(detail) {
+        return format!(
+            "`{method}` is a `std` float method, and a Krate app is `no_std`. Do not \
+             write your own: add `use krate::prelude::*;` at the top of src/lib.rs (it \
+             brings `krate::math::F32Ext` and `F64Ext`, which give `f32` and `f64` \
+             `{method}` and the rest of `std`'s maths with the same meanings), then \
+             build again. A file other than src/lib.rs that calls it needs the same \
+             line."
+        );
+    }
     generic.to_string()
+}
+
+/// The float method rustc says is missing, when it is one the SDK's maths
+/// traits provide: "no method named `floor` found for type `f32`".
+fn missing_float_method(detail: &str) -> Option<&str> {
+    const PROVIDED: &[&str] = &[
+        "floor",
+        "ceil",
+        "round",
+        "trunc",
+        "abs",
+        "sqrt",
+        "cbrt",
+        "exp",
+        "exp2",
+        "ln",
+        "log2",
+        "log10",
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "powf",
+        "atan2",
+        "hypot",
+        "copysign",
+        "fract",
+        "powi",
+        "sin_cos",
+        "rem_euclid",
+        "mul_add",
+    ];
+    for line in detail.lines() {
+        let Some(rest) = line.split("no method named `").nth(1) else {
+            continue;
+        };
+        let Some((method, after)) = rest.split_once('`') else {
+            continue;
+        };
+        let on_float = after.contains("for type `f32`")
+            || after.contains("for type `f64`")
+            || after.contains("for type `{float}`");
+        if on_float && PROVIDED.contains(&method) {
+            return Some(method);
+        }
+    }
+    None
 }
 
 /// Turn a set of non-krate imports into a specific, actionable fix.
@@ -24434,26 +24992,43 @@ fn link_notes(dir: &Path) -> Vec<String> {
         return Vec::new();
     };
     let mut missing: Vec<String> = Vec::new();
+    // What a link reaches only in a browser that has the API (IC-992).
+    let mut chromium: Vec<String> = Vec::new();
     for request in &manifest.capabilities {
         let Ok(cap) = request.cap.parse::<krate_manifest::Capability>() else {
             continue;
         };
-        if cap.is_default_granted() || cap.works_in_a_tab() {
+        if cap.is_default_granted() {
             continue;
         }
         let words = format!("{} ({cap})", cap.plain());
-        if !missing.contains(&words) {
-            missing.push(words);
+        let list = if !cap.works_in_a_tab() {
+            &mut missing
+        } else if cap.tab_needs().is_some() {
+            &mut chromium
+        } else {
+            continue;
+        };
+        if !list.contains(&words) {
+            list.push(words);
         }
     }
-    if missing.is_empty() {
-        return Vec::new();
+    let mut notes = Vec::new();
+    if !missing.is_empty() {
+        notes.push(format!(
+            "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a \
+             link the app still opens, and says so when it reaches one",
+            missing.join(", ")
+        ));
     }
-    vec![format!(
-        "opens from a link, except: {}. Those need Krate on Mac, Windows or Linux; from a link \
-         the app still opens, and says so when it reaches one",
-        missing.join(", ")
-    )]
+    if !chromium.is_empty() {
+        notes.push(format!(
+            "from a link, {} works in Chrome and Edge (the browser's own device list); Safari \
+             and Firefox say to open the app there or in Krate",
+            chromium.join(", ")
+        ));
+    }
+    notes
 }
 
 struct CheckSummary {
@@ -28321,6 +28896,87 @@ fn adopt_id_keyed_data_here(
     })
 }
 
+/// The first open of an app signed by a maker key that took over from older
+/// ones (K-1290) takes what each older key's store for the same app held,
+/// once, newest first: renamed, never copied, secrets sealed again under the
+/// new name, and settled in `<its store>.from-key` (each old key, then
+/// `done`). `predecessors` comes from handovers signed by both keys
+/// (maker_key::predecessors_of), so a hand-made file moves nothing. Pieces
+/// the new store already has are left where they are.
+fn adopt_predecessor_key_data(
+    home: &Path,
+    principal: &StoragePrincipal,
+    predecessors: &[String],
+    machine_key: &dyn Fn() -> std::result::Result<Vec<u8>, String>,
+) -> std::result::Result<Vec<String>, String> {
+    let StoragePrincipal::Verified { app_id, .. } = principal else {
+        return Ok(Vec::new());
+    };
+    if predecessors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let new_base = principal_store_path_in(home, principal);
+    let record = new_base.with_extension("from-key");
+    let said = |e: std::io::Error| {
+        format!("{app_id}'s saved data could not be moved to its new key ({e})")
+    };
+    let settled = fs::read_to_string(&record).unwrap_or_default();
+    if settled.lines().any(|l| l == "done") {
+        return Ok(Vec::new());
+    }
+    if let Some(parent) = record.parent() {
+        fs::create_dir_all(parent).map_err(said)?;
+    }
+    let mut taken = Vec::new();
+    for old in predecessors {
+        let before = StoragePrincipal::Verified {
+            publisher: old.clone(),
+            app_id: app_id.clone(),
+        };
+        let old_base = principal_store_path_in(home, &before);
+        if old_base == new_base {
+            continue;
+        }
+        let mut moved_here = false;
+        for piece in ID_DATA_PIECES {
+            if move_store_piece(
+                &old_base.with_extension(piece),
+                &new_base.with_extension(piece),
+            )
+            .map_err(said)?
+            {
+                moved_here = true;
+                if piece == "secrets" {
+                    reseal_moved_secrets(
+                        &new_base.with_extension("secrets"),
+                        &before.storage_key(),
+                        &principal.storage_key(),
+                        &machine_key()?,
+                    )?;
+                }
+                taken.push(piece.to_string());
+            }
+        }
+        if moved_here {
+            fs::write(&record, format!("{old}\n")).map_err(said)?;
+        }
+    }
+    let done = record.with_extension("from-key-tmp");
+    fs::write(
+        &done,
+        format!(
+            "{}done\n",
+            predecessors
+                .iter()
+                .map(|k| format!("{k}\n"))
+                .collect::<String>()
+        ),
+    )
+    .map_err(said)?;
+    fs::rename(&done, &record).map_err(said)?;
+    Ok(taken)
+}
+
 /// Rename `from` to `to` when `from` is there and `to` is not: one rename
 /// on one disk, so the piece is in one place or the other, never both.
 fn move_store_piece(from: &Path, to: &Path) -> io::Result<bool> {
@@ -29881,6 +30537,13 @@ mod wall_tests {
                 Wall::Hardware,
             ),
             ("read my bluetooth heart rate device", Wall::Hardware),
+            // The USB devices the computer keeps for itself (IC-988).
+            (
+                "an app that remaps the keys on my usb keyboard",
+                Wall::Hardware,
+            ),
+            ("read the files on my usb stick directly", Wall::Hardware),
+            ("a game I play with my usb game controller", Wall::Hardware),
             (
                 "a background timer that keeps running after I close the window",
                 Wall::Background,
@@ -29930,6 +30593,13 @@ mod wall_tests {
             // it down, "might not work here" is not this gate's question.
             "an app that shows my webcam feed with a photo button",
             "a camera app that takes a picture",
+            // A serial device has a capability (device.serial, IC-985).
+            "an app that reads my arduino over the serial port and plots it",
+            "a terminal for my lab instrument on its usb serial line",
+            // A USB device the computer has no driver for has a capability
+            // (device.usb, IC-988).
+            "an app that talks to my crazyradio usb dongle and sends it packets",
+            "a tool that reads my usb spectrometer and plots the spectrum",
         ];
         for request in buildable {
             assert_eq!(
@@ -30936,6 +31606,73 @@ again: {} -> {}",
         );
         let dialog_imports = vec!["krate:ui/dialog@0.1.0".to_string()];
         assert!(manifest_overreach(&picker, &dialog_imports).is_none());
+
+        // A serial device (IC-985): asked for with the import, clean; asked
+        // for without it, refused; and never optional, because it is the
+        // app's reason to exist and an optional ask is never put to anyone.
+        let serial = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.serial\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let serial_imports = vec!["krate:serial/ports@0.1.0".to_string()];
+        assert!(manifest_overreach(&serial(true), &serial_imports).is_none());
+        let problem = manifest_overreach(&serial(true), &fs_imports)
+            .expect("must refuse a serial ask with no serial import");
+        assert!(problem.contains(":serial/"), "{problem}");
+        let problem = manifest_overreach(&serial(false), &serial_imports)
+            .expect("must refuse an optional serial ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
+
+        // A printer (IC-986): asked for with the import, clean; without it,
+        // refused; and never optional -- an optional ask is never put to
+        // anyone, so the app would never print.
+        let printer = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.printer\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let print_imports = vec!["krate:print/printers@0.1.0".to_string()];
+        assert!(manifest_overreach(&printer(true), &print_imports).is_none());
+        let problem = manifest_overreach(&printer(true), &dialog_imports)
+            .expect("must refuse a printer ask with no print import");
+        assert!(problem.contains(":print/"), "{problem}");
+        let problem = manifest_overreach(&printer(false), &print_imports)
+            .expect("must refuse an optional printer ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
+
+        // A listening port (IC-987): with the sockets import, clean, and
+        // optional too (this computer only, no question); with only the
+        // HTTP client, refused.
+        let listen = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"net.listen:8080\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let sockets_imports = vec!["krate:net/sockets@0.1.0".to_string()];
+        assert!(manifest_overreach(&listen(true), &sockets_imports).is_none());
+        assert!(manifest_overreach(&listen(false), &sockets_imports).is_none());
+        let http_only = vec!["krate:net/http-client@0.1.0".to_string()];
+        let problem = manifest_overreach(&listen(true), &http_only)
+            .expect("must refuse a listen ask with no sockets import");
+        assert!(problem.contains(":net/sockets"), "{problem}");
+
+        // A USB device (IC-988): asked for with the import, clean; asked for
+        // without it, refused; and never optional, because the device is
+        // the app's reason to exist.
+        let usb = |required: bool| {
+            manifest(&format!(
+                "[[capabilities]]\ncap = \"device.usb:1915:7777\"\nrationale = \"r\"\nrequired = {required}\n"
+            ))
+        };
+        let usb_imports = vec!["krate:usb/devices@0.1.0".to_string()];
+        assert!(manifest_overreach(&usb(true), &usb_imports).is_none());
+        let problem = manifest_overreach(&usb(true), &serial_imports)
+            .expect("must refuse a USB ask with no USB import");
+        assert!(problem.contains(":usb/"), "{problem}");
+        let problem =
+            manifest_overreach(&usb(false), &usb_imports).expect("must refuse an optional USB ask");
+        assert!(problem.contains("marks it optional"), "{problem}");
     }
 
     /// The install loop must stop when a pass changes nothing.
@@ -31416,6 +32153,39 @@ mod check_app_tests {
             "a std guest needs the std feature, not the no_std treatment:\n{fix}"
         );
 
+        // std's float maths in a no_std guest: the exact words rustc gave
+        // the first app Claude built through the connector. The fix names
+        // the one import, not "fix the compiler errors".
+        let floor =
+            "error[E0599]: no method named `floor` found for type `f32` in the current scope\n\
+                     --> src/lib.rs:356:51\n";
+        let fix = build_fix(floor);
+        assert!(
+            fix.contains("use krate::prelude::*;") && fix.contains("`floor`"),
+            "a missing float method names the import that provides it:\n{fix}"
+        );
+        assert!(
+            build_fix("error[E0599]: no method named `sqrt` found for type `{float}` in the current scope")
+                .contains("use krate::prelude::*;"),
+            "an untyped float literal is the same case"
+        );
+        // A missing method the SDK does NOT provide keeps the general advice:
+        // the import would not help, and saying it would send the author round.
+        let fix = build_fix(
+            "error[E0599]: no method named `to_bits_le` found for type `f32` in the current scope",
+        );
+        assert!(
+            fix.contains("Fix the compiler errors above"),
+            "only methods the maths traits provide get the import advice:\n{fix}"
+        );
+        let fix = build_fix(
+            "error[E0599]: no method named `floor` found for struct `Grid` in the current scope",
+        );
+        assert!(
+            fix.contains("Fix the compiler errors above"),
+            "a floor on the app's own type is not the float case:\n{fix}"
+        );
+
         // An ordinary compile error keeps the general advice.
         let fix = build_fix("error[E0308]: mismatched types");
         assert!(
@@ -31478,6 +32248,30 @@ mod check_app_tests {
             "\n[[capabilities]]\ncap = \"io.stdout\"\nrationale = \"t\"\nrequired = true\n",
         );
         assert!(!manifest_is_gui(&cli));
+    }
+}
+
+#[cfg(test)]
+mod grants_file_tests {
+    use super::*;
+
+    /// `--forget <id>` reaches every kind of principal's file: a signed
+    /// app's, this computer's own, and a hub account's (K-1296).
+    #[test]
+    fn every_kind_of_grants_file_names_its_app() {
+        for stem in [
+            "dev.krate.notes@0123456789abcdef",
+            "dev.krate.notes+0123456789abcdef",
+            "dev.krate.notes~k0123456789abcdef",
+            "dev.krate.notes",
+        ] {
+            assert_eq!(app_id_of_grants_file(stem), "dev.krate.notes", "{stem}");
+        }
+        assert_eq!(
+            sanitize_storage_name("a@b+c~d"),
+            "a_b_c_d",
+            "an id never carries a separator"
+        );
     }
 }
 
@@ -31854,7 +32648,7 @@ mod revise_transaction_tests {
         let dir = tempfile::tempdir().expect("dir");
         let bundle = tiny_bundle(dir.path(), false);
         assert_eq!(
-            signer_of(&bundle).expect("open"),
+            someone_elses_signature(&bundle).expect("open"),
             None,
             "an unsigned app has no signer to name"
         );
@@ -31864,7 +32658,7 @@ mod revise_transaction_tests {
         krate_bundle::sign_bundle(&bundle, &key, "dev.krate.txn", "0.1.0", 1_700_000_000)
             .expect("sign");
         let signed_bytes = fs::read(&bundle).expect("read");
-        let signer = signer_of(&bundle)
+        let signer = someone_elses_signature(&bundle)
             .expect("open")
             .expect("a signed app names its signer");
         assert!(
@@ -32001,6 +32795,57 @@ mod revise_transaction_tests {
         fs::write(staged.path(), b"fresh").expect("write");
         staged.promote().expect("promote");
         assert_eq!(fs::read(&out).expect("read"), b"fresh");
+    }
+
+    /// A change replaces the app only while it is still the file the change
+    /// began from (IC-397). Written over by something else meanwhile, the
+    /// app stays as that something left it and the change is kept beside it.
+    #[test]
+    fn a_change_does_not_replace_an_app_something_else_rewrote_meanwhile() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("notes.krate");
+        fs::write(&out, b"the app the change began from").expect("write parent");
+        let began = krate_bundle::provenance::digest_archive_bytes(&fs::read(&out).unwrap()).digest;
+
+        // Unchanged: the build may replace it, and nothing has moved yet.
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"the changed app").expect("write staged");
+        assert_eq!(
+            keep_if_parent_moved(&mut staged, &out, &began).expect("check"),
+            None
+        );
+        staged.promote().expect("promote");
+        assert_eq!(fs::read(&out).unwrap(), b"the changed app");
+
+        // Rewritten by something else while the next change was made.
+        let began = krate_bundle::provenance::digest_archive_bytes(&fs::read(&out).unwrap()).digest;
+        fs::write(&out, b"a sync tool's copy").expect("overwrite");
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"the second change").expect("write staged");
+        let kept = keep_if_parent_moved(&mut staged, &out, &began)
+            .expect("check")
+            .expect("a moved parent keeps the change elsewhere");
+        assert_eq!(
+            fs::read(&out).unwrap(),
+            b"a sync tool's copy",
+            "the other program's file stands"
+        );
+        assert_eq!(
+            fs::read(&kept).unwrap(),
+            b"the second change",
+            "and the change is not lost"
+        );
+        assert_eq!(kept.file_name().unwrap(), "notes.changed.krate");
+        assert!(!staged.path().exists(), "no staging file left behind");
+
+        // A second time, the name is numbered rather than overwritten.
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"a third change").expect("write staged");
+        let again = keep_if_parent_moved(&mut staged, &out, &began)
+            .expect("check")
+            .expect("moved");
+        assert_eq!(again.file_name().unwrap(), "notes.changed-2.krate");
+        assert_eq!(fs::read(&kept).unwrap(), b"the second change");
     }
 
     /// The commit decision, on its own (IC-397, test 491).
@@ -33685,6 +34530,16 @@ mod storage_identity_tests {
     /// installed object that collided, which is the shape that loses
     /// somebody an app they installed.
     #[test]
+    fn a_strings_value_holds_any_name_as_text() {
+        assert_eq!(super::strings_escape("Notes"), "Notes");
+        assert_eq!(
+            super::strings_escape("Quote \"x\" \\ y\nz"),
+            "Quote \\\"x\\\" \\\\ y\\nz"
+        );
+        assert_eq!(super::strings_escape("Café ☕"), "Café ☕");
+    }
+
+    #[test]
     #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn two_apps_with_one_name_do_not_share_an_installed_path() {
         let manifest = |id: &str, name: &str| {
@@ -33824,6 +34679,16 @@ mod link_note_tests {
             "{notes:?}"
         );
         assert!(!notes[0].contains("store.sql"), "{notes:?}");
+        // A serial or USB device works from a link in Chrome and Edge only
+        // (IC-992): said as such, not as needing a computer.
+        manifest(&["ui.window:create", "device.serial", "device.usb:1915:7777"]);
+        let notes = link_notes(dir.path());
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(
+            notes[0].starts_with("from a link, talk to a serial device you choose (device.serial)")
+                && notes[0].contains("(device.usb:1915:7777) works in Chrome and Edge"),
+            "{notes:?}"
+        );
     }
 }
 

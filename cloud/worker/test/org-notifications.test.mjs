@@ -15,6 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { orgEnv, call, acme, fixture } from "./org-tools.mjs";
 import { NOTIFY_DEFAULTS, MAIL_PER_ORG_PER_DAY } from "../src/org-notify.js";
+import { assertLayout } from "./mail-layout-tools.mjs";
 
 const pair = (r) => [r.status, r.body && r.body.error];
 const store = (env) => env.ORGS.object("acme");
@@ -68,10 +69,13 @@ function fakeGmail(seen) {
     return { readable, writable, close: async () => {} };
   };
 }
-const mailText = (mail) => {
-  const [, body] = mail.data.split("\r\n\r\n");
-  return Buffer.from(body.replace(/\r\n\.?/g, ""), "base64").toString("utf8");
+// One part of a multipart/alternative message, decoded; null when absent.
+const mailPart = (mail, type) => {
+  const m = mail.data.match(new RegExp(`Content-Type: text/${type}; charset=UTF-8\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n([A-Za-z0-9+/=\\r\\n]+?)\\r\\n--`));
+  return m ? Buffer.from(m[1].replace(/\r\n/g, ""), "base64").toString("utf8") : null;
 };
+const mailText = (mail) => mailPart(mail, "plain");
+const mailHtml = (mail) => mailPart(mail, "html");
 const subjectOf = (mail) => {
   const m = mail.data.match(/^Subject: =\?UTF-8\?B\?([^?]+)\?=/m);
   return m ? Buffer.from(m[1], "base64").toString("utf8") : "";
@@ -224,6 +228,11 @@ test("mail: approvers hear a version waits, its sender hears the decision, each 
   assert.deepStrictEqual(seen.mails.map(rcpt), [["alice@acme.test"]], "the owner who approves, not bob (off), not carol (sent it), and no copy to the founder");
   assert.strictEqual(subjectOf(seen.mails[0]), `${up.name} ${up.version} waits for your approval`);
   assert.ok(mailText(seen.mails[0]).includes("/org/?o=acme&tab=waiting"), mailText(seen.mails[0]));
+  // The designed copy (mail-layout.js): the site's mark, the one button to
+  // the waiting version, the link under it, and the switch in small print.
+  const html = mailHtml(seen.mails[0]);
+  assertLayout(html, mailText(seen.mails[0]).match(/https:\/\/\S+tab=waiting\S*/)[0], "Review it");
+  assert.ok(html.includes("Turn it off under Notifications on that page."), "why they got it");
   assert.match(seen.mails[0].data, /^From: Yashraj Pardeshi <incyashraj@gmail.com>/m);
 
   seen.mails.length = 0;
@@ -234,6 +243,8 @@ test("mail: approvers hear a version waits, its sender hears the decision, each 
   assert.deepStrictEqual(seen.mails.map(rcpt), [["carol@acme.test"]], "the sender, once");
   assert.strictEqual(subjectOf(seen.mails[0]), `${up.name} ${up.version} was declined`);
   assert.ok(mailText(seen.mails[0]).includes("@bob declined") && mailText(seen.mails[0]).includes("it asks for the camera"));
+  assertLayout(mailHtml(seen.mails[0]), mailText(seen.mails[0]).match(/See it: (\S+)/)[1], "See it");
+  assert.ok(mailHtml(seen.mails[0]).includes("it asks for the camera</td>"), "the reason, set apart");
 
   seen.mails.length = 0;
   const two = await upload(env, "root-signed.krate");

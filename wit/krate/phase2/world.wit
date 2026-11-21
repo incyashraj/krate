@@ -26,6 +26,9 @@ world cli {
   import krate:store/org@0.1.0;
   import krate:random/bytes@0.1.0;
   import krate:process/processes@0.1.0;
+  import krate:serial/ports@0.1.0;
+  import krate:print/printers@0.1.0;
+  import krate:usb/devices@0.1.0;
 
   export run: func() -> s32;
 }

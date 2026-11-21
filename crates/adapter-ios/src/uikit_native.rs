@@ -36,6 +36,39 @@ use krate_adapter_common::ui::{
 /// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
+/// The system identifier of the running app's notification under `id`
+/// (IC-271): Krate posts for every app, so the identifier carries the app's
+/// id and two apps' "upload" never replace each other; it never starts
+/// `krate.`, the reminders' prefix. No app running, no identifier: the
+/// notification stands alone.
+#[cfg_attr(not(target_os = "ios"), allow(dead_code))]
+fn notice_identifier(app_id: Option<&str>, id: &str) -> Option<String> {
+    let app_id = app_id.filter(|a| !a.is_empty())?;
+    (!id.is_empty()).then(|| format!("krate-notice.{app_id}.{id}"))
+}
+
+#[cfg(test)]
+mod notice_tests {
+    use super::notice_identifier;
+
+    #[test]
+    fn a_notice_identifier_belongs_to_one_app() {
+        let a = notice_identifier(Some("org.a.notes"), "upload").unwrap();
+        assert_ne!(
+            a,
+            notice_identifier(Some("org.b.photos"), "upload").unwrap()
+        );
+        assert_eq!(notice_identifier(Some("org.a.notes"), "upload").unwrap(), a);
+        assert_ne!(notice_identifier(Some("org.a.notes"), "chat").unwrap(), a);
+        assert_eq!(notice_identifier(None, "upload"), None);
+        assert_eq!(notice_identifier(Some(""), "upload"), None);
+        assert_eq!(notice_identifier(Some("org.a.notes"), ""), None);
+        assert!(!notice_identifier(Some("notice"), "x")
+            .unwrap()
+            .starts_with("krate."));
+    }
+}
+
 #[cfg(target_os = "ios")]
 mod real {
     use super::*;
@@ -3175,6 +3208,32 @@ mod real {
             .unwrap_or(Err("iOS did not answer".to_string()))
     }
 
+    /// Take back the running app's notification under `id` (IC-271), from
+    /// Notification Centre. Quiet when there is none.
+    pub fn withdraw_notice(id: &str) {
+        let running = CURRENT_APP.lock().expect("app lock").clone();
+        let Some(full) =
+            super::notice_identifier(running.as_ref().map(|(app, _)| app.as_str()), id)
+        else {
+            return;
+        };
+        DispatchQueue::main().exec_async(move || {
+            let Some(center_class) = objc2::runtime::AnyClass::get(c"UNUserNotificationCenter")
+            else {
+                return;
+            };
+            // SAFETY: remove one delivered request by its identifier.
+            unsafe {
+                let center: Retained<objc2::runtime::AnyObject> =
+                    msg_send![center_class, currentNotificationCenter];
+                let ids = objc2_foundation::NSArray::from_retained_slice(&[
+                    objc2_foundation::NSString::from_str(&full),
+                ]);
+                let _: () = msg_send![&*center, removeDeliveredNotificationsWithIdentifiers: &*ids];
+            }
+        });
+    }
+
     /// Take back one of the running app's reminders.
     pub fn reminder_cancel(id: &str) {
         let Some((prefix, _)) = reminder_prefix() else {
@@ -3244,8 +3303,15 @@ mod real {
 
     /// Post a notification now (IC-918): `sender` -- the app's consented
     /// name, never its own words -- on the title line, the app's title
-    /// under it. iOS asks the person once whether Krate may notify.
-    pub fn notify(sender: &str, title: &str, body: &str) -> Result<(), String> {
+    /// under it. iOS asks the person once whether Krate may notify. Under
+    /// an id (IC-271) the request carries the running app's identifier for
+    /// it, so the next one under that id replaces it in Notification Centre
+    /// and [`withdraw_notice`] takes it back.
+    pub fn notify(sender: &str, title: &str, body: &str, id: Option<&str>) -> Result<(), String> {
+        let named = id.and_then(|id| {
+            let running = CURRENT_APP.lock().expect("app lock").clone();
+            super::notice_identifier(running.as_ref().map(|(app, _)| app.as_str()), id)
+        });
         let (sender, title, body) = (sender.to_string(), title.to_string(), body.to_string());
         DispatchQueue::main().exec_async(move || {
             let Some(mtm) = MainThreadMarker::new() else {
@@ -3283,7 +3349,9 @@ mod real {
                     let _: () = msg_send![&*content, setSubtitle: &*ns(&title)];
                     let _: () = msg_send![&*content, setBody: &*ns(&body)];
                     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                    let id = format!("krate-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+                    let id = named.clone().unwrap_or_else(|| {
+                        format!("krate-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+                    });
                     let request: Retained<objc2::runtime::AnyObject> = msg_send![
                         request_class,
                         requestWithIdentifier: &*ns(&id),
@@ -5079,9 +5147,16 @@ mod stub {
         Err(Some("Photos is on the iOS player only".to_string()))
     }
 
-    pub fn notify(_sender: &str, _title: &str, _body: &str) -> Result<(), String> {
+    pub fn notify(
+        _sender: &str,
+        _title: &str,
+        _body: &str,
+        _id: Option<&str>,
+    ) -> Result<(), String> {
         Err("notifications post from the iOS player only".to_string())
     }
+
+    pub fn withdraw_notice(_id: &str) {}
 
     pub fn set_current_app(_app: Option<(String, String)>) {}
 

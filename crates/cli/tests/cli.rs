@@ -7104,6 +7104,900 @@ fn an_app_runs_only_the_programs_it_names_and_they_end_with_it() {
     }
 }
 
+/// An app talks to a serial device the person picks, and nothing else
+/// (krate:serial, IC-985).
+///
+/// `serial-probe.wasm` is apps/krate-serial-probe built. The person's pick
+/// is scripted with KRATE_SERIAL_PICK, as a test or a script drives it; a
+/// pseudo-terminal stands in for the device on macOS and Linux, its other end
+/// held here, answering PONG to PING.
+#[test]
+fn an_app_talks_only_to_the_serial_device_the_person_picks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/serial-probe.wasm")).expect("probe");
+    let pack = |name: &str, serial: bool| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{}",
+                if serial {
+                    "\n[[capabilities]]\ncap = \"device.serial\"\nrationale = \"the device\"\nrequired = false\n"
+                } else {
+                    ""
+                }
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    let asks = pack("serial-probe", true);
+    let never_asked = pack("serial-quiet", false);
+    let run = |bundle: &std::path::Path, grants: &[&str], pick: &str, check: &str| {
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_SERIAL_PICK", pick)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability, no list and no device -- refused by name.
+    assert_eq!(
+        run(&never_asked, &all, "cancel", "pick"),
+        "pick: not-allowed: this app did not ask for device.serial, so it cannot talk to a \
+         serial device"
+    );
+    assert_eq!(
+        run(&asks, &basics, "cancel", "pick"),
+        "pick: not-allowed: you did not allow this app to talk to a serial device (device.serial)"
+    );
+    // The person cancels: no device.
+    assert_eq!(run(&asks, &all, "cancel", "pick"), "pick: none");
+    // A pick names a serial device, never an ordinary file.
+    let file = dir.path().join("not-a-port.txt");
+    std::fs::write(&file, b"x").expect("file");
+    let file = file.to_string_lossy().to_string();
+    assert!(
+        run(&asks, &all, &file, "pick").starts_with("pick: unavailable: KRATE_SERIAL_PICK names"),
+        "a file is not a serial device"
+    );
+
+    #[cfg(unix)]
+    {
+        // The device: write PING, read PONG, a quiet read ends empty, and
+        // the closed handle is spent.
+        let device = Pty::open();
+        let answering = device.answer_ping();
+        assert_eq!(
+            run(&asks, &all, &device.path, "talk"),
+            "talk: heard PONG, then nothing for 100 ms, closed: unknown-handle"
+        );
+        assert_eq!(answering.join().expect("device"), b"PING\n");
+        // The pick says which device it is, as the computer names it.
+        assert_eq!(
+            run(&asks, &all, &device.path, "pick"),
+            format!("pick: picked {}", device.path)
+        );
+        // Handles the person never gave reach nothing.
+        assert_eq!(
+            run(&asks, &all, &device.path, "forge"),
+            "forge: unopened=not-open next=unknown-handle zero=unknown-handle"
+        );
+        assert!(
+            run(&asks, &all, &device.path, "bad").starts_with("bad: bad-settings: a baud rate is"),
+            "a baud rate of 0 is refused in words"
+        );
+
+        // The app leaves the port open: the run ending closes it, and the
+        // exclusive lock goes with it.
+        let held = Pty::open();
+        let hearing = held.collect_until(b"HELD\n");
+        assert_eq!(run(&asks, &all, &held.path, "hold"), "hold: left open");
+        assert_eq!(hearing.join().expect("device"), b"HELD\n");
+        assert!(
+            held.free(),
+            "{} is free again once the run is over",
+            held.path
+        );
+    }
+}
+
+/// An app's "today" is the person's day, not the UTC day (IC-991, K-1300).
+///
+/// `local-time-probe.wasm` is apps/krate-local-time-probe built: it prints
+/// `krate::locale::local_now()` -- the offset, the local date and time, the
+/// weekday and the local day number -- through the binary a person runs.
+#[test]
+fn an_app_reads_the_persons_local_time_daylight_saving_included() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/local-time-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.local-time-probe\"\nname = \"local-time-probe\"\n\
+         version = \"1.0.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"time.clock\"\nrationale = \"now\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"locale.info\"\nrationale = \"zone\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("local-time-probe.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let at = |zone: &str, millis: u64| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .args(["--auto-grant", "--test-timezone", zone, "--test-time"])
+            .arg(millis.to_string())
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // 2026-03-29 01:00 UTC: Zurich springs from +01:00 to +02:00, so one
+    // second apart is an hour and a second apart on the wall.
+    let spring = 1_774_746_000_000;
+    assert_eq!(
+        at("Europe/Zurich", spring - 1_000),
+        "tz=Europe/Zurich offset=60 local=2026-03-29 01:59:59 weekday=7 day=20541"
+    );
+    assert_eq!(
+        at("Europe/Zurich", spring),
+        "tz=Europe/Zurich offset=120 local=2026-03-29 03:00:00 weekday=7 day=20541"
+    );
+
+    // 23:30 UTC on Wednesday 14 January 2026: Thursday the 15th in Zurich
+    // and India, still the 14th in New York. The UTC day is 20467 for all.
+    let late = 1_768_433_400_000;
+    assert_eq!(
+        at("Europe/Zurich", late),
+        "tz=Europe/Zurich offset=60 local=2026-01-15 00:30:00 weekday=4 day=20468"
+    );
+    assert_eq!(
+        at("America/New_York", late),
+        "tz=America/New_York offset=-300 local=2026-01-14 18:30:00 weekday=3 day=20467"
+    );
+    assert_eq!(
+        at("Asia/Kolkata", late),
+        "tz=Asia/Kolkata offset=330 local=2026-01-15 05:00:00 weekday=4 day=20468"
+    );
+    assert_eq!(
+        at("Australia/Adelaide", late),
+        "tz=Australia/Adelaide offset=630 local=2026-01-15 10:00:00 weekday=4 day=20468"
+    );
+    // A zone no database knows is UTC, as the rest of the host treats it.
+    assert_eq!(
+        at("Mars/Olympus_Mons", late),
+        "tz=Mars/Olympus_Mons offset=0 local=2026-01-14 23:30:00 weekday=3 day=20467"
+    );
+}
+
+/// An app serves the people on its network on the one port it declares,
+/// and stops when the run does (krate:net/sockets listening, IC-987).
+///
+/// `serve-probe.wasm` is apps/krate-serve-probe built. This test is the
+/// device: it connects, asks for a page over HTTP and reads the answer.
+#[test]
+fn an_app_serves_only_the_port_it_declares_and_stops_with_the_run() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/serve-probe.wasm")).expect("probe");
+    let free_port = || {
+        let l = TcpListener::bind("127.0.0.1:0").expect("a free port");
+        l.local_addr().expect("addr").port()
+    };
+    let port = free_port();
+    // Something else already listens here, for the whole test.
+    let busy = TcpListener::bind("127.0.0.1:0").expect("another program");
+    let busy_port = busy.local_addr().expect("addr").port();
+    let pack = |name: &str, ports: &[u16]| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        let mut text = format!(
+            "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+             [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n"
+        );
+        // Optional: the person is never asked, so without a grant the app
+        // runs with this computer alone -- the case this test needs. (A
+        // required one the person refused would not open at all.)
+        for port in ports {
+            text.push_str(&format!(
+                "\n[[capabilities]]\ncap = \"net.listen:{port}\"\nrationale = \"the floor's tablets open it\"\nrequired = false\n"
+            ));
+        }
+        std::fs::write(&manifest, text).expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    let serves = pack("serve-probe", &[port, busy_port]);
+    let quiet = pack("serve-quiet", &[]);
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+    let run = |bundle: &std::path::Path, grants: &[&str], args: &[String]| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .arg("--")
+            .args(args)
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let check = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+    let p = port.to_string();
+
+    // Never declared: refused by name, in either scope, whatever was granted.
+    for scope in ["this-computer", "local-network"] {
+        assert_eq!(
+            run(&quiet, &all, &check(&["listen", &p, scope])),
+            format!(
+                "listen: not-allowed: this app did not declare net.listen:{port}, so it cannot \
+                 listen on port {port}"
+            )
+        );
+    }
+    // Declared, but another port: refused by that port's name.
+    let other = [port.wrapping_add(1), port.wrapping_sub(1)]
+        .into_iter()
+        .find(|o| *o >= 1024 && *o != busy_port)
+        .expect("a neighbouring port");
+    assert!(
+        run(&serves, &all, &check(&["listen", &other.to_string()])).starts_with(&format!(
+            "listen: not-allowed: this app did not declare net.listen:{other}"
+        ))
+    );
+    // A system port is refused in words.
+    assert!(run(&serves, &all, &check(&["listen", "80"]))
+        .starts_with("listen: bad-port: port 80 is below 1024"));
+    // Declared, not allowed: other devices are refused by name; this
+    // computer alone needs only the declaration.
+    assert_eq!(
+        run(&serves, &basics, &check(&["listen", &p, "local-network"])),
+        format!(
+            "listen: not-allowed: you did not let other devices on your network open this app \
+             on port {port} (net.listen:{port}); it can still listen for this computer only"
+        )
+    );
+    assert_eq!(
+        run(&serves, &basics, &check(&["listen", &p, "this-computer"])),
+        format!("listen: listening on {port}")
+    );
+    // A port another program holds: refused in words.
+    assert_eq!(
+        run(&serves, &all, &check(&["listen", &busy_port.to_string()])),
+        format!(
+            "listen: in-use: another program on this computer is already listening on port \
+             {busy_port}; close it, or choose another port"
+        )
+    );
+
+    // Serving: the app listens, this test is the device, the page arrives.
+    for (grants, scope) in [(&basics[..], "this-computer"), (&all[..], "local-network")] {
+        let child = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&serves)
+            .args(grants)
+            .args(["--", "serve", &p, scope])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut device = loop {
+            match std::net::TcpStream::connect(("127.0.0.1", port)) {
+                Ok(stream) => break stream,
+                Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+                Err(e) => panic!("the app never listened on {port}: {e}"),
+            }
+        };
+        device
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("timeout");
+        device
+            .write_all(b"GET /line-3 HTTP/1.1\r\nHost: krate\r\n\r\n")
+            .expect("ask");
+        let mut page = String::new();
+        device
+            .read_to_string(&mut page)
+            .expect("the page, then the end");
+        assert!(page.starts_with("HTTP/1.1 200 OK\r\n"), "{page}");
+        assert!(page.ends_with("<h1>Served by a Krate app</h1>"), "{page}");
+        let out = child.wait_with_output().expect("the app ends");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "serve: served GET /line-3 to this computer"
+        );
+    }
+
+    // The app leaves its listener open: the run ending closes the port.
+    assert_eq!(
+        run(&serves, &all, &check(&["hold", &p, "local-network"])),
+        "hold: left open"
+    );
+    assert!(
+        std::net::TcpStream::connect_timeout(
+            &SocketAddr::from(([127, 0, 0, 1], port)),
+            Duration::from_millis(500)
+        )
+        .is_err(),
+        "nothing listens on {port} once the run is over"
+    );
+    assert!(
+        TcpListener::bind(("0.0.0.0", port)).is_ok(),
+        "port {port} is free again once the run is over"
+    );
+    drop(busy);
+}
+
+/// An app serving the network says where it is reached and announces itself
+/// by name, and only when the person let the network open it (IC-990).
+///
+/// `announce-probe.wasm` is apps/krate-announce-probe built. Its manifest
+/// name here is "Shop Floor". `KRATE_ANNOUNCE_TO` stands in for the network:
+/// the run writes what it would announce and withdraw to a file and sends
+/// nothing, so this needs no permission to use the network.
+#[test]
+fn an_app_says_where_it_is_reached_and_announces_itself_by_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/announce-probe.wasm")).expect("probe");
+    let port = {
+        let l = TcpListener::bind("127.0.0.1:0").expect("a free port");
+        l.local_addr().expect("addr").port()
+    };
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "[app]\nid = \"com.acme.announce-probe\"\nname = \"Shop Floor\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+             [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"net.listen:{port}\"\nrationale = \"the floor's tablets\"\n\
+             required = false\n"
+        ),
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("announce-probe.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let heard = dir.path().join("announced.txt");
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+    let run = |grants: &[&str], args: &[&str]| {
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_ANNOUNCE_TO", &heard)
+            .arg("run")
+            .arg(&bundle)
+            .args(grants)
+            .arg("--")
+            .args(args)
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let told = || std::fs::read_to_string(&heard).unwrap_or_default();
+    let p = port.to_string();
+
+    // For this computer alone (the declaration, no yes): neither call.
+    let alone = format!(
+        "not-allowed: this app listens on port {port} for this computer only, so other devices \
+         on your network cannot open it"
+    );
+    assert_eq!(
+        run(&basics, &["where", &p, "this-computer"]),
+        format!("where: {alone}")
+    );
+    assert_eq!(
+        run(&basics, &["announce", &p, "this-computer"]),
+        format!("announce: {alone}")
+    );
+    // The network without the person's yes: it never listens at all.
+    assert!(run(&basics, &["announce", &p, "local-network"])
+        .starts_with("announce: not-allowed: you did not let other devices on your network"));
+    assert_eq!(told(), "", "nothing announced without the person's yes");
+
+    // The network, allowed: this computer's private addresses, the main
+    // connection first. The address a UDP socket would leave from is the
+    // main connection; connecting one sends nothing.
+    let main = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| s.connect("192.0.2.1:9").map(|_| s))
+        .and_then(|s| s.local_addr())
+        .ok()
+        .and_then(|a| match a.ip() {
+            std::net::IpAddr::V4(ip) if ip.is_private() || ip.is_link_local() => Some(ip),
+            _ => None,
+        });
+    let said = run(&all, &["where", &p, "local-network"]);
+    let listed = said
+        .strip_prefix("where: [")
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or_else(|| panic!("a list of addresses: {said}"));
+    let ips: Vec<std::net::Ipv4Addr> = listed
+        .split(", ")
+        .filter(|a| !a.is_empty())
+        .map(|entry| {
+            let (at, url) = entry.split_once(' ').expect("ip:port url");
+            let (ip, at_port) = at.split_once(':').expect("ip:port");
+            let ip: std::net::Ipv4Addr = ip.parse().expect("an IPv4 address");
+            assert!(ip.is_private() || ip.is_link_local(), "{ip} is not private");
+            assert_eq!(at_port, p);
+            assert_eq!(url, format!("http://{ip}:{port}/"));
+            ip
+        })
+        .collect();
+    if let Some(main) = main {
+        assert_eq!(
+            ips.first(),
+            Some(&main),
+            "the main connection's address comes first: {said}"
+        );
+    }
+
+    // Announced by the app's name, and withdrawn when the listener closes.
+    let addresses = ips
+        .iter()
+        .map(|ip| ip.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let said = run(&all, &["announce", &p, "local-network"]);
+    if ips.is_empty() {
+        assert!(
+            said.starts_with("announce: failed: this computer is not on a local network"),
+            "{said}"
+        );
+        assert_eq!(told(), "");
+        eprintln!("skipping the announcement half: this computer is on no local network");
+        return;
+    }
+    assert_eq!(
+        said,
+        format!("announce: Shop Floor at shop-floor.local http://shop-floor.local:{port}/")
+    );
+    assert_eq!(
+        told(),
+        format!(
+            "announce\tShop Floor._http._tcp.local.\tshop-floor.local\t{port}\t{addresses}\n\
+             withdraw\tShop Floor._http._tcp.local.\n"
+        )
+    );
+    // The app's own service type, left open: the run ending withdraws it.
+    std::fs::remove_file(&heard).expect("start over");
+    assert_eq!(
+        run(&all, &["hold", &p, "local-network", "_shopfloor._tcp"]),
+        format!("hold: Shop Floor at shop-floor.local http://shop-floor.local:{port}/")
+    );
+    assert_eq!(
+        told(),
+        format!(
+            "announce\tShop Floor._shopfloor._tcp.local.\tshop-floor.local\t{port}\t{addresses}\n\
+             withdraw\tShop Floor._shopfloor._tcp.local.\n"
+        )
+    );
+    // Not a service type: refused in words, nothing announced.
+    std::fs::remove_file(&heard).expect("start over");
+    assert!(
+        run(&all, &["announce", &p, "local-network", "web"]).starts_with(
+            "announce: failed: `web` is not a service type: use _http._tcp for web pages"
+        )
+    );
+    assert_eq!(told(), "");
+}
+
+/// An app talks to a USB device the person picks, of a model its manifest
+/// names, and nothing else (krate:usb, IC-988).
+///
+/// `usb-probe.wasm` is apps/krate-usb-probe built. The devices are the
+/// runtime's fake ones (`KRATE_USB_FAKE`, which only a debug build reads):
+/// an echoing radio dongle 1915:7777 with a HID interface beside its own,
+/// a second dongle 1915:7778, a keyboard 1915:0101, a thumb drive and a
+/// hub. The fake writes every event to the file the variable names, so the
+/// test sees what reached the device, byte for byte, and that the run let
+/// it go. The person's pick is scripted with KRATE_USB_PICK.
+#[test]
+fn an_app_talks_only_to_the_usb_device_the_person_picks() {
+    if !cfg!(debug_assertions) {
+        // A release build never reads KRATE_USB_FAKE, by design.
+        eprintln!("skipping: a release build has no fake USB backend to script");
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/usb-probe.wasm")).expect("probe");
+    let pack = |name: &str, devices: &[&str]| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        let asks: String = devices
+            .iter()
+            .map(|ids| {
+                format!(
+                    "\n[[capabilities]]\ncap = \"device.usb:{ids}\"\nrationale = \"the device\"\nrequired = false\n"
+                )
+            })
+            .collect();
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{asks}"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        let packed = krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack");
+        assert!(
+            packed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+        bundle
+    };
+    // Optional here, so a run the person said no to still starts and the
+    // app hears the refusal itself (check-app holds a real app's ask to
+    // required).
+    let asks = pack("usb-probe", &["1915:7777"]);
+    let asks_a_keyboard = pack("usb-keys", &["1915:7777", "1915:0101"]);
+    let never_asked = pack("usb-quiet", &[]);
+    let runs = std::cell::Cell::new(0);
+    // One run: what the app printed, and what the devices saw.
+    let run = |bundle: &std::path::Path, grants: &[&str], pick: &str, check: &str| {
+        runs.set(runs.get() + 1);
+        let log = dir.path().join(format!("usb-{}.log", runs.get()));
+        let out = krate()
+            .current_dir(dir.path())
+            .env("KRATE_USB_FAKE", &log)
+            .env("KRATE_USB_PICK", pick)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let saw = std::fs::read_to_string(&log).unwrap_or_default();
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            saw.lines().map(str::to_string).collect::<Vec<_>>(),
+        )
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability, no list and no device -- refused by name, and nothing
+    // was opened.
+    let (said, saw) = run(&never_asked, &all, "1915:7777", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: this app did not ask for device.usb, so it cannot talk to a USB device"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    let (said, saw) = run(&asks, &basics, "1915:7777", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: you did not allow this app to talk to the 1915:7777 USB device \
+         (device.usb:1915:7777)"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // The person cancels: no device.
+    assert_eq!(run(&asks, &all, "cancel", "pick").0, "pick: none");
+    // A connected model the manifest never names is never reachable.
+    let (said, saw) = run(&asks, &all, "1915:7778", "pick");
+    assert_eq!(
+        said,
+        "pick: not-allowed: this app did not ask for device.usb:1915:7778, so it cannot talk to \
+         that USB device"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // A keyboard is the computer's, even named and allowed.
+    let (said, saw) = run(&asks_a_keyboard, &all, "1915:0101", "pick");
+    assert!(
+        said.starts_with("pick: not-for-apps: Keyboard (1915:0101) is a keyboard, mouse"),
+        "{said}"
+    );
+    assert!(saw.is_empty(), "{saw:?}");
+    // A pick names ids, nothing else.
+    assert!(
+        run(&asks, &all, "/dev/bus/usb/001/004", "pick")
+            .0
+            .starts_with("pick: unavailable: KRATE_USB_PICK names"),
+        "a path is not a device's ids"
+    );
+    // The pick says which device it is.
+    assert_eq!(
+        run(&asks, &all, "1915:7777", "pick").0,
+        "pick: picked Radio dongle (1915:7777) 1915:7777"
+    );
+
+    // Bulk, interrupt and control, byte for byte; a quiet read ends empty;
+    // the closed handle is spent; and the device was let go.
+    let (said, saw) = run(&asks, &all, "1915:7777", "talk");
+    assert_eq!(
+        said,
+        "talk: bulk echoed 256 bytes, interrupt echoed 3 bytes, control kept 3 bytes, then \
+         nothing for 100 ms, closed: unknown-handle"
+    );
+    let every_byte: String = (0..=255u8).map(|b| format!("{b:02x}")).collect();
+    assert!(
+        saw.contains(&format!("out 1915:7777 0x01 {every_byte}")),
+        "every byte value reached the device as sent: {saw:?}"
+    );
+    assert!(
+        saw.contains(&"out 1915:7777 0x02 00ff7f".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        saw.contains(
+            &"control-out 1915:7777 Vendor Interface 0x01 0x0007 0x0000 090807".to_string()
+        ),
+        "{saw:?}"
+    );
+    assert_eq!(
+        saw.last().map(String::as_str),
+        Some("close 1915:7777"),
+        "{saw:?}"
+    );
+    assert!(saw.contains(&"release 1915:7777 0".to_string()), "{saw:?}");
+
+    // Handles the person never gave reach nothing.
+    assert_eq!(
+        run(&asks, &all, "1915:7777", "forge").0,
+        "forge: unclaimed=not-claimed next=unknown-handle zero=unknown-handle"
+    );
+    // The HID interface beside the dongle's own is the computer's.
+    let (said, saw) = run(&asks, &all, "1915:7777", "hid");
+    assert!(
+        said.starts_with(
+            "hid: not-for-apps: interface 1 of Radio dongle (1915:7777) is a keyboard"
+        ),
+        "{said}"
+    );
+    assert!(
+        !saw.iter().any(|event| event.starts_with("claim")),
+        "{saw:?}"
+    );
+    // Nothing outside the claimed interface: another interface, a request
+    // that would reconfigure the device, the HID interface's endpoint.
+    let (said, saw) = run(&asks, &all, "1915:7777", "outside");
+    assert_eq!(
+        said,
+        "outside: interface-1=bad-request set-configuration=bad-request endpoint-0x83=bad-request"
+    );
+    assert!(
+        !saw.iter()
+            .any(|event| event.starts_with("control") || event.starts_with("in ")),
+        "nothing refused reached the device: {saw:?}"
+    );
+    // A Crazyradio's set-up: vendor requests to the whole device, as sent,
+    // then the null packet and its answer.
+    let (said, saw) = run(&asks, &all, "1915:7777", "radio");
+    assert_eq!(
+        said,
+        "radio: channel 80, data rate 2, null packet answered [ff]"
+    );
+    let at = |line: &str| saw.iter().position(|event| event == line);
+    let channel = at("control-out 1915:7777 Vendor Device 0x01 0x0050 0x0000 ");
+    let rate = at("control-out 1915:7777 Vendor Device 0x03 0x0002 0x0000 ");
+    let null = at("out 1915:7777 0x01 ff");
+    assert!(
+        channel.is_some() && channel < rate && rate < null,
+        "channel, then data rate, then the null packet: {saw:?}"
+    );
+    // The whole device takes class requests and the standard reads; a
+    // standard request that would change it never reaches it.
+    let (said, saw) = run(&asks, &all, "1915:7777", "device");
+    assert_eq!(
+        said,
+        "device: class=sent set-configuration=bad-request get-descriptor=2 bytes"
+    );
+    assert!(
+        saw.contains(&"control-out 1915:7777 Class Device 0x22 0x0003 0x0000 07".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        saw.contains(&"control-in 1915:7777 Standard Device 0x06 0x0100 0x0000 18".to_string()),
+        "{saw:?}"
+    );
+    assert!(
+        !saw.iter()
+            .any(|event| event.contains("Standard Device 0x09")),
+        "SET_CONFIGURATION never reached the device: {saw:?}"
+    );
+    // A device that takes nothing: the write ends with its wait.
+    assert_eq!(run(&asks, &all, "1915:7777", "slow").0, "slow: timed-out");
+
+    // The app leaves the device claimed and open: the run ending releases
+    // and closes it.
+    let (said, saw) = run(&asks, &all, "1915:7777", "hold");
+    assert_eq!(said, "hold: left open");
+    assert_eq!(
+        saw,
+        [
+            "open 1915:7777",
+            "claim 1915:7777 0",
+            "out 1915:7777 0x01 48454c44",
+            "release 1915:7777 0",
+            "close 1915:7777",
+        ],
+        "the run let the device go"
+    );
+}
+
+/// The far end of a pseudo-terminal: the stand-in serial device.
+#[cfg(unix)]
+struct Pty {
+    master: std::sync::Arc<std::fs::File>,
+    path: String,
+}
+
+#[cfg(unix)]
+impl Pty {
+    fn open() -> Self {
+        use std::os::fd::FromRawFd;
+        // SAFETY: plain libc calls on a descriptor this function owns; the
+        // name ptsname returns is copied before anything else runs.
+        unsafe {
+            let fd = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
+            assert!(fd >= 0, "a pseudo-terminal");
+            assert_eq!(libc::grantpt(fd), 0);
+            assert_eq!(libc::unlockpt(fd), 0);
+            let name = libc::ptsname(fd);
+            assert!(!name.is_null());
+            let path = std::ffi::CStr::from_ptr(name)
+                .to_string_lossy()
+                .into_owned();
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            Self {
+                master: std::sync::Arc::new(std::fs::File::from_raw_fd(fd)),
+                path,
+            }
+        }
+    }
+
+    /// Read what the app sends until it ends with `end` (ten seconds at
+    /// most), answering PONG to a PING when `answer` is set.
+    fn listen(&self, end: &'static [u8], answer: bool) -> thread::JoinHandle<Vec<u8>> {
+        let master = self.master.clone();
+        thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut heard = Vec::new();
+            let mut buf = [0u8; 256];
+            while Instant::now() < deadline && !heard.ends_with(end) {
+                // Nothing yet, or no app on the other end yet (EIO on
+                // Linux until the slave is opened): look again shortly.
+                match (&*master).read(&mut buf) {
+                    Ok(n) if n > 0 => heard.extend_from_slice(&buf[..n]),
+                    _ => thread::sleep(Duration::from_millis(5)),
+                }
+            }
+            if answer && heard.ends_with(end) {
+                (&*master).write_all(b"PONG\n").expect("answer");
+            }
+            heard
+        })
+    }
+
+    fn answer_ping(&self) -> thread::JoinHandle<Vec<u8>> {
+        self.listen(b"PING\n", true)
+    }
+
+    fn collect_until(&self, end: &'static [u8]) -> thread::JoinHandle<Vec<u8>> {
+        self.listen(end, false)
+    }
+
+    /// Nobody holds the device: it opens, and its exclusive lock is free.
+    fn free(&self) -> bool {
+        let path = std::ffi::CString::new(self.path.clone()).expect("path");
+        // SAFETY: a descriptor opened, locked and closed here.
+        unsafe {
+            let fd = libc::open(
+                path.as_ptr(),
+                libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK,
+            );
+            if fd < 0 {
+                return false;
+            }
+            let locked = libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) == 0;
+            libc::close(fd);
+            locked
+        }
+    }
+}
+
 /// A program ends with Krate however Krate is stopped (krate:process,
 /// IC-977): `kill` and the terminal closing. A program leads its own process
 /// group, so a signal sent to Krate never reaches it; Krate has to end it on
@@ -9666,8 +10560,28 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
     let two = entries();
     assert_eq!(two.len(), 2, "two Notes, two entries: {two:?}");
     assert_ne!(two[0].1, two[1].1, "and two ids");
+    // Console-free start (IC-396): the entry hands the app to krate-open,
+    // whose arguments are the payload alone (krate.exe would be asked to
+    // `launch`), and krate-open.exe is a GUI-subsystem program, so no
+    // console window opens beside the app.
+    let opener = std::fs::read(env!("CARGO_BIN_EXE_krate-open")).expect("krate-open.exe");
+    let pe = u32::from_le_bytes(opener[0x3c..0x40].try_into().unwrap()) as usize;
+    assert_eq!(
+        &opener[pe..pe + 4],
+        b"PE\0\0",
+        "krate-open.exe is a PE image"
+    );
+    let subsystem = u16::from_le_bytes(opener[pe + 24 + 68..pe + 24 + 70].try_into().unwrap());
+    assert_eq!(
+        subsystem, 2,
+        "krate-open.exe must be IMAGE_SUBSYSTEM_WINDOWS_GUI"
+    );
     for (entry, id, args) in &two {
         assert!(id.starts_with("Krate.App."), "{entry:?}: {id}");
+        assert!(
+            !args.trim_start().starts_with("launch"),
+            "{entry:?} opens through krate.exe, which brings a console: {args}"
+        );
         let payload = args
             .split('"')
             .find(|part| part.ends_with("app.krate"))
@@ -9678,6 +10592,23 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
         );
         assert!(std::path::Path::new(payload).is_file(), "{payload}");
     }
+
+    // The Start menu shows an entry's file name: the first Notes is
+    // "Notes", and only the clash makes the second one carry its tag.
+    let shown = |found: &[(std::path::PathBuf, String, String)]| -> Vec<String> {
+        found
+            .iter()
+            .map(|(p, _, _)| p.file_stem().unwrap().to_string_lossy().into_owned())
+            .collect()
+    };
+    let names = shown(&two);
+    assert!(names.iter().any(|n| n == "Notes"), "{names:?}");
+    assert!(
+        names
+            .iter()
+            .any(|n| n.starts_with("Notes (") && n.ends_with(')')),
+        "{names:?}"
+    );
 
     run(&["install".as_ref(), a.as_os_str()]);
     assert_eq!(entries(), two, "a reinstall replaces its own entry");
@@ -9690,6 +10621,13 @@ fn a_windows_install_is_in_the_start_menu_as_itself() {
         .flatten()
         .count();
     assert_eq!(apps, 1, "and its folder, and nothing else");
+
+    // The clash is gone: reinstalled, the other Notes takes the plain name
+    // and its tagged entry goes, so it is in the menu once.
+    run(&["install".as_ref(), b.as_os_str()]);
+    let after = entries();
+    assert_eq!(shown(&after), ["Notes"], "{after:?}");
+    assert_eq!(after[0].1, left[0].1, "the same app, by its id");
 }
 
 #[test]
@@ -9789,6 +10727,7 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
             .collect();
         assert_eq!(apps.len(), names.len(), "one wrapper each: {apps:?}");
         let mut shown = Vec::new();
+        let mut displayed = Vec::new();
         for app in &apps {
             let plist = app.join("Contents/Info.plist");
             let read = |key: &str| {
@@ -9807,6 +10746,27 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
                 app.display()
             );
             shown.push(read("CFBundleName"));
+            // What Finder, Spotlight and Launchpad show is the name, not
+            // the lineage-tagged folder: macOS's own display-name lookup.
+            let seen = std::process::Command::new("osascript")
+                .args([
+                    "-l",
+                    "JavaScript",
+                    "-e",
+                    "ObjC.import('Foundation'); $.NSFileManager.defaultManager\
+                     .displayNameAtPath($.NSProcessInfo.processInfo.environment\
+                     .objectForKey('KRATE_SHOWN')).js",
+                ])
+                .env("KRATE_SHOWN", app)
+                .output()
+                .expect("osascript");
+            let seen = String::from_utf8_lossy(&seen.stdout).trim_end().to_string();
+            assert!(
+                !seen.ends_with(".app"),
+                "{} shows as {seen:?}",
+                app.display()
+            );
+            displayed.push(seen);
             // Handler coexistence (IC-396): an installed app opens itself
             // and claims no file type, so `.krate` files keep opening in the
             // Krate Player however many apps are installed.
@@ -9828,6 +10788,14 @@ fn an_app_with_any_allowed_name_installs_and_keeps_its_name() {
                 shown.iter().any(|s| s == name.trim()),
                 "{name:?} must read back as itself: {shown:?}"
             );
+            // macOS shows a localized ".." as "...app.app", so a name of
+            // dots alone keeps its folder name, as before.
+            if !name.chars().all(|c| c == '.') {
+                assert!(
+                    displayed.iter().any(|s| s == name.trim()),
+                    "{name:?} must be shown as itself: {displayed:?}"
+                );
+            }
         }
     }
 
@@ -9978,6 +10946,254 @@ fn what_was_allowed_can_be_seen_and_taken_back() {
         !permissions(&[]).contains("fs.read:taken/**"),
         "and it is gone from the list"
     );
+}
+
+/// An app prints to the printer the person picks, and the pick is remembered
+/// so the next label prints without asking (krate:print, IC-986).
+///
+/// `printer-probe.wasm` is apps/krate-printer-probe built. The printers are
+/// folders under KRATE_PRINTER_SPOOL, each job landing in its folder as its
+/// bytes and a note of its options; the person's pick is scripted with
+/// KRATE_PRINTER_PICK, as a test or a script drives it.
+#[test]
+fn an_app_prints_to_the_printer_the_person_picks_and_it_is_remembered() {
+    const ZPL: &[u8] = b"^XA\r\n^FO50,50^ADN,36,20^FDWO-1042\x00\xff^FS\r\n^XZ\r\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let spool = dir.path().join("printers");
+    for printer in ["Office_Laser", "Zebra_ZD421"] {
+        std::fs::create_dir_all(spool.join(printer)).expect("printer");
+    }
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/printer-probe.wasm")).expect("probe");
+    // `printer`: None never declares device.printer; Some(required) does.
+    let pack = |name: &str, printer: Option<bool>| {
+        let manifest = dir.path().join(format!("{name}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"com.acme.{name}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+                 [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n{}",
+                match printer {
+                    Some(required) => format!(
+                        "\n[[capabilities]]\ncap = \"device.printer\"\nrationale = \"labels\"\n\
+                         required = {required}\n"
+                    ),
+                    None => String::new(),
+                }
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{name}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    // One run: its grants, the scripted pick (None: no pick variable at
+    // all), what is typed at the consent prompt, and the check.
+    let run = |bundle: &std::path::Path,
+               grants: &[&str],
+               pick: Option<&str>,
+               answer: &str,
+               check: &str|
+     -> String {
+        use std::io::Write;
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_krate"));
+        command
+            .current_dir(dir.path())
+            .env("HOME", home.path())
+            .env("KRATE_PRINTER_SPOOL", &spool)
+            .arg("run")
+            .arg(bundle)
+            .args(grants)
+            .args(["--", check])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        match pick {
+            Some(pick) => command.env("KRATE_PRINTER_PICK", pick),
+            None => command.env_remove("KRATE_PRINTER_PICK"),
+        };
+        let mut child = command.spawn().expect("spawn");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(answer.as_bytes())
+            .expect("answer");
+        let out = child.wait_with_output().expect("run");
+        assert!(
+            out.status.success(),
+            "{check}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let jobs = |printer: &str| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(spool.join(printer))
+            .map(|read| {
+                read.flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    let note = |printer: &str, n: u32| -> serde_json::Value {
+        serde_json::from_slice(
+            &std::fs::read(spool.join(printer).join(format!("job-{n}.json"))).expect("note"),
+        )
+        .expect("json")
+    };
+    let all = ["--auto-grant"];
+    let basics = ["--grant", "io.stdout", "--grant", "io.args"];
+
+    // No capability: refused by name, no list, nothing printed.
+    let never_asked = pack("printer-quiet", None);
+    assert_eq!(
+        run(&never_asked, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: not-allowed: this app did not ask for device.printer, so it cannot print"
+    );
+    let optional = pack("printer-optional", Some(false));
+    assert_eq!(
+        run(&optional, &basics, Some("Zebra_ZD421"), "", "label"),
+        "label: not-allowed: you did not allow this app to print (device.printer)"
+    );
+    assert!(jobs("Zebra_ZD421").is_empty(), "nothing reached a printer");
+
+    let asks = pack("printer-probe", Some(true));
+    // The person cancels at the pick: no printer, nothing printed.
+    assert_eq!(run(&asks, &all, Some("cancel"), "", "label"), "label: none");
+    // A pick names a printer that is set up, never anything else.
+    assert_eq!(
+        run(&asks, &all, Some("Nowhere"), "", "label"),
+        "label: unavailable: KRATE_PRINTER_PICK names `Nowhere`, which is not a printer set up \
+         on this computer"
+    );
+    // Handles nobody gave reach no printer.
+    assert_eq!(
+        run(&asks, &all, None, "", "forge"),
+        "forge: zero=unknown-handle: that printer was not picked in this app \
+         next=unknown-handle: that printer was not picked in this app"
+    );
+    assert!(jobs("Zebra_ZD421").is_empty() && jobs("Office_Laser").is_empty());
+
+    // Picked: the raw ZPL reaches the printer byte for byte, with its copies
+    // and its name; the PDF with its copies and its label size.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: Zebra ZD421: queued Zebra_ZD421-1"
+    );
+    assert_eq!(
+        std::fs::read(spool.join("Zebra_ZD421").join("job-1.raw")).expect("job"),
+        ZPL
+    );
+    assert_eq!(note("Zebra_ZD421", 1)["copies"], 2);
+    assert_eq!(note("Zebra_ZD421", 1)["title"], "WO-1042");
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "document"),
+        "document: Zebra ZD421: queued Zebra_ZD421-2"
+    );
+    assert!(std::fs::read(spool.join("Zebra_ZD421").join("job-2.pdf"))
+        .expect("pdf")
+        .starts_with(b"%PDF-"));
+    assert_eq!(note("Zebra_ZD421", 2)["copies"], 3);
+    assert_eq!(note("Zebra_ZD421", 2)["paper"], "Custom.100x150mm");
+    // A job past the bound is refused in words and never sent.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "big"),
+        "big: Zebra ZD421: bad-job: a print job is at most 16 MiB (16777216 bytes), not 16777217 \
+         bytes"
+    );
+    assert_eq!(jobs("Zebra_ZD421").len(), 4, "two jobs, each with its note");
+
+    // A signed app, a person at the prompt: the pick is remembered.
+    let key = dir.path().join("key.pkcs8");
+    assert!(krate()
+        .arg("sign")
+        .arg(&asks)
+        .arg("--key")
+        .arg(&key)
+        .args(["--generate-key", "--namespace", "printer/probe"])
+        .env("HOME", home.path())
+        .output()
+        .expect("sign")
+        .status
+        .success());
+    let prompted = ["--prompt"];
+    // An --auto-grant run is Krate deciding, not a person: its pick is for
+    // that run alone, so the next run, with a person, is asked.
+    assert_eq!(
+        run(&asks, &all, Some("Zebra_ZD421"), "", "label"),
+        "label: Zebra ZD421: queued Zebra_ZD421-3"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "A\n", "label"),
+        "label: none"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("Office_Laser"), "", "label"),
+        "label: Office Laser: queued Office_Laser-1"
+    );
+    // The next run asks nothing -- a scripted cancel would answer none if
+    // it did -- and prints to the remembered printer.
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "", "label"),
+        "label: Office Laser: queued Office_Laser-2"
+    );
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "", "remembered"),
+        "remembered: Office Laser"
+    );
+    assert_eq!(
+        std::fs::read(spool.join("Office_Laser").join("job-2.raw")).expect("job"),
+        ZPL
+    );
+
+    // The person sees it, and takes it back.
+    let permissions = |args: &[&str]| -> String {
+        let out = krate()
+            .arg("permissions")
+            .args(args)
+            .env("HOME", home.path())
+            .output()
+            .expect("permissions");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let listed = permissions(&[]);
+    assert!(
+        listed.contains("com.acme.printer-probe")
+            && listed.contains("prints to Office Laser without asking (device.printer)"),
+        "{listed}"
+    );
+    assert!(permissions(&["--forget", "com.acme.printer-probe"]).contains("will ask again"));
+    assert!(
+        !permissions(&[]).contains("Office Laser"),
+        "gone from the list"
+    );
+    // Forgotten: the app is asked about again, and so is the printer -- a
+    // cancel at the pick now prints nothing.
+    assert_eq!(
+        run(&asks, &prompted, Some("cancel"), "A\n", "label"),
+        "label: none"
+    );
+    assert_eq!(jobs("Office_Laser").len(), 4, "nothing more was printed");
 }
 
 /// A data profile is named on the trust screen, a bad name is refused before
@@ -27550,6 +28766,115 @@ fn maker_public(home: &std::path::Path) -> String {
         .next()
         .unwrap()
         .to_string()
+}
+
+/// K-1290: a maker's new key keeps their apps' data. `krate identity
+/// --new-key` has the old key and the new sign a handover and removes the old
+/// private half; the first open of an app signed by the new key takes what
+/// the old key's store for it held, once; a handover whose signatures do not
+/// hold moves nothing; and reporting a key compromised without a sign-in
+/// changes nothing and sends nothing.
+#[test]
+fn a_new_maker_key_takes_its_apps_data_with_it() {
+    let dir = tempfile::tempdir().expect("dir");
+    let home = tempfile::tempdir().expect("home");
+    let store = home.path().join(".krate/store");
+    let (url, count) = counting_listener();
+    let identity = |args: &[&str]| {
+        krate()
+            .arg("identity")
+            .args(args)
+            .env("HOME", home.path())
+            .env("KRATE_HUB_URL", &url)
+            .env("KRATE_USAGE_URL", format!("{url}/usage"))
+            .output()
+            .expect("identity")
+    };
+
+    let first = pack_minimal(dir.path(), home.path(), "dev.krate.rot", "rot", true);
+    let old = maker_public(home.path());
+    assert_eq!(signer_of(&first).as_deref(), Some(old.as_str()));
+    std::fs::create_dir_all(&store).unwrap();
+    let old_store = store.join(format!("dev.krate.rot@{}.kv", &old[..16]));
+    std::fs::write(&old_store, b"kept through the new key").unwrap();
+    let old_private = std::fs::read(home.path().join(".krate/keys/maker.key")).unwrap();
+
+    // Reporting needs a sign-in: without one nothing changes and nothing is sent.
+    let refused = identity(&["--report-compromised", "--since", "2026-11-01"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("krate login"));
+    assert_eq!(
+        maker_public(home.path()),
+        old,
+        "a refused report keeps the key"
+    );
+    assert_eq!(
+        count.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "and sends nothing"
+    );
+
+    let rotated = identity(&["--new-key"]);
+    let said = String::from_utf8_lossy(&rotated.stdout).to_string()
+        + &String::from_utf8_lossy(&rotated.stderr);
+    assert!(rotated.status.success(), "{said}");
+    let new = maker_public(home.path());
+    assert_ne!(new, old, "a new key");
+    assert_ne!(
+        std::fs::read(home.path().join(".krate/keys/maker.key")).unwrap(),
+        old_private,
+        "the old private half is gone"
+    );
+    assert!(home
+        .path()
+        .join(format!(".krate/keys/maker.retired-{}.pub", &old[..16]))
+        .exists());
+
+    // A rebuild is signed by the new key, and its first open takes the data.
+    let second = pack_minimal(dir.path(), home.path(), "dev.krate.rot", "rot-again", true);
+    assert_eq!(signer_of(&second).as_deref(), Some(new.as_str()));
+    let ran = run_headless(&second, home.path());
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let new_store = store.join(format!("dev.krate.rot@{}.kv", &new[..16]));
+    assert_eq!(
+        std::fs::read(&new_store).expect("moved"),
+        b"kept through the new key"
+    );
+    assert!(!old_store.exists(), "moved, not copied");
+    // Once: data written at the old name afterwards stays there.
+    std::fs::write(&old_store, b"an old build wrote this later").unwrap();
+    assert!(run_headless(&second, home.path()).status.success());
+    assert_eq!(
+        std::fs::read(&new_store).unwrap(),
+        b"kept through the new key"
+    );
+
+    // A handover whose signature does not hold moves nothing.
+    let succession = home.path().join(".krate/keys/succession.json");
+    let mut list: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&succession).unwrap()).unwrap();
+    let sig = list[0]["new_signature"].as_str().unwrap().to_string();
+    let flipped = match sig.strip_prefix('0') {
+        Some(rest) => format!("1{rest}"),
+        None => format!("0{}", &sig[1..]),
+    };
+    list[0]["new_signature"] = serde_json::json!(flipped);
+    std::fs::write(&succession, serde_json::to_vec(&list).unwrap()).unwrap();
+    let other_old = store.join(format!("dev.krate.other@{}.kv", &old[..16]));
+    std::fs::write(&other_old, b"not on a forged handover").unwrap();
+    let other = pack_minimal(dir.path(), home.path(), "dev.krate.other", "other", true);
+    assert!(run_headless(&other, home.path()).status.success());
+    assert!(
+        other_old.exists(),
+        "a handover that does not verify moves nothing"
+    );
+    assert!(!store
+        .join(format!("dev.krate.other@{}.kv", &new[..16]))
+        .exists());
 }
 
 fn run_headless(bundle: &std::path::Path, home: &std::path::Path) -> std::process::Output {

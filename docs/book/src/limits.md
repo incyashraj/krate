@@ -18,20 +18,21 @@ written from memory.
 | Storage | Key-value, SQL, a secret store, and a shared store across machines |
 | System | Clipboard, dialogs, notifications (macOS, Windows and Linux; Windows says so when the person has switched an app's off), open-a-URL, locale, time, random |
 | Input | Keyboard, pointer, wheel |
+| Devices | A serial device the person picks: an instrument, a sensor, an Arduino; and a USB device the person picks, of a model the app names by its ids: a radio dongle, an instrument with its own protocol (macOS, Windows and Linux) |
+| Printing | The print dialog for what a window shows, and documents and labels (PDF, PNG, ZPL, EPL, ESC/POS) to a printer the person picks once (macOS, Windows and Linux) |
+| Serving | One declared port other devices on the network open, a factory or lab app the floor's tablets use; or this computer only (macOS, Windows and Linux) |
 
 ## Not yet
 
 | Missing | What it blocks |
 |---|---|
-| Printing | Invoices, labels, anything a business prints |
 | Multiple windows | A dashboard with a separate controls window |
 | File watching | Folder-driven tools that react to changes |
-| Serial and USB | Arduino, ESP32, live sensor apps |
+| HID devices | Security keys, custom input devices |
 | Bluetooth LE | Heart-rate monitors, scales, beacons |
 | Screen capture | Screenshot and recording tools |
 | Tray and menu bar | Utilities that live at the edge of the screen |
 | Scheduled wake | Reminders that fire with the app closed |
-| Local server | Receiving webhooks, serving a page on the LAN |
 
 ## Deliberately never
 

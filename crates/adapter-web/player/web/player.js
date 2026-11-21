@@ -22,6 +22,7 @@ import { TeamData } from './org-data.js';
 import { SharedStore, SharedFail } from './shared-store.js';
 import { SecretStore, SecretFail } from './secret-store.js';
 import { pageSenses, primeSpeech } from './senses.js';
+import { pageDevices, pagePrint, browserHas } from './devices.js';
 // The browser as an organisation's device (window.KrateSigning): the same
 // file the console uses on krate.tech, served here beside the Player.
 import './org-device.js';
@@ -144,7 +145,6 @@ const WHAT = {
   'krate:resources/assets': 'its own pictures and files',
   'krate:ui/dialog': 'choosing a folder',
   'krate:ui/reminders': 'reminders',
-  'krate:ui/print': 'printing',
   'krate:ui/menu': 'its own menus',
   'krate:ui/bluetooth': 'Bluetooth',
   'krate:ui/photos': 'your photos',
@@ -937,6 +937,10 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
   // a member; a file has no one to ask, so it opens without it.
   const TEAM_LINK = 'opens from your team’s link, not from a file';
   if (FILE) for (const r of rows) if (r.cap === 'store.org' && r.in_tab) { r.in_tab = false; r.away = TEAM_LINK; }
+  // A serial or USB device needs the browser's Web Serial or WebUSB, which
+  // Chrome and Edge have and Safari and Firefox do not (IC-992).
+  const ELSEWHERE = 'works in Chrome or Edge, or in Krate on a computer';
+  for (const r of rows) if (r.in_tab && r.needs && !browserHas(r.needs)) { r.in_tab = false; r.away = ELSEWHERE; }
   const blocked = rows.filter((r) => r.required && !r.in_tab);
   const granted = rows.filter((r) => r.in_tab).map((r) => r.cap);
   // Storage belongs to the publisher the hub vouched for (x-krate-store, a
@@ -965,10 +969,13 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
       list.appendChild(li);
     }
     const teamOnly = (list) => list.length > 0 && list.every((r) => r.away === TEAM_LINK);
+    const elsewhereOnly = (list) => list.length > 0 && list.every((r) => r.away === ELSEWHERE);
     if (blocked.length) {
       $('consentNote').textContent = teamOnly(blocked)
         ? `${name} needs your team’s shared data, which ${TEAM_LINK}.`
-        : `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on a computer, not in a tab yet.`;
+        : elsewhereOnly(blocked)
+          ? `${name} needs to ${blocked.map((r) => r.plain).join(' and ')}. This browser cannot reach one: open the app in Chrome or Edge, or in Krate on a computer.`
+          : `${name} needs ${blocked.map((r) => r.plain).join(', ')}, which works in Krate on a computer, not in a tab yet.`;
       if (FILE && PHONE) {
         $('consentAllow').textContent = 'Choose another file';
         $('consentAllow').onclick = () => { location.href = '/run/file'; };
@@ -980,7 +987,8 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
       const away = rows.filter((r) => !r.in_tab);
       $('consentNote').textContent = !away.length ? ''
         : teamOnly(away) ? 'Greyed out: it opens from your team’s link. The app opens here without it.'
-          : 'Greyed out: works in Krate on a computer. The app opens here without it.';
+          : elsewhereOnly(away) ? 'Greyed out: works in Chrome or Edge, or in Krate on a computer. The app opens here without it.'
+            : 'Greyed out: works in Krate on a computer. The app opens here without it.';
       $('consentAllow').textContent = 'Allow and open';
     }
     if (FILE) {
@@ -1371,9 +1379,14 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   // The device's senses (IC-974): notifications, location, share, speech,
   // the camera and the microphone (senses.js).
   const devices = pageSenses({ name, report, probe: params.get('probe') === '1', phone: PHONE, sheet, withTap });
+  // Serial and USB devices the person picks (IC-992, devices.js).
+  const picked = pageDevices({ name, report, granted, sheet, withTap });
 
   const bridge = pageBridge(bridgeMem, {
     ...devices.handlers,
+    ...picked.handlers,
+    // Printing what the window shows (krate:ui/print, IC-992).
+    ...pagePrint({ name, report }),
     'http.fetch': doFetch,
     'http.begin': (args) => {
       const id = nextFetch++;
@@ -1659,6 +1672,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     worker.terminate();
     audio.close();
     devices.close();
+    picked.close();
   }
 
   // ---- input, in logical pixels, to the app's ring
@@ -1825,6 +1839,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     storeKey,
     org: team.mode,
     senses: devices.facts,
+    devices: picked.facts,
     args: params.getAll('arg').join('\n'),
     scale: Math.min(4, Math.max(1, window.devicePixelRatio || 1)),
     dark: dark(),

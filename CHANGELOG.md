@@ -15,6 +15,15 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 Changes merged since 0.5.5-rc9. Contributors: add a line here with your change.
 
+### Added
+- Make an app in a Claude chat: add Krate as a connector in Claude (`https://hub.krate.tech/mcp`) and ask in plain words. Claude writes the app, Krate builds and checks it and publishes it unlisted to your account, and you get a link that opens on any phone or computer. A failed build gives Claude Krate's own words to fix it. Building asks you to sign in to Krate once.
+- The Krate plugin for Claude Code (`incyashraj/krate-claude-plugin`) carries the same connector and a skill that builds on your own machine.
+- Apps know the person's local time: `utc-offset` in `krate:locale/info`, and `krate::locale::today()`, `local_now()` and `day_number()` in the Rust SDK, daylight saving included, on desktop and in a browser tab.
+- Serial ports (`device.serial`), printers the person picks once (`device.printer`, raw ZPL, EPL or ESC/POS) and serving on this computer or the local network (`net.listen:<port>`).
+
+### Changed
+- The guide an AI reads opens with the first-build failures and their one-line fixes, and a failed build names the import a missing float method needs (`use krate::prelude::*;`).
+
 ### Fixed
 - Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
 

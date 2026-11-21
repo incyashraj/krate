@@ -216,6 +216,9 @@ function startBuilder(stateDir, krateBin, extraEnv = {}) {
       KRATE_STATE_DIR: stateDir,
       KRATE_AGENT: "claude", // a CLI provider: no API key needed to switch on
       KRATE_BUILDER_SECRET: BUILDER_SECRET,
+      // The fake engine's own logs: a child sees only what is allow-listed
+      // (sandbox.js), and these are test hooks, named here on purpose.
+      KRATE_BUILD_ENV_PASS: "KRATE_ATTACH_LOG,KRATE_REQUEST_LOG",
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],

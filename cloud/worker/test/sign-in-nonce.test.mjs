@@ -18,6 +18,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../src/index.js";
+import { assertLayout } from "./mail-layout-tools.mjs";
 
 const KV = new Map();
 let puts = 0;
@@ -95,6 +96,12 @@ async function viaEmail(body) {
   const sent = await go("POST", "/login/email", { email: "m@example.com", ...body });
   assert.strictEqual(sent.status, 200, await sent.text());
   const link = new URL(mailed.text.match(/https:\/\/\S+/)[0]);
+  // Both parts, the same link: the designed copy carries it on the button
+  // and written out (mail-layout.js).
+  assert.equal(mailed.from, "Krate <login@krate.tech>");
+  assert.equal(mailed.subject, "Sign in to Krate");
+  assertLayout(mailed.html, link.href, "Sign in to Krate");
+  assert.ok(mailed.html.includes("expires in 15 minutes"));
   return landing(await go("GET", link.pathname + link.search));
 }
 

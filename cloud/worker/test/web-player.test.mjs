@@ -97,6 +97,23 @@ test("an organisation's private release opens in a tab only for whom /a/ would h
   assert.ok(unpack(member.bytes).header.ok);
 });
 
+test("the hub answers /favicon.ico with Krate's icon, which Claude's directory shows beside the connector", async () => {
+  const env = orgEnv();
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  env.ASSETS = {
+    fetch: async (request) =>
+      new URL(request.url).pathname === "/krate-favicon.png" ? new Response(png) : new Response("not found", { status: 404 }),
+  };
+  const res = await worker.fetch(new Request("https://hub.example/favicon.ico"), env);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get("content-type"), "image/png");
+  assert.deepStrictEqual(new Uint8Array(await res.arrayBuffer()), png);
+  const head = await worker.fetch(new Request("https://hub.example/favicon.ico", { method: "HEAD" }), env);
+  assert.strictEqual(head.status, 200);
+  delete env.ASSETS;
+  assert.strictEqual((await worker.fetch(new Request("https://hub.example/favicon.ico"), env)).status, 404);
+});
+
 test("the Player page and its files are cross-origin isolated; nothing else is served there", async () => {
   const env = withAssets(orgEnv());
   const page = await worker.fetch(new Request(`https://hub.example/run/${"a".repeat(64)}`), env);

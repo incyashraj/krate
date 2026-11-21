@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.serial-probe"
+name = "serial-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_serial_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what the device said"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read which check to run"
+required = true
+
+[[capabilities]]
+cap = "device.serial"
+rationale = "Talk to the serial device you pick"
+required = true

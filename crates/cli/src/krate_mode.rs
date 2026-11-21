@@ -52,6 +52,7 @@ pub fn generate() -> String {
     out.push_str(API_PREAMBLE);
     out.push_str(&authoring_context::sdk_surface_section());
     out.push_str(&authoring_context::capability_catalog_section());
+    out.push_str(DEVICES_FROM_A_LINK);
     out.push_str(&authoring_context::gui_world_section());
     // The design guidance, which this prompt shipped without.
     //
@@ -88,6 +89,14 @@ refused before it runs.
 The result is **one `.krate` file that runs unchanged on macOS, Windows, and
 Linux** -- no per-app installer and no per-platform build. The person you send
 it to installs the Krate player once; every app after that is just the file.
+
+**In a chat, Krate builds it for you.** If this chat has Krate's tools
+(`build_app`, `build_status`), write the files and send them to `build_app`;
+the person gets a link that opens the app on any phone or computer. If it does
+not, tell the person the one step that adds them, then build: add the Krate
+connector from your assistant's connector or app directory, or as a custom
+connector with the address `https://hub.krate.tech/mcp`. Do not ask the person
+to copy files anywhere.
 
 ";
 
@@ -128,7 +137,9 @@ bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real wor
 once against a small built-in sample, print what the app is holding, and exit 0
 -- never wait for input, never sit on an open window. The verification run passes
 exactly this argument, and an app that parses arguments strictly and rejects it
-fails after building perfectly.
+fails after building perfectly. Still call file dialogs in a `quick` run: the
+check answers them itself (as a cancel, or with a file a task step names), so
+an `if quick` around a dialog only hides the save or open path from the check.
 
 **Print one `key:value` per line, and make the keys mean something.** This is the
 only way anything outside the app can tell whether it did what was asked --
@@ -208,6 +219,9 @@ world = \"cli\"
 \"krate:store\" = { path = \"PREFIX/wit/krate/phase2/deps/store\" }
 \"krate:random\" = { path = \"PREFIX/wit/krate/phase2/deps/random\" }
 \"krate:process\" = { path = \"PREFIX/wit/krate/phase2/deps/process\" }
+\"krate:serial\" = { path = \"PREFIX/wit/krate/phase2/deps/serial\" }
+\"krate:print\" = { path = \"PREFIX/wit/krate/phase2/deps/print\" }
+\"krate:usb\" = { path = \"PREFIX/wit/krate/phase2/deps/usb\" }
 
 [profile.release]
 panic = \"abort\"
@@ -267,6 +281,9 @@ world = \"gui\"
 \"krate:store\" = { path = \"PREFIX/wit/krate/phase4/deps/store\" }
 \"krate:random\" = { path = \"PREFIX/wit/krate/phase4/deps/random\" }
 \"krate:process\" = { path = \"PREFIX/wit/krate/phase4/deps/process\" }
+\"krate:serial\" = { path = \"PREFIX/wit/krate/phase4/deps/serial\" }
+\"krate:print\" = { path = \"PREFIX/wit/krate/phase4/deps/print\" }
+\"krate:usb\" = { path = \"PREFIX/wit/krate/phase4/deps/usb\" }
 \"krate:ui\" = { path = \"PREFIX/wit/krate/phase4/deps/ui\" }
 \"krate:gfx\" = { path = \"PREFIX/wit/krate/phase4/deps/gfx\" }
 \"krate:gpu\" = { path = \"PREFIX/wit/krate/phase4/deps/gpu\" }
@@ -328,6 +345,14 @@ Miss a step and it fails to build with \"no global memory allocator found\",
    `\"std\"` fails with \"duplicate lang item `panic_impl`\". **The two lines move
    together, and this is the step that is missed most often.**
 3. Keep `panic = \"abort\"` and `opt-level = \"s\"` in `[profile.release]`.
+4. **`use krate::prelude::*;` near the top of every file that does float maths.**
+   In `no_std`, `x.floor()`, `round`, `ceil`, `sqrt`, `sin`, `cos`, `atan2`,
+   `powf` and `rem_euclid` do not exist on `f32` or `f64`; the prelude brings
+   them back with `std`'s meanings (`krate::math::F32Ext` / `F64Ext`). Without
+   it the build fails with \"no method named `floor` found for type `f32`\" --
+   the first app Claude built through Krate's connector failed exactly so.
+   Never hand-write a floor by casting to an integer: that rounds negatives the
+   wrong way.
 
 ### What to avoid in `no_std`
 
@@ -372,6 +397,20 @@ capability names that exist.**
 The three sections keep the numbering they have in Krate's own reference file, so
 you will see 1, 2, and 4 -- their 3 and 5 are the `no_std` rules and the example
 index, which this document has already covered in its own words.
+
+";
+
+/// Serial and USB from a link (IC-992): most people open a Krate app from a
+/// link, so a device app has to know where it works there.
+const DEVICES_FROM_A_LINK: &str = "\
+**Devices from a link.** `device.serial` and `device.usb:<vendor>:<product>` work
+in Krate on a computer and also from a link in Chrome or Edge: the browser's own
+device list is the person's pick, and for USB it shows only the models the
+manifest names. Call `serial::pick` or `usb::pick` from a button the person taps
+(a browser shows its list only inside a tap; otherwise Krate asks for one more).
+Safari and Firefox answer `Err(Unavailable)` with words that say to open the app
+in Chrome or Edge, or in Krate: show `serial::words(&err)` or `usb::words(&err)`.
+Printing what the window shows (`ui::print`) uses the browser's print dialog.
 
 ";
 

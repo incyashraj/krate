@@ -19,6 +19,14 @@ The result is **one `.krate` file that runs unchanged on macOS, Windows, and
 Linux** -- no per-app installer and no per-platform build. The person you send
 it to installs the Krate player once; every app after that is just the file.
 
+**In a chat, Krate builds it for you.** If this chat has Krate's tools
+(`build_app`, `build_status`), write the files and send them to `build_app`;
+the person gets a link that opens the app on any phone or computer. If it does
+not, tell the person the one step that adds them, then build: add the Krate
+connector from your assistant's connector or app directory, or as a custom
+connector with the address `https://hub.krate.tech/mcp`. Do not ask the person
+to copy files anywhere.
+
 ---
 
 ## Output rules -- these are hard
@@ -55,7 +63,9 @@ bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real wor
 once against a small built-in sample, print what the app is holding, and exit 0
 -- never wait for input, never sit on an open window. The verification run passes
 exactly this argument, and an app that parses arguments strictly and rejects it
-fails after building perfectly.
+fails after building perfectly. Still call file dialogs in a `quick` run: the
+check answers them itself (as a cancel, or with a file a task step names), so
+an `if quick` around a dialog only hides the save or open path from the check.
 
 **Print one `key:value` per line, and make the keys mean something.** This is the
 only way anything outside the app can tell whether it did what was asked --
@@ -132,6 +142,9 @@ world = "cli"
 "krate:store" = { path = "PREFIX/wit/krate/phase2/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase2/deps/random" }
 "krate:process" = { path = "PREFIX/wit/krate/phase2/deps/process" }
+"krate:serial" = { path = "PREFIX/wit/krate/phase2/deps/serial" }
+"krate:print" = { path = "PREFIX/wit/krate/phase2/deps/print" }
+"krate:usb" = { path = "PREFIX/wit/krate/phase2/deps/usb" }
 
 [profile.release]
 panic = "abort"
@@ -191,6 +204,9 @@ world = "gui"
 "krate:store" = { path = "PREFIX/wit/krate/phase4/deps/store" }
 "krate:random" = { path = "PREFIX/wit/krate/phase4/deps/random" }
 "krate:process" = { path = "PREFIX/wit/krate/phase4/deps/process" }
+"krate:serial" = { path = "PREFIX/wit/krate/phase4/deps/serial" }
+"krate:print" = { path = "PREFIX/wit/krate/phase4/deps/print" }
+"krate:usb" = { path = "PREFIX/wit/krate/phase4/deps/usb" }
 "krate:ui" = { path = "PREFIX/wit/krate/phase4/deps/ui" }
 "krate:gfx" = { path = "PREFIX/wit/krate/phase4/deps/gfx" }
 "krate:gpu" = { path = "PREFIX/wit/krate/phase4/deps/gpu" }
@@ -249,6 +265,14 @@ Miss a step and it fails to build with "no global memory allocator found",
    `"std"` fails with "duplicate lang item `panic_impl`". **The two lines move
    together, and this is the step that is missed most often.**
 3. Keep `panic = "abort"` and `opt-level = "s"` in `[profile.release]`.
+4. **`use krate::prelude::*;` near the top of every file that does float maths.**
+   In `no_std`, `x.floor()`, `round`, `ceil`, `sqrt`, `sin`, `cos`, `atan2`,
+   `powf` and `rem_euclid` do not exist on `f32` or `f64`; the prelude brings
+   them back with `std`'s meanings (`krate::math::F32Ext` / `F64Ext`). Without
+   it the build fails with "no method named `floor` found for type `f32`" --
+   the first app Claude built through Krate's connector failed exactly so.
+   Never hand-write a floor by casting to an integer: that rounds negatives the
+   wrong way.
 
 ### What to avoid in `no_std`
 
@@ -381,9 +405,17 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 ### `locale`
 
 - `locale::current() -> LocaleId`
+- `locale::date_of_day(day_number: i64) -> (i32, u8, u8)`
+- `locale::day_number(millis: u64) -> i64`
+- `locale::day_of_date(year: i32, month: u8, day: u8) -> i64`
 - `locale::format_date(millis: u64, tz: &str, style: DateStyle, loc: &LocaleId) -> String`
 - `locale::format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> String`
+- `locale::local_now() -> LocalTime`
+- `locale::local_time(millis: u64) -> LocalTime`
 - `locale::timezone() -> String`
+- `locale::today() -> i64`
+- `locale::utc_offset(millis: u64) -> i32`
+- `locale::weekday_of_day(day_number: i64) -> u8`
 
 ### `mem`
 
@@ -412,6 +444,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `net::get_text(url: &str) -> Result<String, NetError>`
 - `net::poll(handle: u64) -> FetchStatus`
 
+### `net::listen`
+
+- `net::listen::words(err: &ListenError) -> &str`
+
 ### `net::ws`
 
 - `net::ws::close(handle: u64) -> ()`
@@ -436,6 +472,14 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `org::text(entry: &'a Entry, name: &str) -> Option<&'a str>`
 - `org::who() -> Result<Option<Member>, OrgError>`
 
+### `print`
+
+- `print::outcome_words(outcome: &PrintOutcome) -> &str`
+- `print::pick(title: &str) -> Result<Option<Printer>, PrintError>`
+- `print::printer(title: &str) -> Result<Option<Printer>, PrintError>`
+- `print::remembered() -> Result<Option<Printer>, PrintError>`
+- `print::words(err: &PrintError) -> &str`
+
 ### `process`
 
 - `process::run(program: &str, args: &[&str], cwd: &str) -> Result<Finished, ProcessError>`
@@ -457,6 +501,11 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `secret::names() -> Result<Vec<String>, SecretError>`
 - `secret::set(name: &str, secret: &[u8]) -> Result<(), SecretError>`
 - `secret::set_text(name: &str, secret: &str) -> Result<(), SecretError>`
+
+### `serial`
+
+- `serial::pick(title: &str) -> Result<Option<Port>, SerialError>`
+- `serial::words(err: &SerialError) -> &str`
 
 ### `shared`
 
@@ -496,6 +545,15 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `time::now_millis() -> u64`
 - `time::sleep_millis(millis: u32) -> ()`
 
+### `usb`
+
+- `usb::class_device_request(request: u8, value: u16, index: u16) -> ControlSetup`
+- `usb::class_request(request: u8, value: u16, interface: u8) -> ControlSetup`
+- `usb::pick(title: &str) -> Result<Option<Device>, UsbError>`
+- `usb::vendor_device_request(request: u8, value: u16, index: u16) -> ControlSetup`
+- `usb::vendor_request(request: u8, value: u16, interface: u8) -> ControlSetup`
+- `usb::words(err: &UsbError) -> &str`
+
 ### Methods, called on a value
 
 These are not paths. Get the value first -- `io::stdio::stdout()`,
@@ -524,6 +582,142 @@ These are not paths. Get the value first -- `io::stdio::stdout()`,
 - `<OutputStream>.write_bytes(bytes: &[u8]) -> Result<(), IoError>`
 - `<OutputStream>.write_line(value: &str) -> Result<(), IoError>`
 - `<OutputStream>.write_text(value: &str) -> Result<(), IoError>`
+
+## Spreadsheets: `krate::sheets` (Excel, LibreOffice, CSV)
+
+An app reads the workbook a person opens and writes the one they save. Turn on the `sheets` feature of the `krate` dependency -- `features = ["gui", "sheets"]` (a CLI app: `features = ["sheets"]`). It runs inside the app, `no_std`, with no capability of its own: the bytes come from `ui.dialog:file-open` (or a drop) and go back through `ui.dialog:file-save`, the same in a browser tab as on a desktop.
+
+- `sheets::read(&bytes) -> Result<Workbook, SheetError>` -- an `.xlsx`/`.xlsm` (Excel's own, or one another program exported), an `.ods` (LibreOffice) or a `.csv`, recognised from the bytes. An old binary `.xls` is `Err(SheetError::OldExcel)`; show `e.message()`, which tells the person to save it as `.xlsx`.
+- `Workbook { sheets: Vec<Sheet> }`, `book.sheet("Orders")` (ignores case).
+- `Sheet { name: String, rows: Vec<Vec<Cell>> }`: `sheet.get(row, col) -> &Cell` (from 0; `Cell::Empty` past the end -- never index `rows[r][c]`), `sheet.height()`, `sheet.width()`, `sheet.set(row, col, cell)`, `sheet.push_row(vec![..])`, `Sheet::new("name")`, `Sheet::column_name(27)` -> `"AB"`.
+- `Cell::{Empty, Text(String), Number(f64), Bool(bool), Date(DateTime), Error(String)}`. A formula comes through as the value it last calculated; dates are recognised from the cell's format. `cell.to_text()` is what the cell shows (`0.1 + 0.2` shows `0.3`, dates `2024-03-15`), `cell.as_number()` reads a number or numeric text, `cell.as_str()`, `cell.is_empty()`. Build cells with `Cell::from("text")`, `Cell::from(12.5)`, `Cell::from(3)`, `Cell::from(true)`.
+- `DateTime { year, month, day, hour, minute, second }`: `DateTime::date(2024, 3, 15).at(9, 30, 0)`, `.to_text()`, `.to_iso()`, `DateTime::parse_iso(s)`, `.day_number()` (the same count as `krate::locale::today()`, so "overdue" is `d.day_number() < krate::locale::today()`), `DateTime::from_serial(45366.0)` / `.to_serial()` for Excel's date numbers.
+- `sheets::write_xlsx(&workbook) -> Vec<u8>` -- a standard `.xlsx` workbook, every type kept, dates as dates, sheet names made acceptable to Excel. `sheets::write_csv(&sheet) -> String` and `sheets::read_csv(&text) -> Sheet` (cells from CSV are text; `as_number()` reads them).
+
+Formatting, merged-cell layout, charts and the formulas themselves are not read or written; values are. A value hidden under a merged range is dropped, as the sheet shows it.
+
+Open a workbook, show it as a table, export a summary:
+
+```rust
+use alloc::vec;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::sheets::{self, Cell, Sheet, Workbook};
+use krate::ui::dialog;
+
+// Open: the person's pick is the permission (`ui.dialog:file-open`).
+fn open_workbook(win: u64) -> Result<Option<Workbook>, &'static str> {
+    let Ok(Some(chosen)) = dialog::open_file(win, "Open a workbook", "xlsx,xlsm,ods,csv") else {
+        return Ok(None); // they cancelled
+    };
+    let bytes = krate::fs::read_chosen(&chosen.token).map_err(|_| "That file could not be read.")?;
+    sheets::read(&bytes).map(Some).map_err(|e| e.message())
+}
+
+// Show: a grid of `to_text()`, a page at a time.
+fn draw_table(canvas: u64, sheet: &Sheet, first_row: usize, ink: gfx::Color) {
+    for r in first_row..sheet.height().min(first_row + 30) {
+        let y = 28.0 + (r - first_row) as f32 * 22.0;
+        for c in 0..sheet.width().min(8) {
+            let text = sheet.get(r, c).to_text();
+            let at = gfx::Point { x: 16.0 + c as f32 * 120.0, y };
+            let _ = canvas2d::draw_text(canvas, &text, at, 14.0, ink);
+        }
+    }
+}
+
+// Export: a new sheet, saved where the person says (`ui.dialog:file-save`).
+fn export_totals(win: u64, sheet: &Sheet) {
+    let mut out = Sheet::new("Totals");
+    out.push_row(vec![Cell::from("Item"), Cell::from("Total")]);
+    for row in sheet.rows.iter().skip(1) {
+        let name = row.first().map(Cell::to_text).unwrap_or_default();
+        let total: f64 = row.iter().skip(1).filter_map(Cell::as_number).sum();
+        out.push_row(vec![Cell::from(name), Cell::from(total)]);
+    }
+    let bytes = sheets::write_xlsx(&Workbook { sheets: vec![out] });
+    if let Ok(Some(chosen)) = dialog::save_file(win, "Save the totals", "totals.xlsx", "xlsx") {
+        let _ = krate::fs::write_chosen(&chosen.token, &bytes);
+    }
+}
+```
+
+`apps/krate-sheets-probe` reads an Excel file and a LibreOffice file, writes both back, and checks every value. An app that turns a team's workbook into an app keeps the data in `store.sql` or `store.kv` after the first import, and offers Export so the spreadsheet is never a dead end.
+
+## Machines: `krate::modbus` and `krate::mqtt` (PLCs, instruments, brokers)
+
+An app reads a machine's registers and publishes its readings. Turn on the feature of the `krate` dependency -- `features = ["gui", "modbus"]`, `"mqtt"`, or both (a CLI app leaves out `"gui"`). Neither has a capability of its own: Modbus RTU runs over the serial port the person picked (`device.serial`), Modbus TCP and MQTT over a TCP connection to the host the manifest declares (`net.connect:<host>:502`, `net.connect:<host>:1883`). Every call waits at most its timeout and fails with words (`e.message()`); nothing a device sends can crash the app.
+
+- `modbus::Client::rtu(port, unit)` -- `port` from `krate::serial::pick`, already `open`ed with the device's settings; `unit` 1 to 247 (0 sends a write to every device and waits for nothing). `modbus::Client::tcp(host, 502, unit) -> Result<Client, ModbusError>`.
+- `client.read_holding_registers(address, count)` and `read_input_registers(..) -> Result<Vec<u16>, ModbusError>` (1 to 125), `read_coils(..)` and `read_discrete_inputs(..) -> Vec<bool>` (1 to 2000), exactly as many as asked. `write_register(address, u16)`, `write_registers(address, &[u16])`, `write_coil(address, bool)`, `write_coils(address, &[bool])`. Addresses count from 0: the register a manual calls 40001 is holding register 0, 30001 input register 0. `set_timeout(ms)` (default 1000), `set_unit(unit)`.
+- `ModbusError::{TimedOut, Exception(Exception), BadCrc, BadReply(..), BadRequest(..), Link(..)}`; `Exception::IllegalDataAddress` is the device saying that register does not exist. A value in two registers: `modbus::f32_from(high, low)`, `u32_from`, `i32_from`, `f32_to(value)` (if it reads as nonsense, the device keeps the low word first: swap them).
+- `mqtt::Client::connect(host, 1883, &mqtt::Options::new("client-id"))` -- `.login(user, password)`, `.keep_alive(secs)` (default 60), `.timeout(ms)` (default 5000). Clean sessions, MQTT 3.1.1.
+- `client.publish(topic, payload, QoS::AtLeastOnce)` waits for the broker's receipt (`QoS::AtMostOnce` does not); `publish_retained(..)` keeps it as the topic's last value. `subscribe(filter, qos)` (`+` one level, `#` everything below) returns the QoS granted; `unsubscribe(filter)`.
+- `client.poll() -> Result<Option<Message>, MqttError>` never waits: call it every turn of the event loop -- it also sends the keep-alive pings, so call it at least once a keep-alive period. `client.receive(wait_ms)` waits for one (a CLI app). `Message { topic, payload, qos, retained }`, `message.text()`. `client.disconnect()`.
+- `MqttError::{Refused(Refusal), TimedOut(..), SubscribeRefused, Protocol(..), BadTopic(..), BadOptions(..), TooLarge, Link(..)}`; `Refusal::BadLogin` is a wrong user name or password. After `Link` or `TimedOut` the connection is gone: connect again.
+
+Not there yet, so do not promise it: MQTT over TLS (port 8883) -- an app's sockets are plain TCP; MQTT 5; QoS 2; Modbus ASCII. Keep a broker password in `krate::secret` (`store.secret`), never in the source.
+
+Read a holding register over RTU:
+
+```rust
+use alloc::string::String;
+use krate::{modbus, serial};
+
+// `device.serial` in the manifest; the person picks the controller.
+fn connect_controller() -> Result<Option<modbus::Client>, String> {
+    let picked = serial::pick("Choose the temperature controller");
+    let Some(port) = picked.map_err(|e| String::from(serial::words(&e)))? else {
+        return Ok(None); // they cancelled
+    };
+    port.open(&serial::Settings::baud(9600))
+        .map_err(|e| String::from(serial::words(&e)))?;
+    Ok(Some(modbus::Client::rtu(port, 1))) // unit address 1
+}
+
+// Register 40001 (address 0) holds tenths of a degree.
+fn read_celsius(controller: &mut modbus::Client) -> Result<f32, String> {
+    let regs = controller.read_holding_registers(0, 1).map_err(|e| e.message())?;
+    Ok(f32::from(regs[0]) / 10.0)
+}
+```
+
+Publish a reading over MQTT and hear the set point:
+
+```rust
+use alloc::{format, string::String};
+use krate::mqtt::{self, QoS};
+
+// `net.connect:broker.lab.local:1883` and `store.secret` in the manifest.
+fn open_broker() -> Result<mqtt::Client, String> {
+    let password = krate::secret::get_text("broker").ok().flatten().unwrap_or_default();
+    let options = mqtt::Options::new("oven-7").login("lab", &password);
+    let mut broker =
+        mqtt::Client::connect("broker.lab.local", 1883, &options).map_err(|e| e.message())?;
+    broker
+        .subscribe("lab/oven-7/setpoint", QoS::AtLeastOnce)
+        .map_err(|e| e.message())?;
+    Ok(broker)
+}
+
+fn publish_reading(broker: &mut mqtt::Client, celsius: f32) -> Result<(), String> {
+    let text = format!("{celsius:.1}");
+    broker
+        .publish("lab/oven-7/celsius", text.as_bytes(), QoS::AtLeastOnce)
+        .map_err(|e| e.message())
+}
+
+// Every turn of the event loop.
+fn hear_setpoint(broker: &mut mqtt::Client, setpoint: &mut f32) -> Result<(), String> {
+    while let Some(message) = broker.poll().map_err(|e| e.message())? {
+        if let Some(value) = message.text().and_then(|t| t.trim().parse().ok()) {
+            *setpoint = value;
+        }
+    }
+    Ok(())
+}
+```
+
+`apps/krate-machines-probe` runs both against a device and a broker simulated inside the app. Poll a machine on a timer, not in a tight loop (once a second is plenty for most sensors), and show the last good reading with its time when a read fails.
 
 ---
 
@@ -564,9 +758,13 @@ people can send. check-app ends with a note naming any it found.
 | `random.bytes` | no | yes | entropy (also what getrandom/rand need) |
 | `process.run:<program>` | no | computer only | run one program on the computer, named bare (`process.run:cargo`): found on PATH or ~/.cargo/bin; it can do what the person can |
 | `process.terminal` | no | computer only | the person's own shell in a terminal the app draws |
+| `device.serial` | no | in Chrome and Edge | a serial device the person picks from the computer's own list (an instrument, a sensor, a board); only the picked one is reachable |
+| `device.printer` | no | computer only | print documents and labels to a printer the person picks from the computer's own list, remembered for the app so later prints ask nothing |
+| `device.usb:<vendor-id>:<product-id>` | no | in Chrome and Edge | a USB device the person picks, of a model named by its vendor and product ids in hex (`device.usb:1915:7777`, one entry a model); raw bulk, interrupt and class or vendor control transfers, never keyboards, mice, storage, audio, video or hubs |
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
+| `net.listen:<port>` | no | computer only | let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (section 2c, rule 7b) |
 | `net.connection:<connection-name>` | no | computer only | an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8) |
 | `time.clock` | yes | yes | wall-clock time |
 | `time.monotonic` | yes | yes | a monotonic timer |
@@ -605,6 +803,15 @@ Mark `required = true` on a capability the app cannot begin without -- the verif
 "Cannot begin without" means the app it CLAIMS to be, not just a window that opens. A music player without `audio.playback` is not a music player -- it is a silent picture of one -- so mark that capability required. Ask: if this one capability were withheld, would the app still be the thing the request asked for? If no, it is required. A drawing app's canvas, a music player's audio, a recorder's microphone, **a webcam app's camera**: required. A capability the app only uses for a nice-to-have corner is genuinely optional; the app's whole reason for existing is not.
 
 This has real consequences, not just tidiness. The person is only asked about capabilities marked required -- an optional one is never mentioned and never granted, so the app opens without it and without a question. A generated webcam viewer marked `camera.capture` optional and opened to a permanently empty viewfinder: no camera, no prompt, nothing on screen explaining why. It looked broken, and from the person's side it was.
+**Devices from a link.** `device.serial` and `device.usb:<vendor>:<product>` work
+in Krate on a computer and also from a link in Chrome or Edge: the browser's own
+device list is the person's pick, and for USB it shows only the models the
+manifest names. Call `serial::pick` or `usb::pick` from a button the person taps
+(a browser shows its list only inside a tap; otherwise Krate asks for one more).
+Safari and Firefox answer `Err(Unavailable)` with words that say to open the app
+in Chrome or Edge, or in Krate: show `serial::words(&err)` or `usb::words(&err)`.
+Printing what the window shows (`ui::print`) uses the browser's print dialog.
+
 
 ---
 
@@ -843,6 +1050,7 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 
 - `info::current: func() -> locale-id`
 - `info::timezone: func() -> string`
+- `info::utc-offset: func(millis: u64) -> s32`
 - `format::format-date: func( millis: u64, tz: string, style: date-style, loc: locale-id, ) -> string`
 - `format::format-number: func( value: f64, style: number-style, loc: locale-id, ) -> string`
 
@@ -867,6 +1075,11 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `sockets::udp-local-port: func(handle: u64) -> result<u16, net-error>`
 - `sockets::udp-send: func(handle: u64, host: string, port: u16, data: list<u8>) -> result<_, net-error>`
 - `sockets::udp-receive: func(handle: u64) -> option<datagram>`
+- `sockets::tcp-listen: func(port: u16, scope: listen-scope) -> result<u64, listen-error>`
+- `sockets::tcp-accept: func(listener: u64) -> result<option<u64>, listen-error>`
+- `sockets::tcp-local-port: func(handle: u64) -> result<u16, listen-error>`
+- `sockets::tcp-addresses: func(listener: u64) -> result<list<listen-address>, listen-error>`
+- `sockets::tcp-announce: func(listener: u64, service-type: string) -> result<announcement, listen-error>`
 - `sockets::close: func(handle: u64)`
 
 ## `random`

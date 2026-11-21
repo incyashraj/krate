@@ -9,7 +9,7 @@
  * Every call to and from the hub carries the builder secret. The hub asks
  * again for anything still judging, so a failure here only delays.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,21 +18,35 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 /** Run a program; resolve { code, stdout, stderr }. */
-function run(program, args, { timeoutMs = 10 * 60 * 1000 } = {}) {
+//
+// `spawnImpl` is the builder's sandbox (K-1293): an upload is a stranger's
+// bytes, so the engine that reads them runs as the build user with no
+// secret in its environment. The default is for the tests.
+//
+// The builder's spawnImpl answers a promise (it takes a build user from the
+// pool first, K-1297); a plain spawn answers the child. Both are taken.
+async function run(program, args, { timeoutMs = 10 * 60 * 1000, spawnImpl = spawn } = {}) {
+  let child;
+  try {
+    child = await spawnImpl(program, args, { stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    return { code: -1, stdout: "", stderr: String(err && err.message || err) };
+  }
   return new Promise((resolve) => {
-    const child = spawn(program, args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+    // The builder's child says when its build user is back in the pool.
+    const back = () => child.handedBack || Promise.resolve();
     child.on("error", (err) => {
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: String(err) });
+      back().then(() => resolve({ code: -1, stdout, stderr: String(err) }));
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve({ code, stdout, stderr });
+      back().then(() => resolve({ code, stdout, stderr }));
     });
   });
 }
@@ -48,9 +62,9 @@ export function safeArchivePath(name) {
  * Judge one downloaded file. Answers { ok: true, judgement? } or
  * { ok: false, problem }.
  */
-export async function judgeFile(kind, file, { krate = "krate", tar = "tar" } = {}) {
+export async function judgeFile(kind, file, { krate = "krate", tar = "tar", spawnImpl = spawn } = {}) {
   if (kind === "bundle") {
-    const out = await run(krate, ["judge", file, "--tier", "hub-big"]);
+    const out = await run(krate, ["judge", file, "--tier", "hub-big"], { spawnImpl });
     let answer = null;
     try {
       answer = JSON.parse(out.stdout.trim().split("\n").pop() || "");
@@ -62,7 +76,7 @@ export async function judgeFile(kind, file, { krate = "krate", tar = "tar" } = {
   }
   if (kind === "source") {
     // A zstd tar whose every entry stays inside the folder it unpacks to.
-    const out = await run(tar, ["--zstd", "-tf", file]);
+    const out = await run(tar, ["--zstd", "-tf", file], { spawnImpl });
     if (out.code !== 0) {
       return { ok: false, problem: `not a .tar.zst archive (${(out.stderr || "").trim().slice(0, 200)})` };
     }
@@ -88,13 +102,19 @@ export async function judgeFile(kind, file, { krate = "krate", tar = "tar" } = {
  * works in the background; `inFlight` is what it is doing now, so the box
  * does not stop itself mid-judgement.
  */
-export function createJudge({ hub, secret, dir, krate = "krate", tar = "tar", fetchImpl = fetch, log = console }) {
+export function createJudge({ hub, secret, dir, krate = "krate", tar = "tar", spawnImpl = spawn, fetchImpl = fetch, log = console }) {
   const inFlight = new Map();
 
   async function work(job) {
-    const file = join(dir, `${job.id}.bin`);
+    // Named by the upload's id AND 128 random bits that never leave this
+    // process: the folder cannot be listed, and the id alone (which a
+    // build user might learn) no longer names a path it can open (K-1297).
+    const file = join(dir, `${job.id}-${randomBytes(16).toString("hex")}.bin`);
     try {
-      await mkdir(dir, { recursive: true });
+      // In production the judge runs as the build user (K-1293): it may
+      // read this file by its exact path, and neither list the folder nor
+      // swap the file between the hash check and the judging.
+      await mkdir(dir, { recursive: true, mode: 0o711 });
       const res = await fetchImpl(`${hub}/internal/big/${job.id}/bytes`, {
         headers: { "x-krate-builder": secret },
       });
@@ -110,7 +130,7 @@ export function createJudge({ hub, secret, dir, krate = "krate", tar = "tar", fe
         hash.update(chunk);
         size += chunk.length;
       });
-      await pipeline(source, createWriteStream(file));
+      await pipeline(source, createWriteStream(file, { mode: 0o644 }));
       const sha256 = hash.digest("hex");
       let verdict;
       if (size !== job.size) {
@@ -118,7 +138,7 @@ export function createJudge({ hub, secret, dir, krate = "krate", tar = "tar", fe
       } else if (sha256 !== job.sha256) {
         verdict = { ok: false, problem: "the bytes that arrived are not the ones the upload declared" };
       } else {
-        verdict = await judgeFile(job.kind, file, { krate, tar });
+        verdict = await judgeFile(job.kind, file, { krate, tar, spawnImpl });
       }
       const answer = await fetchImpl(`${hub}/internal/big/${job.id}/verdict`, {
         method: "POST",

@@ -35,6 +35,9 @@ world = "cli"
 "krate:store" = { path = "../../wit/krate/phase2/deps/store" }
 "krate:random" = { path = "../../wit/krate/phase2/deps/random" }
 "krate:process" = { path = "../../wit/krate/phase2/deps/process" }
+"krate:serial" = { path = "../../wit/krate/phase2/deps/serial" }
+"krate:print" = { path = "../../wit/krate/phase2/deps/print" }
+"krate:usb" = { path = "../../wit/krate/phase2/deps/usb" }
 
 [profile.release]
 panic = "abort"

@@ -320,6 +320,29 @@ test("deleting an account removes every key that names it, and nothing of anyone
   assert.equal(tomb.state, "done");
 });
 
+test("deleting an account ends every connector it allowed, and nobody else's (K-1304)", async () => {
+  const env = hub();
+  const { ana, zed } = await world(env);
+  const at = Date.now();
+  await env.APPS.put(`mcpgrants:${ana.id}`, JSON.stringify([{ g: "ga1", client: "Claude", at }, { g: "ga2", client: "Claude", at }]));
+  await env.APPS.put("mcpgrant:ga1", "1");
+  await env.APPS.put("mcpgrant:ga2", "1");
+  await env.APPS.put(`mcpgrants:${zed.id}`, JSON.stringify([{ g: "gz1", client: "Claude", at }]));
+  await env.APPS.put("mcpgrant:gz1", "1");
+
+  const r = ok(await deleteAs(env, ana.token), "delete");
+  assert.equal(r.body.state, "done");
+  assert.equal(r.body.counts.connectors, 2, "both of her connectors were ended");
+  for (const g of ["ga1", "ga2"]) {
+    assert.equal(await env.APPS.get(`mcprevoked:${g}`), "1", `${g} is revoked, so its refresh token mints nothing`);
+    assert.equal(await env.APPS.get(`mcpgrant:${g}`), null);
+  }
+  assert.equal(await env.APPS.get(`mcpgrants:${ana.id}`), null, "her list of connectors is gone");
+  assert.equal(await env.APPS.get("mcprevoked:gz1"), null, "his connector still works");
+  assert.equal(await env.APPS.get("mcpgrant:gz1"), "1");
+  assert.ok(await env.APPS.get(`mcpgrants:${zed.id}`));
+});
+
 test("the last owner of an organisation is refused, by name, and nothing is touched", async () => {
   const env = hub();
   const ana = await emailSignIn(env, "ana@corp.example");
