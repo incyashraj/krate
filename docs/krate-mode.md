@@ -58,6 +58,14 @@ error the person has to debug.
 `std::net`, or `std::thread`. Use the `krate::*` equivalents. Ordinary in-memory
 std -- `String`, `Vec`, `HashMap`, iterators -- is fine and does not leak.
 
+**A date a person reads is a local date.** Today, this month, the time on a log
+line, the day a booking is for: take them from `krate::locale::local_now()` (or
+`krate::locale::local_time(ms)` for a stored time), declaring `time.clock` and
+`locale.info`. Never divide epoch milliseconds by 86_400_000 for a day a person
+sees -- that is the UTC day, which turns over in the evening in America and the
+morning in Asia, so a trip logged at 23:30 lands in the next month. Keep the
+epoch milliseconds for storing and for measuring how long something took.
+
 **Handle the argument `quick`.** Before any other argument parsing, check for the
 bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real work
 once against a small built-in sample, print what the app is holding, and exit 0
