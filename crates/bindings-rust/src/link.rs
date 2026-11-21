@@ -124,14 +124,41 @@ pub struct TcpLink {
 }
 
 /// Words for a refused or failed connection.
+/// Only the reason, from the host's words. The host says "could not connect
+/// to 127.0.0.1:502: Connection refused (os error 61)", and `net_words`
+/// already names the address, so the person read it twice (K-1310). The
+/// operating system's error number means nothing to them either.
+fn cause(words: &str) -> String {
+    let lower = words.to_ascii_lowercase();
+    let mut rest = words;
+    for lead in ["could not connect to ", "could not find "] {
+        if lower.starts_with(lead) {
+            if let Some(at) = words.find(": ") {
+                rest = &words[at + 2..];
+            }
+            break;
+        }
+    }
+    let rest = match rest.rfind(" (os error ") {
+        Some(at) if rest.ends_with(')') => &rest[..at],
+        _ => rest,
+    };
+    let mut out = String::from(rest.trim());
+    if let Some(first) = out.get(..1) {
+        let lowered = first.to_ascii_lowercase();
+        out.replace_range(..1, &lowered);
+    }
+    out
+}
+
 pub(crate) fn net_words(err: &crate::net::NetError, host: &str, port: u16) -> String {
     use crate::net::NetError;
     match err {
         NetError::PermissionDenied => format!(
             "This app may not connect to {host}:{port}. Declare `net.connect:{host}:{port}` in its manifest."
         ),
-        NetError::DnsFailure(w) => format!("{host} could not be found: {w}"),
-        NetError::ConnectFailure(w) => format!("Could not connect to {host}:{port}: {w}"),
+        NetError::DnsFailure(w) => format!("{host} could not be found: {}", cause(w)),
+        NetError::ConnectFailure(w) => format!("Could not connect to {host}:{port}: {}", cause(w)),
         NetError::TlsFailure(w) => format!("A secure connection to {host} failed: {w}"),
         NetError::Timeout => format!("{host}:{port} did not answer in time."),
         NetError::InvalidUrl => format!("{host}:{port} is not an address that can be reached."),
@@ -238,5 +265,43 @@ impl Link for TcpLink {
 impl Drop for TcpLink {
     fn drop(&mut self) {
         crate::net::sockets::close(self.handle);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::net::NetError;
+
+    /// The words an oven board showed when its sensor was down (K-1310):
+    /// the address once, the reason once, no operating-system number.
+    #[test]
+    fn a_refused_connection_names_the_address_once() {
+        let host_words =
+            String::from("could not connect to 127.0.0.1:502: Connection refused (os error 61)");
+        let said = net_words(&NetError::ConnectFailure(host_words), "127.0.0.1", 502);
+        assert_eq!(
+            said,
+            "Could not connect to 127.0.0.1:502: connection refused"
+        );
+        assert_eq!(said.matches("127.0.0.1").count(), 1, "{said}");
+    }
+
+    #[test]
+    fn a_name_that_cannot_be_found_is_said_once() {
+        let host_words =
+            String::from("could not find oven.local: failed to lookup address information");
+        let said = net_words(&NetError::DnsFailure(host_words), "oven.local", 502);
+        assert_eq!(
+            said,
+            "oven.local could not be found: failed to lookup address information"
+        );
+    }
+
+    #[test]
+    fn words_without_the_hosts_lead_pass_through() {
+        assert_eq!(cause("Network is unreachable"), "network is unreachable");
+        assert_eq!(cause("timed out (os error 60)"), "timed out");
+        assert_eq!(cause(""), "");
     }
 }
