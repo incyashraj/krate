@@ -16540,15 +16540,6 @@ have permission to execute."
     }
 }
 
-/// Build the app dir to a wasm component with cargo-component, returning the
-/// path to the produced wasm.
-///
-/// The child's PATH is made robust against two common local setups:
-/// - `cargo-component` is resolved to its real path (PATH, then the cargo bin
-///   dir) rather than spawned by bare name, so a conda base env or a login
-///   shell that puts `~/.cargo/bin` last still finds it.
-/// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
-///   that shadows rustup (and lacks the wasm target) does not get used.
 /// Before an app builds: if its Cargo.toml names Krate's SDK copy from
 /// another version, point it at this binary's own (K-1311). Without this an
 /// app made with an older Krate kept building against that version's SDK
@@ -16574,6 +16565,15 @@ fn repoint_app_sdk(app_dir: &Path) {
     }
 }
 
+/// Build the app dir to a wasm component with cargo-component, returning the
+/// path to the produced wasm.
+///
+/// The child's PATH is made robust against two common local setups:
+/// - `cargo-component` is resolved to its real path (PATH, then the cargo bin
+///   dir) rather than spawned by bare name, so a conda base env or a login
+///   shell that puts `~/.cargo/bin` last still finds it.
+/// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
+///   that shadows rustup (and lacks the wasm target) does not get used.
 fn component_build_command(app_dir: &Path) -> ProcessCommand {
     repoint_app_sdk(app_dir);
     let resolved = resolve_tool("cargo-component");

@@ -117,7 +117,7 @@ pub fn repoint_cached_sdk(text: &str, current: &Path) -> Option<(String, Vec<Str
         while let Some(at) = out[from..].find(&lead) {
             let start = from + at + lead.len();
             let end = out[start..]
-                .find(|c: char| c == '/' || c == '\\' || c == '"' || c == '\'')
+                .find(['/', '\\', '"', '\''])
                 .map_or(out.len(), |e| start + e);
             let pinned = out[start..end].to_string();
             if !pinned.is_empty() && pinned != version {
