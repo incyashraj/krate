@@ -63,7 +63,9 @@ bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real wor
 once against a small built-in sample, print what the app is holding, and exit 0
 -- never wait for input, never sit on an open window. The verification run passes
 exactly this argument, and an app that parses arguments strictly and rejects it
-fails after building perfectly.
+fails after building perfectly. Still call file dialogs in a `quick` run: the
+check answers them itself (as a cancel, or with a file a task step names), so
+an `if quick` around a dialog only hides the save or open path from the check.
 
 **Print one `key:value` per line, and make the keys mean something.** This is the
 only way anything outside the app can tell whether it did what was asked --

@@ -1985,6 +1985,10 @@ person nominated; it creates nothing by itself, so asking and then not \
 writing leaves nothing behind. An editor that can open a document and not \
 save one is not an editor: any app that reads a file the person chose \
 should offer to save one too.\n\n\
+Call the dialogs in a `quick` run too. Never write `if quick { Ok(None) }` \
+around them: check-app answers them itself (`pick = \"day.xlsx\"` in \
+`krate-check.toml`, otherwise as a cancel), so skipping the dialog only \
+hides the export or open path from the check -- the one a person uses.\n\n\
 ## The app's icon\n\n\
 Write `assets/icon.png` (square PNG, 512px or larger) and the app wears it \
 everywhere: the dock while it runs, Finder when installed, the installer. \
