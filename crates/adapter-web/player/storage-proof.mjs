@@ -66,12 +66,13 @@ async function launch(context, hash, arg) {
   const page = await context.newPage();
   await page.goto(`${base}/run/${hash}?probe=1&arg=${encodeURIComponent(arg)}`);
   await page.waitForFunction(() => window.__krate && (window.__krate.state === 'consent' || window.__krate.state === 'app'), null, { timeout: 30000 }).catch(() => {});
-  if (await page.evaluate(() => window.__krate.state === 'consent')) await page.click('#consentAllow');
+  const asked = await page.evaluate(() => window.__krate.state === 'consent');
+  if (asked) await page.click('#consentAllow');
   await page.waitForFunction(() => /(^|\n)ready\n/.test(window.__krate.out) || window.__krate.trap, null, { timeout: 30000 }).catch(() => {});
   const lines = await page.evaluate(() => window.__krate.out.split('\n').filter(Boolean));
   const title = await page.title();
   await page.close();
-  return { lines, title };
+  return { lines, title, asked };
 }
 
 let leaked = false;
@@ -90,6 +91,13 @@ const back = await launch(ctx, victim, 'reopen');
 const keeps = back.lines.includes('token: kept') && back.lines.includes(`code at start: ${code}`);
 console.log(`alice's own next open: ${keeps ? 'keeps her token and share code' : 'LOST HER DATA'}`, back.lines.filter((l) => /code at start|token:/.test(l)));
 if (!keeps) leaked = true;
+// K-1316: a yes is remembered per app in this browser -- alice's second
+// open goes straight in -- and never carried to another publisher's app
+// that claims the same id: mallory's is asked.
+console.log(`consent asked: alice first ${a.asked}, mallory ${m.asked}, alice again ${back.asked}`);
+if (!a.asked) { leaked = true; console.log('HOLE: alice\'s first open was not asked'); }
+if (!m.asked) { leaked = true; console.log('HOLE: mallory\'s app opened on alice\'s yes'); }
+if (back.asked) { leaked = true; console.log('alice was asked again for the same app: the yes was not remembered'); }
 await browser.close();
 server.close();
 process.exit(leaked ? 1 : 0);

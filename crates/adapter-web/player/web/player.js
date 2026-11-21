@@ -956,7 +956,19 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
   const storeKey = FILE ? `${app.id}~f${HASH.slice(0, 16)}`
     : release ? `${app.id}@${release.authority.slice(0, 16)}` : `${app.id}~${owner}`;
   report.storeKey = storeKey;
-  if (rows.length) {
+  // A yes is remembered for this app in this browser (K-1316, founder
+  // 2026-11-21): a daily app on a phone asked "save its own settings and
+  // data" on every open. Kept under the same key its data is (one publisher's
+  // app, never another's that claims the id), and asked again the moment the
+  // app wants anything the person has not said yes to, or cannot have here.
+  const consentKey = `krate.consent.${storeKey}`;
+  const yesBefore = (() => {
+    try { return JSON.parse(localStorage.getItem(consentKey) || '[]'); } catch { return []; }
+  })();
+  const alreadyAllowed = !blocked.length && Array.isArray(yesBefore)
+    && granted.every((cap) => yesBefore.includes(cap));
+  report.consentRemembered = rows.length > 0 && alreadyAllowed;
+  if (rows.length && !alreadyAllowed) {
     $('consentTitle').textContent = `“${name}” wants to:`;
     const list = $('consentRows');
     list.textContent = '';
@@ -999,6 +1011,7 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
     mark('consent');
     if (blocked.length) return;
     await new Promise((resolve) => { $('consentAllow').onclick = resolve; });
+    try { localStorage.setItem(consentKey, JSON.stringify(granted)); } catch {}
     mark('allowed');
   } else {
     mark('allowed');
