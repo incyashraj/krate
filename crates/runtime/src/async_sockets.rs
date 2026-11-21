@@ -188,6 +188,9 @@ pub struct AsyncSockets {
     lookups: BTreeMap<u64, (String, LookupAnswer)>,
     /// Each address a lookup returned, with the names it came from.
     resolved: HashMap<IpAddr, BTreeSet<String>>,
+    /// Connections the app closed while their writer was still sending
+    /// what it wrote: the end of the run waits for them (K-1313).
+    closing: Vec<Arc<TcpShared>>,
 }
 
 impl AsyncSockets {
@@ -624,17 +627,55 @@ impl AsyncSockets {
         // A listener or a UDP socket closes as it drops.
         if let Some(Socket::Tcp(shared)) = self.sockets.remove(&handle) {
             close_tcp(&shared);
+            self.closing.retain(|c| !is_flushed(c));
+            if !is_flushed(&shared) {
+                self.closing.push(shared);
+            }
         }
     }
 }
 
 impl Drop for AsyncSockets {
     fn drop(&mut self) {
+        let mut open: Vec<Arc<TcpShared>> = core::mem::take(&mut self.closing);
         for socket in self.sockets.values() {
             if let Socket::Tcp(shared) = socket {
                 close_tcp(shared);
+                open.push(Arc::clone(shared));
             }
         }
+        // The run is ending and the process with it, which would take the
+        // writer threads down mid-send: a server that writes its answer and
+        // closes at once lost the answer on a busy machine (K-1313). Wait,
+        // within the same bound a close gives, for what the app wrote.
+        let deadline = std::time::Instant::now() + FLUSH_ON_CLOSE;
+        for shared in &open {
+            wait_flushed(shared, deadline);
+        }
+    }
+}
+
+/// Everything the app wrote is sent, or can no longer be.
+fn is_flushed(shared: &TcpShared) -> bool {
+    let inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
+    inner.error.is_some() || inner.stream.is_none() || (inner.outbox.is_empty() && !inner.sending)
+}
+
+fn wait_flushed(shared: &TcpShared, deadline: std::time::Instant) {
+    let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
+    while inner.error.is_none()
+        && inner.stream.is_some()
+        && (!inner.outbox.is_empty() || inner.sending)
+    {
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return;
+        }
+        inner = shared
+            .changed
+            .wait_timeout(inner, deadline - now)
+            .map(|(guard, _)| guard)
+            .unwrap_or_else(|p| p.into_inner().0);
     }
 }
 
@@ -793,6 +834,8 @@ fn run_writer(mut stream: std::net::TcpStream, shared: Arc<TcpShared>) {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .sending = false;
+        // Whoever waits for the send to finish (a run ending) hears it.
+        shared.changed.notify_all();
         if let Err(e) = sent {
             let mut inner = shared.inner.lock().unwrap_or_else(|p| p.into_inner());
             if inner.closed {
@@ -1015,6 +1058,55 @@ mod tests {
             .expect("the connection ends, it does not hang");
         assert!(port_is_free(a), "port {a} is closed after the run");
         assert!(port_is_free(b), "port {b} is closed after the run");
+    }
+
+    /// A server writes its answer, closes, and the run ends at once: the
+    /// answer still arrives whole, because the end of the run waits for
+    /// what the app wrote instead of taking the writer down mid-send. CI's
+    /// busy Linux runner lost a probe's page this way (K-1313).
+    #[test]
+    fn what_an_app_wrote_arrives_even_when_the_run_ends_right_after() {
+        use std::io::Read;
+        const SIZE: usize = 2 * 1024 * 1024;
+        let port = free_port();
+        let mut table = AsyncSockets::new();
+        let l = table.tcp_listen(port, true).expect("listen");
+        let device = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let conn = wait(|| table.tcp_accept(l).expect("accept"));
+        // A slow reader, so the writer is still busy when the run ends.
+        let reader = std::thread::spawn(move || {
+            let mut device = device;
+            let mut chunk = vec![0u8; 64 * 1024];
+            let mut total = 0usize;
+            loop {
+                match device.read(&mut chunk) {
+                    Ok(0) | Err(_) => return total,
+                    Ok(n) => total += n,
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let body = vec![7u8; SIZE];
+        let mut sent = 0usize;
+        while sent < SIZE {
+            let taken = table.tcp_write(conn, &body[sent..]).expect("write") as usize;
+            if taken == 0 {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            sent += taken;
+        }
+        let Some(Socket::Tcp(shared)) = table.sockets.get(&conn) else {
+            panic!("the connection is in the table");
+        };
+        let shared = Arc::clone(shared);
+        table.close(conn);
+        drop(table);
+        assert!(
+            is_flushed(&shared),
+            "the run ended with the answer still unsent: {} bytes queued",
+            shared.inner.lock().map(|i| i.outbox.len()).unwrap_or(0)
+        );
+        assert_eq!(reader.join().expect("reader"), SIZE, "every byte arrived");
     }
 
     /// Connections from other devices are bounded: past [`MAX_PEERS`] the
