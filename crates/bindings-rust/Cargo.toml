@@ -44,6 +44,13 @@ gui = []
 # Off by default so apps that never touch a workbook do not fetch or link
 # the deflate code it needs.
 sheets = ["dep:miniz_oxide"]
+# Machine protocols (IC-994): `krate::modbus` (Modbus RTU over the serial
+# port the person picked, Modbus TCP) and `krate::mqtt` (an MQTT 3.1.1
+# client) over the host the manifest declares. Pure Rust over krate:serial
+# and krate:net/sockets: no new capability, no dependency. Off by default
+# so apps that never talk to a machine do not carry them.
+modbus = []
+mqtt = []
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }

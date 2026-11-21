@@ -2136,6 +2136,19 @@ pub mod usb {
     }
 }
 
+#[cfg(any(feature = "sheets", test))]
+pub mod sheets;
+
+// Machine protocols over the serial port the person picked or a TCP
+// connection to a declared host (IC-994): `link` is the byte link both run
+// over, `modbus` and `mqtt` the protocols. No grant of their own.
+#[cfg(any(feature = "modbus", feature = "mqtt", test))]
+pub mod link;
+#[cfg(any(feature = "modbus", test))]
+pub mod modbus;
+#[cfg(any(feature = "mqtt", test))]
+pub mod mqtt;
+
 /// Printers the person picks (IC-986): documents and labels, without a
 /// dialog every time.
 ///
@@ -2162,9 +2175,6 @@ pub mod usb {
 /// spooler; Windows prints PNG pages and raw label language, not PDF). In a
 /// browser tab and on a phone every call answers `PrintError::Unavailable`
 /// with words saying so.
-#[cfg(any(feature = "sheets", test))]
-pub mod sheets;
-
 pub mod print {
     use crate::bindings::krate::print::printers as host;
     pub use crate::bindings::krate::print::printers::{

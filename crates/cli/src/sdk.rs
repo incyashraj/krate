@@ -146,6 +146,20 @@ mod tests {
             assert!(paths.contains(&path.as_str()), "{path} is not shipped");
         }
         assert!(!paths.contains(&"crates/bindings-rust/src/sheets/tests.rs"));
+        // `features = ["modbus"]` and `["mqtt"]` (IC-994): the shared link
+        // and each module's own directory, without its tests.
+        assert!(paths.contains(&"crates/bindings-rust/src/link.rs"));
+        for file in [
+            "modbus/mod.rs",
+            "modbus/frame.rs",
+            "mqtt/mod.rs",
+            "mqtt/packet.rs",
+        ] {
+            let path = format!("crates/bindings-rust/src/{file}");
+            assert!(paths.contains(&path.as_str()), "{path} is not shipped");
+        }
+        assert!(!paths.contains(&"crates/bindings-rust/src/modbus/tests.rs"));
+        assert!(!paths.contains(&"crates/bindings-rust/src/mqtt/tests.rs"));
     }
 
     #[test]
