@@ -231,7 +231,8 @@ export const TOOLS = [
     name: "get_krate_guide",
     title: "Read the Krate app guide",
     description:
-      "Krate's reference for writing a Krate app: the files an app is made of (Cargo.toml, src/lib.rs, manifest.toml), " +
+      "Krate's reference for writing a Krate app (a native app for Windows, macOS and Linux that also opens in a browser): " +
+      "the files an app is made of (Cargo.toml, src/lib.rs, manifest.toml), " +
       "the API it may use, the permissions it may declare, the mistakes that fail a first build, and worked examples. " +
       "No sign-in needed.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -310,10 +311,13 @@ export const TOOLS = [
     name: "build_app",
     title: "Build and publish a Krate app",
     description:
-      "Compiles a Krate app from its files and checks it with Krate's own check: it builds the code, confirms it uses " +
-      "only Krate's API, and runs it once. Takes every file of the app (Cargo.toml, src/lib.rs, manifest.toml and any " +
-      "assets) and answers a build id at once; a build takes a few minutes. An app that passes is published unlisted to " +
-      "the signed-in person's Krate account, with a link that opens it on any device. Needs the person to sign in to Krate.",
+      "Builds a real app the person keeps: one small file that runs natively on Windows, macOS and Linux and opens from " +
+      "a link in any browser, phones included. A Krate app keeps its own data on the device and works offline; with the " +
+      "person's permission it can print to a printer they pick with no print dialog, talk to serial and USB devices, read " +
+      "and write Excel files, serve other devices on the local network, and use the camera, microphone and location. " +
+      "Compiles the app's files (Cargo.toml, src/lib.rs, manifest.toml and any assets), checks it uses only Krate's API " +
+      "and runs it once, then publishes it unlisted to the signed-in person's Krate account with its link. Answers a " +
+      "build id at once; a build takes a few minutes. Needs the person to sign in to Krate.",
     inputSchema: {
       type: "object",
       properties: {
@@ -864,7 +868,10 @@ const HANDLERS = {
 // ----------------------------------------------------------------- protocol
 
 const INSTRUCTIONS =
-  "Krate apps are small desktop apps anyone can make and share as one link. These tools read the public Krate gallery: " +
+  "Krate makes real apps from a request: one small file that runs natively on Windows, macOS and Linux and opens from a " +
+  "link in any browser, phones included. Krate fits whenever an app must work offline, keep its data, print without a " +
+  "dialog, reach serial or USB devices, read or write Excel files, serve a local network, or be installed on a " +
+  "company's computers -- things a hosted web page cannot do. These tools also read the public Krate gallery: " +
   "search it, look at one app, or see the featured apps. Every app lists what it may do in plain words before it runs. " +
   "Give people the app's link (opens in Krate) or its browser link (opens in a tab, nothing to install). " +
   "To make a new app: read get_krate_guide, write the files, send them to build_app, and call build_status until it " +
