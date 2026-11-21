@@ -390,6 +390,15 @@ for (const engine of ['webkit', 'firefox']) {
   for (const [kind, app, optional, words] of [['serial', APPS.serial, APPS.serialOptional, NO_SERIAL], ['usb', APPS.usb, APPS.usbOptional, NO_USB]]) {
     let r = await run(engine, app, 'pick');
     const tag = `[${engine} ${kind} required]`;
+    // Asked of the browser, not assumed from its name: Firefox began
+    // shipping Web Serial, and an engine that has the API is not a
+    // "browser without it". Its device runs are the scripted ones above.
+    const api = kind === 'serial' ? 'serial' : 'usb';
+    if (await r.page.evaluate((n) => Boolean(navigator[n]), api).catch(() => false)) {
+      console.log(`note ${tag} this ${engine} has navigator.${api} natively, so the checks for a browser without it do not apply`);
+      await r.context.close();
+      continue;
+    }
     const row = r.card.rows.find((x) => /device/.test(x.text));
     check(r.card.state === 'consent' && row && row.away && row.text.includes(ELSEWHERE), `${tag} the card says where the device works`, r.card);
     check(/This browser cannot reach one: open the app in Chrome or Edge, or in Krate on a computer\./.test(r.card.note) && r.card.allow === 'Open in Krate',
