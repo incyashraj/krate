@@ -5827,9 +5827,26 @@ impl Phase3GuiHost {
         }
         // Headless -- --shoot, check-app, CI -- answers as cancelled, the rule
         // `open_file` already follows: no dialog exists for anyone to click,
-        // and cancelling is an outcome every app handles.
+        // and cancelling is an outcome every app handles -- unless a check
+        // task's `pick` step named the file for the person, as it does for
+        // an open dialog. Without this a task could never test an export:
+        // every save in check-app read as cancelled, while the guide told
+        // authors `pick` answers it (K-1314).
         if self.headless {
-            return Ok(None);
+            let Some(file) = self.take_pick() else {
+                return Ok(None);
+            };
+            let folder_made = file
+                .parent()
+                .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok());
+            if !folder_made {
+                return Ok(None);
+            }
+            let name = crate::chosen_files::ChosenFiles::display_name(&file);
+            let Some(token) = self.chosen_files.borrow_mut().remember(file) else {
+                return Ok(None);
+            };
+            return Ok(Some((name, token)));
         }
         // A phone: the app writes into a file of Krate's, and once it lets
         // go the file goes to the system's save sheet (iOS) or its "save
@@ -9765,6 +9782,58 @@ mod tests {
             matches!(refused, Err(ui::types::UiError::PermissionDenied)),
             "an app without ui.dialog:file-save must be refused, not shown a \
              dialog: {refused:?}"
+        );
+    }
+
+    /// K-1314: a check task's `pick` answers the next SAVE dialog too, as it
+    /// answers an open one. Headless, a save used to answer cancelled even
+    /// after `pick = "day.xlsx"`, so no task could ever prove an export --
+    /// and the guide told every author that it could. With no `pick` the
+    /// answer is still cancelled, and the pick is used once.
+    #[test]
+    fn a_tasks_pick_answers_the_next_save_dialog() {
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&[
+            "ui.window:create".into(),
+            "ui.dialog:file-save".into(),
+        ])
+        .expect("policy");
+        let mut host = Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host")
+            .with_usability(Some(task_plan(crate::usability::Task {
+                name: "export the day".into(),
+                steps: vec![step("expect_text", "Saved")],
+            })));
+
+        let unasked = host.ask_where_to_save("Save", "day.xlsx", "xlsx");
+        assert!(
+            matches!(unasked, Ok(None)),
+            "with no pick a headless save is cancelled: {unasked:?}"
+        );
+
+        let root = PickRoot::new();
+        let file = root.0.join("out").join("day.xlsx");
+        if let Some(driver) = host.usability.as_mut() {
+            driver.pending_pick = Some(file.clone());
+            driver.picks = Some(root);
+        }
+        let Ok(Some((name, token))) = host.ask_where_to_save("Save", "day.xlsx", "xlsx") else {
+            panic!("a pick must answer the save dialog");
+        };
+        assert_eq!(name, "day.xlsx");
+        assert!(
+            file.parent().is_some_and(std::path::Path::is_dir),
+            "the folder the pick names exists, so the app's write lands"
+        );
+        assert_eq!(
+            host.chosen_files.borrow().resolve(&token),
+            Some(file.as_path()),
+            "the token the app gets is the file the task named"
+        );
+
+        let again = host.ask_where_to_save("Save", "day.xlsx", "xlsx");
+        assert!(
+            matches!(again, Ok(None)),
+            "a pick answers one dialog, not every one after it: {again:?}"
         );
     }
 
