@@ -34,7 +34,7 @@ PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "
                   "/facts/", "/answers/", "/electron-alternatives.html",
                   "/tauri-alternatives.html", "/cross-platform-desktop-app-frameworks.html",
                   "/claude-app-phone-and-computer.html", "/share-an-app-claude-made.html",
-                  "/docs/pages/make-an-app-with-claude.html"}
+                  "/docs/pages/make-an-app-with-claude.html", "/why-krate.html"}
 # Narrow editorial summaries for search entry points whose opening paragraph
 # is setup text, an old size claim or a phase-status snapshot. Summarize the
 # actual page rather than turning historical prose into a current promise.

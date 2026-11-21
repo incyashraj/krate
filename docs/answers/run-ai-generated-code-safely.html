@@ -39,6 +39,8 @@
 .prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
 .answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
 .answer-table tbody th { min-width: 150px; }
+.answer-table.wide { min-width: 900px; font-size: 13.5px; }
+.answer-table.wide tbody th { min-width: 130px; }
 .prose em { font-style: italic; }
 .ph.art h1 .nw { white-space: nowrap; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
@@ -168,6 +170,7 @@
     <section id="more-answers">
       <h2>More answers about making and sending apps</h2>
       <ul class="answer-related">
+        <li><a href="/why-krate.html">Why Krate, and when to choose it</a></li>
         <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every screen</a></li>
         <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one link</a></li>
         <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>

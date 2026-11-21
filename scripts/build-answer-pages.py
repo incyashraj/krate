@@ -58,6 +58,8 @@ ANSWER_CSS = """<style>
 .prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
 .answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
 .answer-table tbody th { min-width: 150px; }
+.answer-table.wide { min-width: 900px; font-size: 13.5px; }
+.answer-table.wide tbody th { min-width: 130px; }
 .prose em { font-style: italic; }
 .ph.art h1 .nw { white-space: nowrap; }
 .prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
@@ -152,7 +154,7 @@ def page_schema(page, url):
         "@id": url + "#webpage", "url": url, "name": page["title"],
         "description": page["description"], "inLanguage": "en",
         "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
-        "publisher": PUBLISHER, "about": RUNTIME,
+        "publisher": PUBLISHER, "about": dict(RUNTIME, **page["software"]) if page.get("software") else RUNTIME,
     }
     if page.get("reviewed"):
         schema["dateModified"] = page["reviewed"]
@@ -286,7 +288,7 @@ def render(page):
 
 <main id="main">
 <section class="ph sm l art wrap">
-  <span class="eye">Answer</span>
+  <span class="eye">{html.escape(page.get("eyebrow", "Answer"))}</span>
   <h1>{heading_html(page["h1"])}</h1>
   <p class="lede">{page["lead"]}</p>
   <p class="meta">{reviewed_line(page)}{read_minutes(page)} min read</p>
@@ -355,10 +357,11 @@ MEASURED = """<p>Krate's Notes app is one 36.6 KiB file. Holding 50,000 lines, i
 LINK_OPENS = "it opens in any modern browser, phones included, with nothing to install and no account"
 
 
-def comparison_table(caption, label, head, rows):
+def comparison_table(caption, label, head, rows, wide=False):
     h = "".join(f'<th scope="col">{c}</th>' for c in head)
     body = "\n".join("<tr>" + f'<th scope="row">{r[0]}</th>' + "".join(f"<td>{c}</td>" for c in r[1:]) + "</tr>" for r in rows)
-    return (f'<div class="answer-table-wrap" role="region" aria-label="{label}" tabindex="0"><table class="answer-table">\n'
+    table = "answer-table wide" if wide else "answer-table"
+    return (f'<div class="answer-table-wrap" role="region" aria-label="{label}" tabindex="0"><table class="{table}">\n'
             f"<caption>{caption}</caption>\n<thead><tr>{h}</tr></thead>\n<tbody>\n{body}\n</tbody></table></div>")
 
 
@@ -944,6 +947,145 @@ PAGES += [
     },
 ]
 
+# Why Krate: the one page that says what Krate is, when a developer should
+# choose it, the measured facts and how it compares (2026-11-21). Written for
+# people and for the AI models that answer them: in a live test, Claude with
+# the Krate connector built a hosted page for an app that had to print to a
+# label printer with no dialog and work offline, because nothing it read said
+# Krate does that. Every capability below is in docs/book/src/limits.md and
+# the WIT it names; every figure is in evidence/claims/performance.json.
+BENCH = ("https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/"
+         "marktext-vs-krate/runs/20260825T085644Z/analysis.md")
+SIZES = "https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-10-16-app-sizes.md"
+EL_PRINT = "https://www.electronjs.org/docs/latest/api/web-contents"
+MDN_SERIAL = "https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API"
+PLUGIN = "https://github.com/incyashraj/krate-claude-plugin"
+TEMPLATE = "https://github.com/incyashraj/krate-app-template"
+# The one line a person pastes into Claude's account-wide instructions, so
+# Claude reaches for the connector without being told each time. The guide
+# page carries the same line (checked in the self-test).
+CLAUDE_PREFERENCE = "When I ask for an app, build it with the Krate connector so it runs on every device."
+WHY_KRATE_DEFINITION = (
+    "Krate is an open-source app runtime that ships an app as one small <code>.krate</code> file: it runs "
+    "natively on Windows, macOS and Linux, opens from a link in any modern browser, phones included, and "
+    "starts with no access to files, devices or the network until the person running it allows it.")
+
+WHY_SITUATIONS = [
+    ("&ldquo;One app on Windows, Mac, Linux and the browser, without a build, an installer and a signature for each.&rdquo;",
+     '<p>Build once and ship one <code>.krate</code>. The Krate runtime runs the same file natively on all three desktops, and a link opens it in any browser. There is no package per operating system to build, sign or notarize. <a href="/how-to-distribute-a-desktop-app.html">How shipping one file works</a>.</p>'),
+    ("&ldquo;Our Electron or Tauri app is too heavy.&rdquo;",
+     '<p>A Krate app carries no browser engine and no WebView, and every app shares one runtime. On the same 50,000-line notes workload on an Apple M4, Krate\'s Notes app used 13x less memory than MarkText 0.17.1 (<a href="#the-measured-facts">the figures</a>). <code>krate port</code> (beta) reads your project and shows what maps across, and Krate Studio\'s AI can do the rewrite. <a href="/krate-vs-electron.html">Krate vs Electron</a>, <a href="/krate-vs-tauri.html">Krate vs Tauri</a>.</p>'),
+    ("&ldquo;An internal tool for my team.&rdquo;",
+     '<p>An organisation\'s apps open only for its members and the people it sends them to; a copied link alone opens nothing. You approve each version before it opens, team data and the credentials for your company\'s APIs are encrypted on members\' computers, and IT gets a policy pack for the company\'s machines. <a href="/docs/organisations.html">How organisations work</a>.</p>'),
+    ("&ldquo;It has to work offline and keep its data on the device.&rdquo;",
+     '<p>The native app runs with no connection unless it uses the network itself. It keeps its data on the computer in storage of its own: key-value, an SQL database and a secret store. Nothing needs a server of yours.</p>'),
+    ("&ldquo;It has to print labels or receipts without a print dialog.&rdquo;",
+     '<p>With the person\'s permission, a Krate app prints to a printer they pick, and later jobs go straight to it with no dialog: a PDF, a PNG page, or raw ZPL, EPL or ESC/POS for label and receipt printers such as a Zebra. On macOS, Windows and Linux.</p>'),
+    ("&ldquo;It talks to a scale, a sensor, an Arduino or an instrument.&rdquo;",
+     '<p>A Krate app can talk to a serial device the person picks, and to a USB device the person picks of a model the app names by its ids, natively on macOS, Windows and Linux. In a browser tab it uses the browser\'s Web Serial and WebUSB, where the browser has them.</p>'),
+    ("&ldquo;It reads and writes Excel files.&rdquo;",
+     '<p>Krate\'s SDK reads <code>.xlsx</code>, <code>.ods</code> and <code>.csv</code> workbooks the person opens or drops in, every sheet with its text, numbers, dates and each formula\'s last value, and writes <code>.xlsx</code> and <code>.csv</code>. It runs inside the app, so it works the same natively, in a browser and on a phone.</p>'),
+    ("&ldquo;The tablets on the shop floor should open it from this computer.&rdquo;",
+     '<p>A Krate app can serve one port it declares to other devices on the local network, once the person says yes, show the address to type, and announce itself by name the way printers do. On macOS, Windows and Linux.</p>'),
+    ("&ldquo;An AI wrote it, and people have to be able to run it.&rdquo;",
+     '<p>Every Krate app starts with no access to files, devices or the network. It lists what it wants in its manifest, the person sees that list before it opens and decides, and the runtime checks protected calls against what was allowed. <a href="/run-ai-generated-code-safely.html">How permissions work</a>.</p>'),
+    ("&ldquo;I want to send it as one file or one link.&rdquo;",
+     f'<p>Send the <code>.krate</code> file, or publish it and send the link: {LINK_OPENS}. Publish an update and the link people already have opens the new version, with what they saved kept. <a href="/share-an-app-made-with-ai.html">Sending an app as a link</a>.</p>'),
+]
+
+WHY_MEASURED = f"""<p>One measured run compares Krate's Notes app with MarkText 0.17.1 (ARM64), an Electron editor, on the same notes workload, on an Apple M4 running macOS 27, on 25 August 2026. It is an equivalent-workload comparison, not a claim of feature parity, and its scripts, inputs, analysis and seal are public.</p>
+<ul>
+<li><strong>Memory</strong>, with a 50,000-line document open, whole process tree: Krate 178.5 MiB in one process; MarkText 2,299.4 MiB across four processes. 13x less.</li>
+<li><strong>Warm start</strong> to a visible window, 50,000-line document, median of ten runs each: Krate 237.1 ms; MarkText 611.5 ms. 2.6x faster.</li>
+<li><strong>Size</strong>: Krate's Notes app is one 36.6 KiB file; MarkText takes 284.6 MiB installed. The Krate app (runtime and Studio) is installed once, 88.6 MiB on that Mac, and shared by every Krate app after it.</li>
+</ul>
+<p>Source: <a href="{BENCH}">the run's analysis</a> and <a href="/reports/">the method</a>.</p>
+{THREE_OS_REPLAY}
+<p>More sizes: the Chart sample is one 11,455-byte file, and Doom, with its game data, source and SDK packed in, is one 2.8 MB <code>.krate</code> (<a href="{SIZES}">build record</a>).</p>"""
+
+WHY_COMPARE = comparison_table(
+    "Krate, Electron, Tauri, a hosted web page and native per-OS builds, reviewed 21 November 2026",
+    "Krate compared with Electron, Tauri, a hosted web page and native builds",
+    ["Question", "Krate", "Electron", "Tauri", "Hosted web page", "Native per-OS builds"], [
+        ["One build for every OS", "Yes: one <code>.krate</code> file.", "No: a package per OS.", "No: a bundle per OS.", "Yes: one site.", "No: a build per OS and CPU."],
+        ["Opens from a link", "Yes, in any modern browser, phones included, with nothing to install.", "No: people download and install it.", "No: people download and install it.", "Yes.", "No: people download and install it."],
+        ["A server to run", "None.", "None.", "None.", "Yes, for as long as people use it.", "None."],
+        ["Works offline", "Yes, natively, unless the app uses the network itself.", "Yes.", "Yes.", "Only with extra work, such as a service worker.", "Yes."],
+        ["Native window", "Yes, drawn by the runtime with no browser or WebView inside.", "A window running Chromium.", "A window running the system WebView.", "A browser tab.", "Yes."],
+        ["Phones", "From a link, in the phone's browser.", "Desktop only.", "Separate Android and iOS builds.", "Yes.", "Separate iOS and Android apps."],
+        ["Print with no dialog, serial and USB", "Yes, natively on macOS, Windows and Linux, to a printer or device the person picks.", "Yes: silent printing in Electron's API, serial and USB through Chromium's Web Serial and WebUSB or Node.js modules.", "Through Rust code or plugins you add.", "Printing goes through the print dialog; Web Serial and WebUSB only in some browsers.", "Yes, through each OS's own APIs."],
+        ["Access by default", "None: the person running it grants each file, device and network request.", "Renderers are sandboxed since Electron 20; the main process runs with the user's permissions.", "Capability files the developer writes limit the WebView; Rust code runs with the user's permissions.", "The browser's sandbox.", "The user's permissions, unless a store requires a sandbox."],
+        ["Signing for each OS", "No per-OS signing of the app file. Optional Krate signature with your own key.", "Sign for Windows and macOS, and notarize for macOS, each release.", "Required on most platforms; direct macOS downloads also need notarization.", "No; the site needs HTTPS.", "Sign for each OS, and notarize for macOS."],
+        ["App size", "Krate's Notes app: 36.6 KiB. One shared runtime, installed once.", "Chromium and Node.js in every app; MarkText takes 284.6 MiB installed.", "No browser engine of its own: it uses the system WebView.", "Nothing installed; the page loads on each visit.", "Depends on the app."],
+    ], wide=True) + f"""
+<p>Sources: Electron's <a href="{EL_PROC}">process model</a>, <a href="{EL_SANDBOX}">sandbox</a>, <a href="{EL_SIGN}">code signing</a>, <a href="{EL_DIST}">distribution</a> and <a href="{EL_PRINT}">printing API</a>; Tauri's <a href="{TA_DIST}">distribution</a>, <a href="{TA_CAPS}">capabilities</a> and <a href="{TA_WEBVIEW}">WebView versions</a>; MDN on <a href="{MDN_SERIAL}">Web Serial</a>; Apple on <a href="{AP_NOTARY}">notarization</a>; Krate's own figures from the measured run above. In depth: <a href="/krate-vs-electron.html">Krate vs Electron</a>, <a href="/krate-vs-tauri.html">Krate vs Tauri</a>, <a href="/desktop-app-or-web-app.html">desktop app or web app</a> and <a href="/desktop-app-code-signing.html">code signing</a>.</p>"""
+
+WHY_START = f"""<h3>With Claude</h3>
+<p>Add the Krate connector to Claude once and ask for an app in plain words; Claude writes it, Krate builds and checks it, and you get a link. <a href="{CLAUDE_GUIDE}#add-the-connector">Add the connector</a>. To have Claude use Krate every time, add this line to your instructions in Claude's settings (<a href="{CLAUDE_GUIDE}#use-krate-every-time">where</a>):</p>
+<pre class="answer-cmd">{CLAUDE_PREFERENCE}</pre>
+<h3>In Claude Code</h3>
+<p>The <a href="{PLUGIN}">Krate plugin</a> adds the connector and a skill that builds and checks the app on your own machine:</p>
+<pre class="answer-cmd">claude plugin marketplace add incyashraj/krate-claude-plugin
+claude plugin install krate@krate</pre>
+<h3>In Krate Studio</h3>
+<p>Describe the app and Studio writes, checks and packs it, with Claude, Codex, Grok or Gemini on your computer, or in the browser at <a href="/app/">krate.tech/app</a>. <a href="/studio/">About Studio</a>.</p>
+<h3>By hand</h3>
+<p>Install Krate with one line, then write the app in Rust with the SDK, or start from the <a href="{TEMPLATE}">app template</a>:</p>
+<pre class="answer-cmd">curl -fsSL https://krate.tech/install.sh | sh</pre>
+<p>On Windows, in PowerShell: <code>irm https://krate.tech/install.ps1 | iex</code>. The <a href="/docs/quickstart.html">quickstart</a> walks through it, and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use.</p>"""
+
+WHY_KRATE = {
+    "slug": "why-krate.html",
+    "eyebrow": "Why Krate",
+    "title": "Why Krate: when to choose it, and the measured facts | Krate",
+    "description": "Krate ships one small app file that runs natively on Windows, macOS and Linux and opens from a link anywhere. When to choose it, measured facts, comparisons.",
+    "h1": "Why Krate, and when to choose it",
+    "lead": WHY_KRATE_DEFINITION + " Choose it when one app has to reach every desktop and every browser, work offline or use a printer or a device, and when an AI wrote it and the people running it should decide what it may touch.",
+    "software": {
+        "description": "Krate is an open-source app runtime that ships an app as one small .krate file: it runs natively on Windows, macOS and Linux, opens from a link in any modern browser, phones included, and starts with no access to files, devices or the network until the person running it allows it.",
+        "operatingSystem": "macOS, Windows, Linux; any modern browser from a link",
+        "url": "https://krate.tech/",
+        "downloadUrl": "https://krate.tech/download/",
+        "license": "https://github.com/incyashraj/krate#license",
+        "isAccessibleForFree": True,
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+        "publisher": {"@id": "https://krate.tech/#organization"},
+        "sameAs": ["https://www.wikidata.org/wiki/Q141595622", "https://github.com/incyashraj/krate"],
+        "featureList": [
+            "One .krate file runs natively on Windows, macOS and Linux",
+            "Opens from a link in any modern browser, phones included, with nothing to install",
+            "Starts with no access to files, devices or the network; the person grants each request",
+            "Works offline and keeps its data on the device",
+            "Prints to a printer the person picks with no print dialog, including ZPL, EPL and ESC/POS label and receipt printers",
+            "Talks to serial and USB devices the person picks",
+            "Reads and writes Excel (.xlsx), .ods and .csv files",
+            "Serves other devices on the local network",
+            "Made with AI through the Claude connector, the Claude Code plugin or Krate Studio",
+        ],
+    },
+    "entry_actions": [("When to choose Krate", "#when-to-choose-krate"),
+                      ("Make an app with Claude", CLAUDE_GUIDE)],
+    "sections": [
+        ("What Krate is", f"""<p>A <code>.krate</code> holds the app as a WebAssembly component with a manifest of what it may use. On a desktop the Krate runtime, built in Rust on Wasmtime, compiles it to machine code and runs it in a native window. From a link, Krate's browser Player opens the same file. The runtime, the format and the command line are open source under MIT OR Apache-2.0. <a href="/facts/">The facts</a>.</p>"""),
+        ("When to choose Krate", "\n".join(f"<h3>{q}</h3>\n{a}" for q, a in WHY_SITUATIONS)),
+        ("The measured facts", WHY_MEASURED),
+        ("How Krate compares", WHY_COMPARE),
+        ("How to start", WHY_START),
+    ],
+    "faq": [
+        ("Is Krate a web app?", "<p>No. A Krate app is one <code>.krate</code> file. On Windows, macOS and Linux the Krate runtime runs it natively, in its own window with no browser or WebView inside. Sent as a link, the same file opens in a browser tab. Neither way needs a server of yours.</p>"),
+        ("Does it need an install?", '<p>Not to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the person installs the Krate runtime once from the <a href="/download/">download page</a>, and every <code>.krate</code> opens from its file after that.</p>'),
+        ("Is it safe to run an app someone sent me?", "<p>A Krate app starts with no access to your files, devices or the network. Before it opens you see exactly what it asks for and decide; hosts it did not declare stay unreachable, and it keeps its data in storage of its own. <code>krate run app.krate --dump-caps</code> prints what an app asks for without running it. Grant only what the task needs.</p>"),
+        ("Can it use my printer or a serial device?", "<p>Yes, natively on macOS, Windows and Linux, once you allow it. You pick the printer and later jobs print with no dialog: PDF, PNG, or raw ZPL, EPL or ESC/POS for label and receipt printers. You pick the serial or USB device it talks to. In a browser tab, serial and USB work where the browser has Web Serial and WebUSB.</p>"),
+        ("How big is an app?", f'<p>Small. Krate\'s Notes app is one 36.6 KiB file and the Chart sample is 11,455 bytes. An app that carries its source and the SDK so it can be changed later is larger, and so is one with big assets: Doom, with its game data packed in, is one 2.8 MB file. The runtime is installed once and shared by every app. <a href="{SIZES}">Size records</a>.</p>'),
+        ("Can Claude make a Krate app?", f'<p>Yes. Add the Krate connector, <code>{CONNECTOR_URL}</code>, to Claude and ask for an app; Claude writes it and Krate builds, checks and publishes it with a link. Claude Code has a <a href="{PLUGIN}">Krate plugin</a>, and Krate Studio works with Claude, Codex, Grok or Gemini.</p>'),
+        ("Is Krate free?", '<p>The runtime, the <code>.krate</code> format and the command line are free and open source under MIT OR Apache-2.0. Studio on your computer is free with the AI you already use; in the browser, the first app is free. <a href="https://github.com/incyashraj/krate#license">Licence details</a>.</p>'),
+    ],
+}
+
+PAGES.insert(0, WHY_KRATE)
+
+
 class MetadataTests(unittest.TestCase):
     def test_head_is_built_per_page_never_borrowed(self):
         # The head used to be lifted from the homepage and its identity
@@ -1031,6 +1173,39 @@ class MetadataTests(unittest.TestCase):
                 self.assertIn(html.escape(CLAUDE_PROMPT), result)
                 self.assertIn("never sees" if slug.startswith("claude-app") else "unlisted", result)
         self.assertIn('id="add-the-connector"', guide.read_text())
+
+    def test_why_krate_says_what_it_is_when_to_choose_it_and_how_it_compares(self):
+        # The page models quote: the definition first, the situations in a
+        # developer's words, the measured run with its scope, and the
+        # comparison table with every column. Structured data names the
+        # runtime with what it does, so a reader of the markup gets it too.
+        page = next(p for p in PAGES if p["slug"] == "why-krate.html")
+        self.assertIs(PAGES[0], page, "the answers index leads with Why Krate")
+        result = render(page)
+        self.assertIn('<span class="eye">Why Krate</span>', result)
+        self.assertTrue(page["lead"].startswith(WHY_KRATE_DEFINITION))
+        for situation in ("without a print dialog", "Excel", "offline", "serial", "internal tool",
+                          "too heavy", "shop floor", "one file or one link"):
+            self.assertIn(situation, result)
+        for scope in ("equivalent-workload comparison, not a claim of feature parity", "Apple M4",
+                      "macOS 27", "MarkText 0.17.1", "whole process tree", "median of ten runs",
+                      "88.6 MiB", f'href="{BENCH}"', 'href="/reports/"'):
+            self.assertIn(scope, result)
+        for column in ("Krate", "Electron", "Tauri", "Hosted web page", "Native per-OS builds"):
+            self.assertIn(f'<th scope="col">{column}</th>', result)
+        self.assertIn('class="answer-table wide"', result)
+        for href in ("/krate-vs-electron.html", "/krate-vs-tauri.html", CLAUDE_GUIDE, PLUGIN, "/docs/quickstart.html", "/studio/"):
+            self.assertIn(f'href="{href}', result)
+        schema = json.loads(re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)[0])
+        self.assertEqual(schema["@type"], "FAQPage")
+        self.assertEqual(schema["about"]["@type"], "SoftwareApplication")
+        self.assertEqual(schema["about"]["@id"], "https://krate.tech/#runtime")
+        self.assertTrue(any("print dialog" in f for f in schema["about"]["featureList"]))
+        # The preference line it offers is the one the Claude guide offers.
+        guide = (ROOT / "docs" / "pages" / "make-an-app-with-claude.html").read_text()
+        self.assertIn(html.escape(CLAUDE_PREFERENCE), result)
+        self.assertIn(CLAUDE_PREFERENCE, guide)
+        self.assertIn('id="use-krate-every-time"', guide)
 
     def test_portability_proof_links_the_tested_file_and_per_host_evidence(self):
         page = next(p for p in PAGES if p["slug"] == "portable-desktop-app-format.html")

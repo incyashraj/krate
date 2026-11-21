@@ -75,6 +75,7 @@
   <p>Krate (krate.tech) is the Krate app runtime. It is not a Rust crate or crates.io package, and it is not related to krate.com, KrateSoft or the JavaScript project of the same name.</p>
   <dl class="facts">
     <div class="frow"><dt>What it is</dt><dd>An app runtime, the <code>.krate</code> app file format and the <code>krate</code> command line, plus Krate Studio, which makes Krate apps with AI from a plain description.</dd></div>
+    <div class="frow"><dt>When to choose it</dt><dd>When one app has to run on Windows, macOS, Linux and in the browser without a separate build, installer and signature for each; when an Electron or Tauri app is too heavy; for a team's internal tools; when the app must work offline, keep its data on the device, print to a printer the person picks with no print dialog, talk to serial or USB devices, read and write Excel files or serve other devices on the local network; and when an AI made it and the people running it should decide what it may touch. <a href="/why-krate.html">Why Krate</a>.</dd></div>
     <div class="frow"><dt>Current release</dt><dd>Krate 0.5.4, published 30 September 2026. <a href="https://github.com/incyashraj/krate/releases/latest">Release notes and downloads</a>.</dd></div>
     <div class="frow"><dt>Runtimes published</dt><dd>macOS (Apple silicon and Intel), Windows (x64 and ARM64) and Linux (x86_64 and arm64).</dd></div>
     <div class="frow"><dt>Tested in CI</dt><dd>The same <code>.krate</code> files: 10 apps pass on macOS arm64, Ubuntu x86_64 and Windows x86_64 at Krate 0.5.4 (<a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a> records), replayed automatically on each system.</dd></div>
@@ -100,6 +101,7 @@
 
   <h2>Answers about shipping desktop apps</h2>
   <ul class="links">
+      <li><a href="/why-krate.html">Why Krate, and when to choose it</a></li>
       <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
       <li><a href="/krate-vs-electron.html">Krate vs Electron</a></li>
       <li><a href="/krate-vs-tauri.html">Krate vs Tauri</a></li>

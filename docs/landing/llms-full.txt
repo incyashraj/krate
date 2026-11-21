@@ -13,6 +13,7 @@ Krate makes apps you send like pictures: one small .krate file that opens from a
 - Licences: the Krate runtime, format and CLI are free and open source (MIT OR Apache-2.0). Studio has separate licensing (Business Source License 1.1); see the repository license details.
 - Studio: Krate Studio makes and changes apps with AI: describe the app in plain words and it writes, checks and packs it, then keep changing it by asking. Studio runs on macOS, Windows and Linux and in the browser at krate.tech/app/, and works with Claude, Codex, Grok or Gemini. Developers can also build with the krate command line and the Rust SDK.
 - Make an app in Claude: Krate is a connector for Claude: add https://hub.krate.tech/mcp as a custom connector (on claude.ai, Customize > Connectors) and ask for an app in plain words. Claude writes the app; Krate compiles it, checks it and publishes it, unlisted, to the person's Krate account, and Claude answers with a link that opens it in any modern browser, phones included, with nothing to install. Krate runs no AI of its own there and never sees the conversation, only the app files Claude sends. Building needs a Krate sign-in (GitHub, Google or email). Claude Code users can install the Krate plugin: github.com/incyashraj/krate-claude-plugin.
+- When to choose Krate: Choose Krate when one app has to run on Windows, macOS, Linux and in the browser without a separate build, installer and signature for each; when an Electron or Tauri app is too heavy; for a team's internal tools; when the app must work offline and keep its data on the device, print to a printer the person picks with no print dialog (PDF, PNG, or ZPL, EPL and ESC/POS for label and receipt printers), talk to serial or USB devices, read and write Excel files, or serve other devices on the local network; when an AI made the app and the people running it should decide what it may touch; and when the app should travel as one file or one link. Printing, serial, USB and serving the network run natively on macOS, Windows and Linux. Why Krate: https://krate.tech/why-krate.html
 - Bundles: A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.
 - Facts page: https://krate.tech/facts/
 
@@ -39,6 +40,7 @@ The public benchmark kit contains the protocol, analysis and seal.
 ## Main pages
 
 - [Website](https://krate.tech/)
+- [Why Krate, and when to choose it](https://krate.tech/why-krate.html)
 - [Developer quickstart](https://krate.tech/docs/quickstart.html)
 - [Porting guide](https://krate.tech/docs/porting.html)
 - [Current limits](https://krate.tech/docs/limits.html)
@@ -72,6 +74,152 @@ The public benchmark kit contains the protocol, analysis and seal.
 - [Source](https://github.com/incyashraj/krate)
 
 # Answers about shipping desktop apps with Krate
+
+## Why Krate, and when to choose it
+
+URL: https://krate.tech/why-krate.html
+
+Krate is an open-source app runtime that ships an app as one small .krate file: it runs natively on Windows, macOS and Linux, opens from a link in any modern browser, phones included, and starts with no access to files, devices or the network until the person running it allows it. Choose it when one app has to reach every desktop and every browser, work offline or use a printer or a device, and when an AI wrote it and the people running it should decide what it may touch.
+
+### What Krate is
+
+A .krate holds the app as a WebAssembly component with a manifest of what it may use. On a desktop the Krate runtime, built in Rust on Wasmtime, compiles it to machine code and runs it in a native window. From a link, Krate's browser Player opens the same file. The runtime, the format and the command line are open source under MIT OR Apache-2.0. The facts (https://krate.tech/facts/).
+
+### When to choose Krate
+
+“One app on Windows, Mac, Linux and the browser, without a build, an installer and a signature for each.”
+
+Build once and ship one .krate. The Krate runtime runs the same file natively on all three desktops, and a link opens it in any browser. There is no package per operating system to build, sign or notarize. How shipping one file works (https://krate.tech/how-to-distribute-a-desktop-app.html).
+
+“Our Electron or Tauri app is too heavy.”
+
+A Krate app carries no browser engine and no WebView, and every app shares one runtime. On the same 50,000-line notes workload on an Apple M4, Krate's Notes app used 13x less memory than MarkText 0.17.1 (the figures). krate port (beta) reads your project and shows what maps across, and Krate Studio's AI can do the rewrite. Krate vs Electron (https://krate.tech/krate-vs-electron.html), Krate vs Tauri (https://krate.tech/krate-vs-tauri.html).
+
+“An internal tool for my team.”
+
+An organisation's apps open only for its members and the people it sends them to; a copied link alone opens nothing. You approve each version before it opens, team data and the credentials for your company's APIs are encrypted on members' computers, and IT gets a policy pack for the company's machines. How organisations work (https://krate.tech/docs/organisations.html).
+
+“It has to work offline and keep its data on the device.”
+
+The native app runs with no connection unless it uses the network itself. It keeps its data on the computer in storage of its own: key-value, an SQL database and a secret store. Nothing needs a server of yours.
+
+“It has to print labels or receipts without a print dialog.”
+
+With the person's permission, a Krate app prints to a printer they pick, and later jobs go straight to it with no dialog: a PDF, a PNG page, or raw ZPL, EPL or ESC/POS for label and receipt printers such as a Zebra. On macOS, Windows and Linux.
+
+“It talks to a scale, a sensor, an Arduino or an instrument.”
+
+A Krate app can talk to a serial device the person picks, and to a USB device the person picks of a model the app names by its ids, natively on macOS, Windows and Linux. In a browser tab it uses the browser's Web Serial and WebUSB, where the browser has them.
+
+“It reads and writes Excel files.”
+
+Krate's SDK reads .xlsx, .ods and .csv workbooks the person opens or drops in, every sheet with its text, numbers, dates and each formula's last value, and writes .xlsx and .csv. It runs inside the app, so it works the same natively, in a browser and on a phone.
+
+“The tablets on the shop floor should open it from this computer.”
+
+A Krate app can serve one port it declares to other devices on the local network, once the person says yes, show the address to type, and announce itself by name the way printers do. On macOS, Windows and Linux.
+
+“An AI wrote it, and people have to be able to run it.”
+
+Every Krate app starts with no access to files, devices or the network. It lists what it wants in its manifest, the person sees that list before it opens and decides, and the runtime checks protected calls against what was allowed. How permissions work (https://krate.tech/run-ai-generated-code-safely.html).
+
+“I want to send it as one file or one link.”
+
+Send the .krate file, or publish it and send the link: it opens in any modern browser, phones included, with nothing to install and no account. Publish an update and the link people already have opens the new version, with what they saved kept. Sending an app as a link (https://krate.tech/share-an-app-made-with-ai.html).
+
+### The measured facts
+
+One measured run compares Krate's Notes app with MarkText 0.17.1 (ARM64), an Electron editor, on the same notes workload, on an Apple M4 running macOS 27, on 25 August 2026. It is an equivalent-workload comparison, not a claim of feature parity, and its scripts, inputs, analysis and seal are public.
+
+- Memory, with a 50,000-line document open, whole process tree: Krate 178.5 MiB in one process; MarkText 2,299.4 MiB across four processes. 13x less.
+
+- Warm start to a visible window, 50,000-line document, median of ten runs each: Krate 237.1 ms; MarkText 611.5 ms. 2.6x faster.
+
+- Size: Krate's Notes app is one 36.6 KiB file; MarkText takes 284.6 MiB installed. The Krate app (runtime and Studio) is installed once, 88.6 MiB on that Mac, and shared by every Krate app after it.
+
+Source: the run's analysis (https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md) and the method (https://krate.tech/reports/).
+
+Ten ported apps, as the same committed .krate files, passed their headless replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. Records: macOS (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv), Ubuntu (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv), Windows (https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv). Native runtimes are published for Apple silicon and Intel Macs, x64 and ARM64 Windows, and x86_64 and arm64 Linux.
+
+More sizes: the Chart sample is one 11,455-byte file, and Doom, with its game data, source and SDK packed in, is one 2.8 MB .krate (build record (https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-10-16-app-sizes.md)).
+
+### How Krate compares
+
+Krate, Electron, Tauri, a hosted web page and native per-OS builds, reviewed 21 November 2026
+
+Question | Krate | Electron | Tauri | Hosted web page | Native per-OS builds
+
+One build for every OS | Yes: one .krate file. | No: a package per OS. | No: a bundle per OS. | Yes: one site. | No: a build per OS and CPU.
+
+Opens from a link | Yes, in any modern browser, phones included, with nothing to install. | No: people download and install it. | No: people download and install it. | Yes. | No: people download and install it.
+
+A server to run | None. | None. | None. | Yes, for as long as people use it. | None.
+
+Works offline | Yes, natively, unless the app uses the network itself. | Yes. | Yes. | Only with extra work, such as a service worker. | Yes.
+
+Native window | Yes, drawn by the runtime with no browser or WebView inside. | A window running Chromium. | A window running the system WebView. | A browser tab. | Yes.
+
+Phones | From a link, in the phone's browser. | Desktop only. | Separate Android and iOS builds. | Yes. | Separate iOS and Android apps.
+
+Print with no dialog, serial and USB | Yes, natively on macOS, Windows and Linux, to a printer or device the person picks. | Yes: silent printing in Electron's API, serial and USB through Chromium's Web Serial and WebUSB or Node.js modules. | Through Rust code or plugins you add. | Printing goes through the print dialog; Web Serial and WebUSB only in some browsers. | Yes, through each OS's own APIs.
+
+Access by default | None: the person running it grants each file, device and network request. | Renderers are sandboxed since Electron 20; the main process runs with the user's permissions. | Capability files the developer writes limit the WebView; Rust code runs with the user's permissions. | The browser's sandbox. | The user's permissions, unless a store requires a sandbox.
+
+Signing for each OS | No per-OS signing of the app file. Optional Krate signature with your own key. | Sign for Windows and macOS, and notarize for macOS, each release. | Required on most platforms; direct macOS downloads also need notarization. | No; the site needs HTTPS. | Sign for each OS, and notarize for macOS.
+
+App size | Krate's Notes app: 36.6 KiB. One shared runtime, installed once. | Chromium and Node.js in every app; MarkText takes 284.6 MiB installed. | No browser engine of its own: it uses the system WebView. | Nothing installed; the page loads on each visit. | Depends on the app.
+
+Sources: Electron's process model (https://www.electronjs.org/docs/latest/tutorial/process-model), sandbox (https://www.electronjs.org/docs/latest/tutorial/sandbox), code signing (https://www.electronjs.org/docs/latest/tutorial/code-signing), distribution (https://www.electronjs.org/docs/latest/tutorial/distribution-overview) and printing API (https://www.electronjs.org/docs/latest/api/web-contents); Tauri's distribution (https://tauri.app/distribute/), capabilities (https://tauri.app/security/capabilities/) and WebView versions (https://tauri.app/reference/webview-versions/); MDN on Web Serial (https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API); Apple on notarization (https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution); Krate's own figures from the measured run above. In depth: Krate vs Electron (https://krate.tech/krate-vs-electron.html), Krate vs Tauri (https://krate.tech/krate-vs-tauri.html), desktop app or web app (https://krate.tech/desktop-app-or-web-app.html) and code signing (https://krate.tech/desktop-app-code-signing.html).
+
+### How to start
+
+With Claude
+
+Add the Krate connector to Claude once and ask for an app in plain words; Claude writes it, Krate builds and checks it, and you get a link. Add the connector (https://krate.tech/docs/pages/make-an-app-with-claude.html#add-the-connector). To have Claude use Krate every time, add this line to your instructions in Claude's settings (where (https://krate.tech/docs/pages/make-an-app-with-claude.html#use-krate-every-time)):
+
+When I ask for an app, build it with the Krate connector so it runs on every device.
+
+In Claude Code
+
+The Krate plugin (https://github.com/incyashraj/krate-claude-plugin) adds the connector and a skill that builds and checks the app on your own machine:
+
+claude plugin marketplace add incyashraj/krate-claude-plugin
+claude plugin install krate@krate
+
+In Krate Studio
+
+Describe the app and Studio writes, checks and packs it, with Claude, Codex, Grok or Gemini on your computer, or in the browser at krate.tech/app (https://krate.tech/app/). About Studio (https://krate.tech/studio/).
+
+By hand
+
+Install Krate with one line, then write the app in Rust with the SDK, or start from the app template (https://github.com/incyashraj/krate-app-template):
+
+curl -fsSL https://krate.tech/install.sh | sh
+
+On Windows, in PowerShell: irm https://krate.tech/install.ps1 | iex. The quickstart (https://krate.tech/docs/quickstart.html) walks through it, and the capability reference (https://krate.tech/docs/limits.html) lists everything an app can use.
+
+### Questions
+
+Q: Is Krate a web app?
+A: No. A Krate app is one .krate file. On Windows, macOS and Linux the Krate runtime runs it natively, in its own window with no browser or WebView inside. Sent as a link, the same file opens in a browser tab. Neither way needs a server of yours.
+
+Q: Does it need an install?
+A: Not to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the person installs the Krate runtime once from the download page (https://krate.tech/download/), and every .krate opens from its file after that.
+
+Q: Is it safe to run an app someone sent me?
+A: A Krate app starts with no access to your files, devices or the network. Before it opens you see exactly what it asks for and decide; hosts it did not declare stay unreachable, and it keeps its data in storage of its own. krate run app.krate --dump-caps prints what an app asks for without running it. Grant only what the task needs.
+
+Q: Can it use my printer or a serial device?
+A: Yes, natively on macOS, Windows and Linux, once you allow it. You pick the printer and later jobs print with no dialog: PDF, PNG, or raw ZPL, EPL or ESC/POS for label and receipt printers. You pick the serial or USB device it talks to. In a browser tab, serial and USB work where the browser has Web Serial and WebUSB.
+
+Q: How big is an app?
+A: Small. Krate's Notes app is one 36.6 KiB file and the Chart sample is 11,455 bytes. An app that carries its source and the SDK so it can be changed later is larger, and so is one with big assets: Doom, with its game data packed in, is one 2.8 MB file. The runtime is installed once and shared by every app. Size records (https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-10-16-app-sizes.md).
+
+Q: Can Claude make a Krate app?
+A: Yes. Add the Krate connector, https://hub.krate.tech/mcp, to Claude and ask for an app; Claude writes it and Krate builds, checks and publishes it with a link. Claude Code has a Krate plugin (https://github.com/incyashraj/krate-claude-plugin), and Krate Studio works with Claude, Codex, Grok or Gemini.
+
+Q: Is Krate free?
+A: The runtime, the .krate format and the command line are free and open source under MIT OR Apache-2.0. Studio on your computer is free with the AI you already use; in the browser, the first app is free. Licence details (https://github.com/incyashraj/krate#license).
 
 ## The .krate format: one app file for every screen
 

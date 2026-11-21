@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Why Krate: when to choose it, and the measured facts | Krate</title>
+<meta name="description" content="Krate ships one small app file that runs natively on Windows, macOS and Linux and opens from a link anywhere. When to choose it, measured facts, comparisons.">
+<link rel="canonical" href="https://krate.tech/why-krate.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Krate">
+<meta property="og:title" content="Why Krate: when to choose it, and the measured facts | Krate">
+<meta property="og:description" content="Krate ships one small app file that runs natively on Windows, macOS and Linux and opens from a link anywhere. When to choose it, measured facts, comparisons.">
+<meta property="og:url" content="https://krate.tech/why-krate.html">
+<meta property="og:image" content="https://krate.tech/og-v5.png">
+<meta property="og:image:alt" content="Krate: make and send apps like pictures">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Why Krate: when to choose it, and the measured facts | Krate">
+<meta name="twitter:description" content="Krate ships one small app file that runs natively on Windows, macOS and Linux and opens from a link anywhere. When to choose it, measured facts, comparisons.">
+<meta name="twitter:image" content="https://krate.tech/og-v5.png">
+<link rel="icon" href="/krate-favicon.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "@id": "https://krate.tech/why-krate.html#webpage", "url": "https://krate.tech/why-krate.html", "name": "Why Krate: when to choose it, and the measured facts | Krate", "description": "Krate ships one small app file that runs natively on Windows, macOS and Linux and opens from a link anywhere. When to choose it, measured facts, comparisons.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}, "publisher": {"@type": "Organization", "@id": "https://krate.tech/#organization", "name": "Krate Labs", "url": "https://krate.tech/"}, "about": {"@type": "SoftwareApplication", "@id": "https://krate.tech/#runtime", "name": "Krate", "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS, Windows, Linux; any modern browser from a link", "description": "Krate is an open-source app runtime that ships an app as one small .krate file: it runs natively on Windows, macOS and Linux, opens from a link in any modern browser, phones included, and starts with no access to files, devices or the network until the person running it allows it.", "url": "https://krate.tech/", "downloadUrl": "https://krate.tech/download/", "license": "https://github.com/incyashraj/krate#license", "isAccessibleForFree": true, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "publisher": {"@id": "https://krate.tech/#organization"}, "sameAs": ["https://www.wikidata.org/wiki/Q141595622", "https://github.com/incyashraj/krate"], "featureList": ["One .krate file runs natively on Windows, macOS and Linux", "Opens from a link in any modern browser, phones included, with nothing to install", "Starts with no access to files, devices or the network; the person grants each request", "Works offline and keeps its data on the device", "Prints to a printer the person picks with no print dialog, including ZPL, EPL and ESC/POS label and receipt printers", "Talks to serial and USB devices the person picks", "Reads and writes Excel (.xlsx), .ods and .csv files", "Serves other devices on the local network", "Made with AI through the Claude connector, the Claude Code plugin or Krate Studio"]}, "mainEntity": [{"@type": "Question", "name": "Is Krate a web app?", "acceptedAnswer": {"@type": "Answer", "text": "No. A Krate app is one .krate file. On Windows, macOS and Linux the Krate runtime runs it natively, in its own window with no browser or WebView inside. Sent as a link, the same file opens in a browser tab. Neither way needs a server of yours."}}, {"@type": "Question", "name": "Does it need an install?", "acceptedAnswer": {"@type": "Answer", "text": "Not to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the person installs the Krate runtime once from the download page, and every .krate opens from its file after that."}}, {"@type": "Question", "name": "Is it safe to run an app someone sent me?", "acceptedAnswer": {"@type": "Answer", "text": "A Krate app starts with no access to your files, devices or the network. Before it opens you see exactly what it asks for and decide; hosts it did not declare stay unreachable, and it keeps its data in storage of its own. krate run app.krate --dump-caps prints what an app asks for without running it. Grant only what the task needs."}}, {"@type": "Question", "name": "Can it use my printer or a serial device?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, natively on macOS, Windows and Linux, once you allow it. You pick the printer and later jobs print with no dialog: PDF, PNG, or raw ZPL, EPL or ESC/POS for label and receipt printers. You pick the serial or USB device it talks to. In a browser tab, serial and USB work where the browser has Web Serial and WebUSB."}}, {"@type": "Question", "name": "How big is an app?", "acceptedAnswer": {"@type": "Answer", "text": "Small. Krate's Notes app is one 36.6 KiB file and the Chart sample is 11,455 bytes. An app that carries its source and the SDK so it can be changed later is larger, and so is one with big assets: Doom, with its game data packed in, is one 2.8 MB file. The runtime is installed once and shared by every app. Size records."}}, {"@type": "Question", "name": "Can Claude make a Krate app?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Add the Krate connector, https://hub.krate.tech/mcp, to Claude and ask for an app; Claude writes it and Krate builds, checks and publishes it with a link. Claude Code has a Krate plugin, and Krate Studio works with Claude, Codex, Grok or Gemini."}}, {"@type": "Question", "name": "Is Krate free?", "acceptedAnswer": {"@type": "Answer", "text": "The runtime, the .krate format and the command line are free and open source under MIT OR Apache-2.0. Studio on your computer is free with the AI you already use; in the browser, the first app is free. Licence details."}}]}</script>
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+@media (min-width: 961px) { .ph.art { padding-left: 276px; } }
+.ph.art .lede { max-width: 640px; }
+.ph.art .acts { margin-top: 26px; gap: 10px 12px; }
+.ph.art .ent { margin-top: 18px; max-width: 640px; font-size: 14.5px; line-height: 1.6; color: var(--mute); }
+.ph.art .ent a, .ph.art .lede a { color: var(--accent); }
+.ph.art .ent code, .ph.art .lede code { font: 500 .88em ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 6px; border-radius: 6px; background: var(--s2); color: var(--ink); }
+.art-body { padding-top: 64px; }
+.prose { max-width: 700px; min-width: 0; }
+.prose > :first-child { margin-top: 0; }
+.prose section + section { margin-top: 52px; }
+.prose section > h2 { margin-top: 0; }
+.prose :is(p, li, h2, h3) { overflow-wrap: anywhere; }
+.answer-table :is(td, th) { overflow-wrap: normal; hyphens: manual; }
+.answer-table tbody th { min-width: 150px; }
+.answer-table.wide { min-width: 900px; font-size: 13.5px; }
+.answer-table.wide tbody th { min-width: 130px; }
+.prose em { font-style: italic; }
+.ph.art h1 .nw { white-space: nowrap; }
+.prose section[id] { scroll-margin-top: calc(var(--hd) + 20px); }
+:root[data-theme="dark"] .prose pre { box-shadow: inset 0 0 0 1px var(--line-2); }
+.prose pre.answer-cmd { max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+/* the comparison table */
+.answer-table-wrap { margin-top: 22px; border-radius: 18px; background: var(--s1); box-shadow: var(--sh-1); overflow-x: auto; }
+.answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14.5px; }
+.answer-table caption { caption-side: top; text-align: left; padding: 14px 14px 6px; font-size: 12.5px; color: var(--ink-3); }
+.answer-table thead th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.answer-table tbody th { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line); font-weight: 500; color: var(--ink); line-height: 1.5; }
+.answer-table td { padding: 13px 14px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; line-height: 1.5; }
+.answer-table tbody tr:last-child > * { border-bottom: 0; }
+/* the two shipping workflows, side by side */
+.prose .shipping-flow { margin-top: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.prose .shipping-flow figcaption { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.55; color: var(--ink-3); }
+.prose .shipping-lane { padding: 20px 20px 8px; border-radius: 18px; background: var(--soft); }
+.prose .shipping-lane-krate { background: var(--accent-soft); }
+.prose .shipping-lane h3 { margin: 0 0 10px; font-size: 16px; }
+.prose .shipping-lane-krate h3 { color: var(--accent); }
+.prose .shipping-lane ol { list-style: none; padding: 0; }
+.prose .shipping-lane li { margin: 0; padding: 11px 0 12px; border-top: 1px solid var(--line-2); font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.prose .shipping-lane-krate li { border-top-color: color-mix(in srgb, var(--accent) 18%, transparent); }
+.prose .shipping-lane li span { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+/* the closing band: words, then the ways forward */
+.band.st { flex-direction: column; align-items: flex-start; gap: 22px; }
+.band.st p { max-width: 640px; }
+.band.st .acts { margin-top: 0; justify-content: flex-start; gap: 10px 12px; }
+.band p a { color: var(--accent); }
+@media (max-width: 680px) {
+  .art-body { padding-top: 44px; }
+  .prose .shipping-flow { grid-template-columns: 1fr; }
+  .prose pre.answer-cmd { font-size: 12.5px; }
+  .ph.art .acts, .band.st .acts { flex-direction: column; align-items: stretch; width: 100%; }
+  .band .acts .btn { white-space: normal; text-align: center; }
+}
+</style>
+</head>
+<body>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main id="main">
+<section class="ph sm l art wrap">
+  <span class="eye">Why Krate</span>
+  <h1>Why Krate, and when to choose it</h1>
+  <p class="lede">Krate is an open-source app runtime that ships an app as one small <code>.krate</code> file: it runs natively on Windows, macOS and Linux, opens from a link in any modern browser, phones included, and starts with no access to files, devices or the network until the person running it allows it. Choose it when one app has to reach every desktop and every browser, work offline or use a printer or a device, and when an AI wrote it and the people running it should decide what it may touch.</p>
+  <p class="meta">7 min read</p>
+  <nav class="acts answer-actions" aria-label="Choose your next step">
+    <a class="btn dark" href="#when-to-choose-krate">When to choose Krate <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/pages/make-an-app-with-claude.html">Make an app with Claude</a>
+  </nav>
+</section>
+
+<section class="art-body wrap">
+  <div class="doc">
+    <nav class="toc" aria-label="On this page">
+      <h6>On this page</h6>
+      <a href="#what-krate-is">What Krate is</a>
+      <a href="#when-to-choose-krate">When to choose Krate</a>
+      <a href="#the-measured-facts">The measured facts</a>
+      <a href="#how-krate-compares">How Krate compares</a>
+      <a href="#how-to-start">How to start</a>
+      <a href="#questions">Questions</a>
+      <a href="#more-answers">More answers</a>
+    </nav>
+    <article class="prose">
+      <section id="what-krate-is">
+        <h2>What Krate is</h2>
+<p>A <code>.krate</code> holds the app as a WebAssembly component with a manifest of what it may use. On a desktop the Krate runtime, built in Rust on Wasmtime, compiles it to machine code and runs it in a native window. From a link, Krate's browser Player opens the same file. The runtime, the format and the command line are open source under MIT OR Apache-2.0. <a href="/facts/">The facts</a>.</p>
+      </section>
+      <section id="when-to-choose-krate">
+        <h2>When to choose Krate</h2>
+<h3>&ldquo;One app on Windows, Mac, Linux and the browser, without a build, an installer and a signature for each.&rdquo;</h3>
+<p>Build once and ship one <code>.krate</code>. The Krate runtime runs the same file natively on all three desktops, and a link opens it in any browser. There is no package per operating system to build, sign or notarize. <a href="/how-to-distribute-a-desktop-app.html">How shipping one file works</a>.</p>
+<h3>&ldquo;Our Electron or Tauri app is too heavy.&rdquo;</h3>
+<p>A Krate app carries no browser engine and no WebView, and every app shares one runtime. On the same 50,000-line notes workload on an Apple M4, Krate's Notes app used 13x less memory than MarkText 0.17.1 (<a href="#the-measured-facts">the figures</a>). <code>krate port</code> (beta) reads your project and shows what maps across, and Krate Studio's AI can do the rewrite. <a href="/krate-vs-electron.html">Krate vs Electron</a>, <a href="/krate-vs-tauri.html">Krate vs Tauri</a>.</p>
+<h3>&ldquo;An internal tool for my team.&rdquo;</h3>
+<p>An organisation's apps open only for its members and the people it sends them to; a copied link alone opens nothing. You approve each version before it opens, team data and the credentials for your company's APIs are encrypted on members' computers, and IT gets a policy pack for the company's machines. <a href="/docs/organisations.html">How organisations work</a>.</p>
+<h3>&ldquo;It has to work offline and keep its data on the device.&rdquo;</h3>
+<p>The native app runs with no connection unless it uses the network itself. It keeps its data on the computer in storage of its own: key-value, an SQL database and a secret store. Nothing needs a server of yours.</p>
+<h3>&ldquo;It has to print labels or receipts without a print dialog.&rdquo;</h3>
+<p>With the person's permission, a Krate app prints to a printer they pick, and later jobs go straight to it with no dialog: a PDF, a PNG page, or raw ZPL, EPL or ESC/POS for label and receipt printers such as a Zebra. On macOS, Windows and Linux.</p>
+<h3>&ldquo;It talks to a scale, a sensor, an Arduino or an instrument.&rdquo;</h3>
+<p>A Krate app can talk to a serial device the person picks, and to a USB device the person picks of a model the app names by its ids, natively on macOS, Windows and Linux. In a browser tab it uses the browser's Web Serial and WebUSB, where the browser has them.</p>
+<h3>&ldquo;It reads and writes Excel files.&rdquo;</h3>
+<p>Krate's SDK reads <code>.xlsx</code>, <code>.ods</code> and <code>.csv</code> workbooks the person opens or drops in, every sheet with its text, numbers, dates and each formula's last value, and writes <code>.xlsx</code> and <code>.csv</code>. It runs inside the app, so it works the same natively, in a browser and on a phone.</p>
+<h3>&ldquo;The tablets on the shop floor should open it from this computer.&rdquo;</h3>
+<p>A Krate app can serve one port it declares to other devices on the local network, once the person says yes, show the address to type, and announce itself by name the way printers do. On macOS, Windows and Linux.</p>
+<h3>&ldquo;An AI wrote it, and people have to be able to run it.&rdquo;</h3>
+<p>Every Krate app starts with no access to files, devices or the network. It lists what it wants in its manifest, the person sees that list before it opens and decides, and the runtime checks protected calls against what was allowed. <a href="/run-ai-generated-code-safely.html">How permissions work</a>.</p>
+<h3>&ldquo;I want to send it as one file or one link.&rdquo;</h3>
+<p>Send the <code>.krate</code> file, or publish it and send the link: it opens in any modern browser, phones included, with nothing to install and no account. Publish an update and the link people already have opens the new version, with what they saved kept. <a href="/share-an-app-made-with-ai.html">Sending an app as a link</a>.</p>
+      </section>
+      <section id="the-measured-facts">
+        <h2>The measured facts</h2>
+<p>One measured run compares Krate's Notes app with MarkText 0.17.1 (ARM64), an Electron editor, on the same notes workload, on an Apple M4 running macOS 27, on 25 August 2026. It is an equivalent-workload comparison, not a claim of feature parity, and its scripts, inputs, analysis and seal are public.</p>
+<ul>
+<li><strong>Memory</strong>, with a 50,000-line document open, whole process tree: Krate 178.5 MiB in one process; MarkText 2,299.4 MiB across four processes. 13x less.</li>
+<li><strong>Warm start</strong> to a visible window, 50,000-line document, median of ten runs each: Krate 237.1 ms; MarkText 611.5 ms. 2.6x faster.</li>
+<li><strong>Size</strong>: Krate's Notes app is one 36.6 KiB file; MarkText takes 284.6 MiB installed. The Krate app (runtime and Studio) is installed once, 88.6 MiB on that Mac, and shared by every Krate app after it.</li>
+</ul>
+<p>Source: <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md">the run's analysis</a> and <a href="/reports/">the method</a>.</p>
+<p>Ten ported apps, as the same committed <code>.krate</code> files, passed their headless replay checks on macOS (Apple silicon), Ubuntu (x86_64) and Windows (x86_64) GitHub runners with runtime 0.5.4 on 29 September 2026. Records: <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-macos.tsv">macOS</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-ubuntu.tsv">Ubuntu</a>, <a href="https://github.com/incyashraj/krate/blob/59aeeebc8dafa5ec1700e01a44f8fe8fe7ab980e/evidence/e3/run-36557127592-replay-windows.tsv">Windows</a>. Native runtimes are published for Apple silicon and Intel Macs, x64 and ARM64 Windows, and x86_64 and arm64 Linux.</p>
+<p>More sizes: the Chart sample is one 11,455-byte file, and Doom, with its game data, source and SDK packed in, is one 2.8 MB <code>.krate</code> (<a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-10-16-app-sizes.md">build record</a>).</p>
+      </section>
+      <section id="how-krate-compares">
+        <h2>How Krate compares</h2>
+<div class="answer-table-wrap" role="region" aria-label="Krate compared with Electron, Tauri, a hosted web page and native builds" tabindex="0"><table class="answer-table wide">
+<caption>Krate, Electron, Tauri, a hosted web page and native per-OS builds, reviewed 21 November 2026</caption>
+<thead><tr><th scope="col">Question</th><th scope="col">Krate</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Hosted web page</th><th scope="col">Native per-OS builds</th></tr></thead>
+<tbody>
+<tr><th scope="row">One build for every OS</th><td>Yes: one <code>.krate</code> file.</td><td>No: a package per OS.</td><td>No: a bundle per OS.</td><td>Yes: one site.</td><td>No: a build per OS and CPU.</td></tr>
+<tr><th scope="row">Opens from a link</th><td>Yes, in any modern browser, phones included, with nothing to install.</td><td>No: people download and install it.</td><td>No: people download and install it.</td><td>Yes.</td><td>No: people download and install it.</td></tr>
+<tr><th scope="row">A server to run</th><td>None.</td><td>None.</td><td>None.</td><td>Yes, for as long as people use it.</td><td>None.</td></tr>
+<tr><th scope="row">Works offline</th><td>Yes, natively, unless the app uses the network itself.</td><td>Yes.</td><td>Yes.</td><td>Only with extra work, such as a service worker.</td><td>Yes.</td></tr>
+<tr><th scope="row">Native window</th><td>Yes, drawn by the runtime with no browser or WebView inside.</td><td>A window running Chromium.</td><td>A window running the system WebView.</td><td>A browser tab.</td><td>Yes.</td></tr>
+<tr><th scope="row">Phones</th><td>From a link, in the phone's browser.</td><td>Desktop only.</td><td>Separate Android and iOS builds.</td><td>Yes.</td><td>Separate iOS and Android apps.</td></tr>
+<tr><th scope="row">Print with no dialog, serial and USB</th><td>Yes, natively on macOS, Windows and Linux, to a printer or device the person picks.</td><td>Yes: silent printing in Electron's API, serial and USB through Chromium's Web Serial and WebUSB or Node.js modules.</td><td>Through Rust code or plugins you add.</td><td>Printing goes through the print dialog; Web Serial and WebUSB only in some browsers.</td><td>Yes, through each OS's own APIs.</td></tr>
+<tr><th scope="row">Access by default</th><td>None: the person running it grants each file, device and network request.</td><td>Renderers are sandboxed since Electron 20; the main process runs with the user's permissions.</td><td>Capability files the developer writes limit the WebView; Rust code runs with the user's permissions.</td><td>The browser's sandbox.</td><td>The user's permissions, unless a store requires a sandbox.</td></tr>
+<tr><th scope="row">Signing for each OS</th><td>No per-OS signing of the app file. Optional Krate signature with your own key.</td><td>Sign for Windows and macOS, and notarize for macOS, each release.</td><td>Required on most platforms; direct macOS downloads also need notarization.</td><td>No; the site needs HTTPS.</td><td>Sign for each OS, and notarize for macOS.</td></tr>
+<tr><th scope="row">App size</th><td>Krate's Notes app: 36.6 KiB. One shared runtime, installed once.</td><td>Chromium and Node.js in every app; MarkText takes 284.6 MiB installed.</td><td>No browser engine of its own: it uses the system WebView.</td><td>Nothing installed; the page loads on each visit.</td><td>Depends on the app.</td></tr>
+</tbody></table></div>
+<p>Sources: Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a>, <a href="https://www.electronjs.org/docs/latest/tutorial/sandbox">sandbox</a>, <a href="https://www.electronjs.org/docs/latest/tutorial/code-signing">code signing</a>, <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution</a> and <a href="https://www.electronjs.org/docs/latest/api/web-contents">printing API</a>; Tauri's <a href="https://tauri.app/distribute/">distribution</a>, <a href="https://tauri.app/security/capabilities/">capabilities</a> and <a href="https://tauri.app/reference/webview-versions/">WebView versions</a>; MDN on <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API">Web Serial</a>; Apple on <a href="https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution">notarization</a>; Krate's own figures from the measured run above. In depth: <a href="/krate-vs-electron.html">Krate vs Electron</a>, <a href="/krate-vs-tauri.html">Krate vs Tauri</a>, <a href="/desktop-app-or-web-app.html">desktop app or web app</a> and <a href="/desktop-app-code-signing.html">code signing</a>.</p>
+      </section>
+      <section id="how-to-start">
+        <h2>How to start</h2>
+<h3>With Claude</h3>
+<p>Add the Krate connector to Claude once and ask for an app in plain words; Claude writes it, Krate builds and checks it, and you get a link. <a href="/docs/pages/make-an-app-with-claude.html#add-the-connector">Add the connector</a>. To have Claude use Krate every time, add this line to your instructions in Claude's settings (<a href="/docs/pages/make-an-app-with-claude.html#use-krate-every-time">where</a>):</p>
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">When I ask for an app, build it with the Krate connector so it runs on every device.</pre>
+<h3>In Claude Code</h3>
+<p>The <a href="https://github.com/incyashraj/krate-claude-plugin">Krate plugin</a> adds the connector and a skill that builds and checks the app on your own machine:</p>
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">claude plugin marketplace add incyashraj/krate-claude-plugin
+claude plugin install krate@krate</pre>
+<h3>In Krate Studio</h3>
+<p>Describe the app and Studio writes, checks and packs it, with Claude, Codex, Grok or Gemini on your computer, or in the browser at <a href="/app/">krate.tech/app</a>. <a href="/studio/">About Studio</a>.</p>
+<h3>By hand</h3>
+<p>Install Krate with one line, then write the app in Rust with the SDK, or start from the <a href="https://github.com/incyashraj/krate-app-template">app template</a>:</p>
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">curl -fsSL https://krate.tech/install.sh | sh</pre>
+<p>On Windows, in PowerShell: <code>irm https://krate.tech/install.ps1 | iex</code>. The <a href="/docs/quickstart.html">quickstart</a> walks through it, and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use.</p>
+      </section>
+    <section id="questions">
+      <h2>Questions</h2>
+      <h3>Is Krate a web app?</h3>
+<p>No. A Krate app is one <code>.krate</code> file. On Windows, macOS and Linux the Krate runtime runs it natively, in its own window with no browser or WebView inside. Sent as a link, the same file opens in a browser tab. Neither way needs a server of yours.</p>
+      <h3>Does it need an install?</h3>
+<p>Not to open a link: the app runs in any modern browser, phones included, with no account. To run apps natively, the person installs the Krate runtime once from the <a href="/download/">download page</a>, and every <code>.krate</code> opens from its file after that.</p>
+      <h3>Is it safe to run an app someone sent me?</h3>
+<p>A Krate app starts with no access to your files, devices or the network. Before it opens you see exactly what it asks for and decide; hosts it did not declare stay unreachable, and it keeps its data in storage of its own. <code>krate run app.krate --dump-caps</code> prints what an app asks for without running it. Grant only what the task needs.</p>
+      <h3>Can it use my printer or a serial device?</h3>
+<p>Yes, natively on macOS, Windows and Linux, once you allow it. You pick the printer and later jobs print with no dialog: PDF, PNG, or raw ZPL, EPL or ESC/POS for label and receipt printers. You pick the serial or USB device it talks to. In a browser tab, serial and USB work where the browser has Web Serial and WebUSB.</p>
+      <h3>How big is an app?</h3>
+<p>Small. Krate's Notes app is one 36.6 KiB file and the Chart sample is 11,455 bytes. An app that carries its source and the SDK so it can be changed later is larger, and so is one with big assets: Doom, with its game data packed in, is one 2.8 MB file. The runtime is installed once and shared by every app. <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-10-16-app-sizes.md">Size records</a>.</p>
+      <h3>Can Claude make a Krate app?</h3>
+<p>Yes. Add the Krate connector, <code>https://hub.krate.tech/mcp</code>, to Claude and ask for an app; Claude writes it and Krate builds, checks and publishes it with a link. Claude Code has a <a href="https://github.com/incyashraj/krate-claude-plugin">Krate plugin</a>, and Krate Studio works with Claude, Codex, Grok or Gemini.</p>
+      <h3>Is Krate free?</h3>
+<p>The runtime, the <code>.krate</code> format and the command line are free and open source under MIT OR Apache-2.0. Studio on your computer is free with the AI you already use; in the browser, the first app is free. <a href="https://github.com/incyashraj/krate#license">Licence details</a>.</p>
+    </section>
+    <section id="more-answers">
+      <h2>More answers about making and sending apps</h2>
+      <ul class="answer-related">
+        <li><a href="/portable-desktop-app-format.html">The .krate format: one app file for every screen</a></li>
+        <li><a href="/share-an-app-made-with-ai.html">Share an app made with AI as one link</a></li>
+        <li><a href="/run-ai-generated-code-safely.html">Run an AI-built app safely: see what it can touch first</a></li>
+        <li><a href="/desktop-app-distribution.html">Krate vs Electron vs Tauri: what do you ship?</a></li>
+        <li><a href="/how-to-distribute-a-desktop-app.html">How to distribute a desktop app: ship one file</a></li>
+        <li><a href="/krate-vs-electron.html">Krate vs Electron: one small native file with no browser inside</a></li>
+        <li><a href="/krate-vs-tauri.html">Krate vs Tauri: one file for every desktop and every browser</a></li>
+        <li><a href="/desktop-app-or-web-app.html">Desktop app or web app? Ship one file that is both</a></li>
+        <li><a href="/desktop-app-code-signing.html">Ship a desktop app without code signing for every OS</a></li>
+        <li><a href="/desktop-app-shipping-faq.html">Shipping a desktop app in 2026: questions and straight answers</a></li>
+        <li><a href="/electron-alternatives.html">Electron alternatives in 2026, compared by what you ship</a></li>
+        <li><a href="/tauri-alternatives.html">Tauri alternatives in 2026, compared by what you ship</a></li>
+        <li><a href="/cross-platform-desktop-app-frameworks.html">Cross-platform desktop app frameworks in 2026, compared by what you ship</a></li>
+        <li><a href="/claude-app-phone-and-computer.html">Can Claude make an app that runs on my phone and computer?</a></li>
+        <li><a href="/share-an-app-claude-made.html">How do I share an app Claude made?</a></li>
+      </ul>
+    </section>
+    </article>
+  </div>
+</section>
+
+<div class="band st rv">
+  <div><h2>Make your first app</h2><p>Describe it and Krate makes it. Send it as a link that opens in any browser, phones included, and run the same file natively on Mac, Windows and Linux. The runtime, format and CLI are open source under MIT OR Apache-2.0 (<a href="https://github.com/incyashraj/krate#license">licensing details</a>), and the <a href="/docs/limits.html">capability reference</a> lists everything an app can use today.</p></div>
+  <div class="acts">
+    <a class="btn dark" href="/studio/">Make an app in Studio <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+    <a class="btn ghost" href="/docs/quickstart.html">Developer quickstart</a>
+    <a class="btn ghost" href="/docs/porting.html">Bring your app over</a>
+    <a class="btn link" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
+  </div>
+</div>
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+</body>
+</html>
