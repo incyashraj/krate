@@ -266,6 +266,9 @@ capability. Believe this table over your instinct:
 - **Excel files ARE real.** `krate::sheets` (the `sheets` feature) reads
   the .xlsx, .ods or .csv a person opens into sheets, rows and typed
   cells, and writes the .xlsx or .csv they save.
+- **Machines ARE real.** `krate::modbus` (Modbus RTU over the picked
+  serial port, Modbus TCP) and `krate::mqtt` (an MQTT 3.1.1 client) read
+  PLCs and instruments and publish readings to a broker.
 
 If you catch yourself writing \"Krate apps cannot ...\" about anything in
 this file, stop and re-read the section instead. The true wall list is
@@ -868,6 +871,7 @@ pub(crate) fn sdk_surface_section() -> String {
     // preamble and the widget-kind list, so it follows directly.
     out.push_str(&sdk_reference::render_reference(&functions));
     out.push_str(SHEETS_SECTION);
+    out.push_str(MACHINES_SECTION);
     out
 }
 
@@ -958,6 +962,115 @@ fn export_totals(win: u64, sheet: &Sheet) {\n\
 writes both back, and checks every value. An app that turns a team's \
 workbook into an app keeps the data in `store.sql` or `store.kv` after the \
 first import, and offers Export so the spreadsheet is never a dead end.\n";
+
+/// `krate::modbus` and `krate::mqtt` (IC-994), by hand for the same reason
+/// as the spreadsheet section. A test holds every name below to the source.
+const MACHINES_SECTION: &str = "\n\
+## Machines: `krate::modbus` and `krate::mqtt` (PLCs, instruments, brokers)\n\n\
+An app reads a machine's registers and publishes its readings. Turn on the \
+feature of the `krate` dependency -- `features = [\"gui\", \"modbus\"]`, \
+`\"mqtt\"`, or both (a CLI app leaves out `\"gui\"`). Neither has a \
+capability of its own: Modbus RTU runs over the serial port the person \
+picked (`device.serial`), Modbus TCP and MQTT over a TCP connection to the \
+host the manifest declares (`net.connect:<host>:502`, \
+`net.connect:<host>:1883`). Every call waits at most its timeout and fails \
+with words (`e.message()`); nothing a device sends can crash the app.\n\n\
+- `modbus::Client::rtu(port, unit)` -- `port` from `krate::serial::pick`, \
+already `open`ed with the device's settings; `unit` 1 to 247 (0 sends a \
+write to every device and waits for nothing). \
+`modbus::Client::tcp(host, 502, unit) -> Result<Client, ModbusError>`.\n\
+- `client.read_holding_registers(address, count)` and \
+`read_input_registers(..) -> Result<Vec<u16>, ModbusError>` (1 to 125), \
+`read_coils(..)` and `read_discrete_inputs(..) -> Vec<bool>` (1 to 2000), \
+exactly as many as asked. `write_register(address, u16)`, \
+`write_registers(address, &[u16])`, `write_coil(address, bool)`, \
+`write_coils(address, &[bool])`. Addresses count from 0: the register a \
+manual calls 40001 is holding register 0, 30001 input register 0. \
+`set_timeout(ms)` (default 1000), `set_unit(unit)`.\n\
+- `ModbusError::{TimedOut, Exception(Exception), BadCrc, BadReply(..), \
+BadRequest(..), Link(..)}`; `Exception::IllegalDataAddress` is the device \
+saying that register does not exist. A value in two registers: \
+`modbus::f32_from(high, low)`, `u32_from`, `i32_from`, `f32_to(value)` \
+(if it reads as nonsense, the device keeps the low word first: swap them).\n\
+- `mqtt::Client::connect(host, 1883, &mqtt::Options::new(\"client-id\"))` -- \
+`.login(user, password)`, `.keep_alive(secs)` (default 60), \
+`.timeout(ms)` (default 5000). Clean sessions, MQTT 3.1.1.\n\
+- `client.publish(topic, payload, QoS::AtLeastOnce)` waits for the \
+broker's receipt (`QoS::AtMostOnce` does not); `publish_retained(..)` \
+keeps it as the topic's last value. `subscribe(filter, qos)` (`+` one \
+level, `#` everything below) returns the QoS granted; `unsubscribe(filter)`.\n\
+- `client.poll() -> Result<Option<Message>, MqttError>` never waits: call it \
+every turn of the event loop -- it also sends the keep-alive pings, so call \
+it at least once a keep-alive period. `client.receive(wait_ms)` waits for \
+one (a CLI app). `Message { topic, payload, qos, retained }`, \
+`message.text()`. `client.disconnect()`.\n\
+- `MqttError::{Refused(Refusal), TimedOut(..), SubscribeRefused, \
+Protocol(..), BadTopic(..), BadOptions(..), TooLarge, Link(..)}`; \
+`Refusal::BadLogin` is a wrong user name or password. After `Link` or \
+`TimedOut` the connection is gone: connect again.\n\n\
+Not there yet, so do not promise it: MQTT over TLS (port 8883) -- an app's \
+sockets are plain TCP; MQTT 5; QoS 2; Modbus ASCII. Keep a broker password \
+in `krate::secret` (`store.secret`), never in the source.\n\n\
+Read a holding register over RTU:\n\n\
+```rust\n\
+use alloc::string::String;\n\
+use krate::{modbus, serial};\n\
+\n\
+// `device.serial` in the manifest; the person picks the controller.\n\
+fn connect_controller() -> Result<Option<modbus::Client>, String> {\n\
+\x20   let picked = serial::pick(\"Choose the temperature controller\");\n\
+\x20   let Some(port) = picked.map_err(|e| String::from(serial::words(&e)))? else {\n\
+\x20       return Ok(None); // they cancelled\n\
+\x20   };\n\
+\x20   port.open(&serial::Settings::baud(9600))\n\
+\x20       .map_err(|e| String::from(serial::words(&e)))?;\n\
+\x20   Ok(Some(modbus::Client::rtu(port, 1))) // unit address 1\n\
+}\n\
+\n\
+// Register 40001 (address 0) holds tenths of a degree.\n\
+fn read_celsius(controller: &mut modbus::Client) -> Result<f32, String> {\n\
+\x20   let regs = controller.read_holding_registers(0, 1).map_err(|e| e.message())?;\n\
+\x20   Ok(f32::from(regs[0]) / 10.0)\n\
+}\n\
+```\n\n\
+Publish a reading over MQTT and hear the set point:\n\n\
+```rust\n\
+use alloc::{format, string::String};\n\
+use krate::mqtt::{self, QoS};\n\
+\n\
+// `net.connect:broker.lab.local:1883` and `store.secret` in the manifest.\n\
+fn open_broker() -> Result<mqtt::Client, String> {\n\
+\x20   let password = krate::secret::get_text(\"broker\").ok().flatten().unwrap_or_default();\n\
+\x20   let options = mqtt::Options::new(\"oven-7\").login(\"lab\", &password);\n\
+\x20   let mut broker =\n\
+\x20       mqtt::Client::connect(\"broker.lab.local\", 1883, &options).map_err(|e| e.message())?;\n\
+\x20   broker\n\
+\x20       .subscribe(\"lab/oven-7/setpoint\", QoS::AtLeastOnce)\n\
+\x20       .map_err(|e| e.message())?;\n\
+\x20   Ok(broker)\n\
+}\n\
+\n\
+fn publish_reading(broker: &mut mqtt::Client, celsius: f32) -> Result<(), String> {\n\
+\x20   let text = format!(\"{celsius:.1}\");\n\
+\x20   broker\n\
+\x20       .publish(\"lab/oven-7/celsius\", text.as_bytes(), QoS::AtLeastOnce)\n\
+\x20       .map_err(|e| e.message())\n\
+}\n\
+\n\
+// Every turn of the event loop.\n\
+fn hear_setpoint(broker: &mut mqtt::Client, setpoint: &mut f32) -> Result<(), String> {\n\
+\x20   while let Some(message) = broker.poll().map_err(|e| e.message())? {\n\
+\x20       if let Some(value) = message.text().and_then(|t| t.trim().parse().ok()) {\n\
+\x20           *setpoint = value;\n\
+\x20       }\n\
+\x20   }\n\
+\x20   Ok(())\n\
+}\n\
+```\n\n\
+`apps/krate-machines-probe` runs both against a device and a broker \
+simulated inside the app. Poll a machine on a timer, not in a tight loop \
+(once a second is plenty for most sensors), and show the last good reading \
+with its time when a read fails.\n";
 
 /// Section 2: the capability catalog, from the runtime's own registry. Richer
 /// than the bare name list the old contract used: it names each capability's
@@ -3752,5 +3865,85 @@ interface api {
         }
         // Both prompts carry it: the pack and the published krate-mode.
         assert!(crate::krate_mode::generate().contains("## Spreadsheets: `krate::sheets`"));
+    }
+
+    /// The machines section is hand-written too: every call and variant it
+    /// teaches is held to `krate::modbus` and `krate::mqtt` (IC-994).
+    #[test]
+    fn the_machines_section_names_only_real_calls() {
+        let source = [
+            include_str!("../../bindings-rust/src/modbus/mod.rs"),
+            include_str!("../../bindings-rust/src/modbus/frame.rs"),
+            include_str!("../../bindings-rust/src/mqtt/mod.rs"),
+        ]
+        .concat();
+        let manifest = include_str!("../../bindings-rust/Cargo.toml");
+        for feature in ["\nmodbus = [", "\nmqtt = ["] {
+            assert!(manifest.contains(feature), "the feature {feature} is gone");
+        }
+        let pack = sdk_surface_section();
+        assert!(pack.contains("## Machines: `krate::modbus` and `krate::mqtt`"));
+        for name in [
+            "rtu",
+            "tcp",
+            "read_holding_registers",
+            "read_input_registers",
+            "read_coils",
+            "read_discrete_inputs",
+            "write_register",
+            "write_registers",
+            "write_coil",
+            "write_coils",
+            "set_timeout",
+            "set_unit",
+            "f32_from",
+            "f32_to",
+            "message",
+            "connect",
+            "login",
+            "keep_alive",
+            "timeout",
+            "publish",
+            "publish_retained",
+            "subscribe",
+            "unsubscribe",
+            "poll",
+            "receive",
+            "text",
+            "disconnect",
+        ] {
+            assert!(
+                pack.contains(&format!("{name}(")),
+                "the section no longer teaches `{name}`; drop it from this list"
+            );
+            assert!(
+                source.contains(&format!("pub fn {name}(")),
+                "the guide teaches `{name}(` but krate::modbus / krate::mqtt has no such function"
+            );
+        }
+        for name in ["u32_from", "i32_from"] {
+            assert!(source.contains(&format!("pub fn {name}(")), "{name}");
+        }
+        for variant in [
+            "TimedOut",
+            "Exception(Exception)",
+            "BadCrc",
+            "BadReply(",
+            "BadRequest(",
+            "IllegalDataAddress",
+            "Refused(Refusal)",
+            "SubscribeRefused",
+            "BadTopic(",
+            "BadOptions(",
+            "TooLarge",
+            "BadLogin",
+            "AtLeastOnce",
+            "AtMostOnce",
+            "pub retained: bool",
+        ] {
+            assert!(source.contains(variant), "{variant}");
+        }
+        assert!(crate::krate_mode::generate()
+            .contains("## Machines: `krate::modbus` and `krate::mqtt`"));
     }
 }
