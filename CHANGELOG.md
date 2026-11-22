@@ -13,18 +13,30 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 ## [Unreleased]
 
-Changes merged since 0.5.5-rc9. Contributors: add a line here with your change.
+Contributors: add a line here with your change.
+
+## [0.5.5] - 2026-11-22
+
+The first stable 0.5 release: everything in the 0.5.5 pre-releases below, and these since rc9.
 
 ### Added
 - Make an app in a Claude chat: add Krate as a connector in Claude (`https://hub.krate.tech/mcp`) and ask in plain words. Claude writes the app, Krate builds and checks it and publishes it unlisted to your account, and you get a link that opens on any phone or computer. A failed build gives Claude Krate's own words to fix it. Building asks you to sign in to Krate once.
 - The Krate plugin for Claude Code (`incyashraj/krate-claude-plugin`) carries the same connector and a skill that builds on your own machine.
 - Apps know the person's local time: `utc-offset` in `krate:locale/info`, and `krate::locale::today()`, `local_now()` and `day_number()` in the Rust SDK, daylight saving included, on desktop and in a browser tab.
 - Serial ports (`device.serial`), printers the person picks once (`device.printer`, raw ZPL, EPL or ESC/POS) and serving on this computer or the local network (`net.listen:<port>`).
+- USB devices the person picks, of a model the app names (`krate:usb`), and serial, USB and printing from a link in Chrome and Edge.
+- Spreadsheets: `krate::sheets` opens and writes `.xlsx`, `.ods` and `.csv` files the person chooses.
+- An app serving the local network can announce itself by name, so other devices find it the way they find a printer.
+- The Krate connector also answers ChatGPT's `search` and `fetch` tools, and connectors can sign in with a published identity.
 
 ### Changed
 - The guide an AI reads opens with the first-build failures and their one-line fixes, and a failed build names the import a missing float method needs (`use krate::prelude::*;`).
 
 ### Fixed
+- "Open with Krate" starts every permission the app asks for ticked and names each in plain words ("Save a file where you choose"); an optional one that started unticked left the app's export failing with nothing asking again.
+- A link opened in a browser remembers your yes for that app, and asks again only when the app wants something new.
+- A `krate-check.toml` task's `pick` step now answers a save dialog as well as an open one, so `check-app` can prove an export.
+- Every system email uses the site's layout and mark, and Studio's buttons and rail share one hover and one pressed look.
 - Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
 
 ## [0.5.5] pre-releases (rc2 to rc9) - latest rc9 2026-11-04

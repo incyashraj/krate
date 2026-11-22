@@ -1,7 +1,7 @@
 # Advisory scan
 
-Scanned: 2026-10-20T03:24:41Z
-Commit:  6553367e0e3744014db81c54fdae25ffb900b6a1
+Scanned: 2026-11-22T04:30:41Z
+Commit:  9f7cff8f11d14ebcd0d4ad03021a51a6ae6dbdad
 Scanner: cargo-deny 0.19.4
 Verdict: ok
 
@@ -11,6 +11,33 @@ a record that disagrees with the scanner is worse than none.
 ## What the scanner said
 
 ```
+warning[yanked]: detected yanked crate (try `cargo update -p clipboard-win`)
+   ┌─ /Users/yashrajpardeshi/Projects/layer6x6/.claude/worktrees/next/Cargo.lock:70:1
+   │
+70 │ clipboard-win 5.4.1 registry+https://github.com/rust-lang/crates.io-index
+   │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ yanked version
+   │
+   ├ clipboard-win v5.4.1
+     └── arboard v3.6.1
+         ├── krate-adapter-linux v0.5.5
+         │   └── krate-runtime v0.5.5
+         │       ├── krate-cli v0.5.5
+         │       ├── krate-orgaccess v0.5.5
+         │       │   ├── krate-cli v0.5.5 (*)
+         │       │   ├── krate-player-android v0.5.5
+         │       │   └── krate-player-ios v0.5.5
+         │       ├── (dev) krate-player-android v0.5.5 (*)
+         │       ├── (dev) krate-player-ios v0.5.5 (*)
+         │       ├── (dev) krate-scene3d-gpu v0.5.5
+         │       │   └── krate-runtime v0.5.5 (*)
+         │       └── krate-tools v0.5.5
+         ├── krate-adapter-macos v0.5.5
+         │   ├── krate-cli v0.5.5 (*)
+         │   └── krate-runtime v0.5.5 (*)
+         └── krate-adapter-windows v0.5.5
+             ├── krate-cli v0.5.5 (*)
+             └── krate-runtime v0.5.5 (*)
+
 advisories ok
 ```
 
@@ -34,6 +61,10 @@ Dependency path (`cargo tree -i <crate> --target all`):
     └── nokhwa v0.10.11
         └── krate-runtime v0.5.5 (/crates/runtime)
             ├── krate-cli v0.5.5 (/crates/cli)
+            ├── krate-orgaccess v0.5.5 (/crates/orgaccess)
+            │   ├── krate-cli v0.5.5 (/crates/cli)
+            │   ├── krate-player-android v0.5.5 (/crates/player-android)
+            │   └── krate-player-ios v0.5.5 (/crates/player-ios)
             ├── krate-player-android v0.5.5 (/crates/player-android)
             ├── krate-player-ios v0.5.5 (/crates/player-ios)
             └── krate-tools v0.5.5 (/crates/tools)
