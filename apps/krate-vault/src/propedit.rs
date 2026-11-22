@@ -36,7 +36,9 @@ pub fn props(doc: &Doc) -> Vec<Prop> {
         return Vec::new();
     };
     let lines: Vec<&str> = (1..end).map(|n| doc.line(n)).collect();
-    props::parse(&lines, 1)
+    let mut out = props::parse(&lines, 1);
+    props::apply_types(&mut out, &doc.prop_types);
+    out
 }
 
 fn prop_at(doc: &Doc, line: usize) -> Option<Prop> {
@@ -169,6 +171,28 @@ pub fn remove_item(doc: &mut Doc, line: usize, i: usize, now: u64) {
             write(doc, &p, &p.key, p.kind, &Value::List(items), now);
         }
     }
+}
+
+/// Hand every open note the types the vault keeps for property names
+/// (`.obsidian/types.json`), so a type picked in one note shows in all.
+pub fn share_types(app: &mut crate::app::App) {
+    let types = props::types_from(&app.settings.types.data);
+    let tabs = app
+        .tabs
+        .iter_mut()
+        .chain(app.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()));
+    for t in tabs {
+        if let Some(d) = t.doc.as_mut() {
+            if d.prop_types != types {
+                d.prop_types = types.clone();
+            }
+        }
+    }
+}
+
+/// The name of the property whose key is on `line`.
+pub fn key_at(doc: &Doc, line: usize) -> Option<String> {
+    prop_at(doc, line).map(|p| p.key)
 }
 
 /// The type menu: turn a property into another kind.

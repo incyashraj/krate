@@ -1083,6 +1083,87 @@ fn squiggle(c: u64, l: &Lay, text: &str, ox: f32, oy: f32, from: usize, to: usiz
     }
 }
 
+/// A spell mark under one of the Properties block's text values: its line,
+/// byte and length in the note, and where it is drawn (from x, to x, the
+/// baseline). The block draws values at 15 px, 148 px into the row
+/// (src/guest/widgets.rs).
+type PropMark = (usize, usize, usize, f32, f32, f32);
+
+fn prop_marks(
+    cache: &mut LayCache,
+    c: u64,
+    doc: &Doc,
+    w: &widgets::Widget,
+    ox: f32,
+    oy: f32,
+) -> Vec<PropMark> {
+    let mut out = Vec::new();
+    let widgets::Widget::Props { rows, .. } = w else {
+        return out;
+    };
+    for p in rows {
+        let crate::props::Value::Text(v) = &p.value else {
+            continue;
+        };
+        if p.edit.is_some() {
+            continue;
+        }
+        let line = doc.line(p.line);
+        let Some(colon) = line.find(':') else {
+            continue;
+        };
+        let Some(at) = line
+            .get(colon..)
+            .and_then(|rest| rest.find(v.as_str()))
+            .map(|i| colon + i)
+        else {
+            continue;
+        };
+        let marks = cache.misspelled(doc, p.line);
+        let base = oy + p.y + 15.0 + 5.0;
+        for (a, n) in marks.iter() {
+            let (Some(from), Some(to)) = (a.checked_sub(at), (a + n).checked_sub(at)) else {
+                continue;
+            };
+            if to > v.len() {
+                continue;
+            }
+            let x0 = ox + 148.0 + look::width(c, v.get(..from).unwrap_or(""), 15.0, 400);
+            let x1 = ox + 148.0 + look::width(c, v.get(..to).unwrap_or(""), 15.0, 400);
+            out.push((p.line, *a, *n, x0, x1, base));
+        }
+    }
+    out
+}
+
+/// Spell marks under the Properties block's text values.
+fn spell_props(
+    cache: &mut LayCache,
+    c: u64,
+    doc: &Doc,
+    w: &widgets::Widget,
+    ox: f32,
+    oy: f32,
+    col: Rgba,
+) {
+    for (_, _, _, x0, x1, base) in prop_marks(cache, c, doc, w, ox, oy) {
+        let y = base + 3.0;
+        let mut x = x0;
+        let mut up = true;
+        while x < x1 {
+            let nx = (x + 2.0).min(x1);
+            let (y0, y1) = if up {
+                (y + 1.2, y - 0.8)
+            } else {
+                (y - 0.8, y + 1.2)
+            };
+            look::line(c, x, y0, nx, y1, 1.0, col);
+            x = nx;
+            up = !up;
+        }
+    }
+}
+
 const CACHE_MAX: usize = 6_000;
 
 pub fn fnv(h: &mut u64, bytes: &[u8]) {
@@ -1686,6 +1767,9 @@ pub fn draw(
                 said.text(r(v.x, y, v.width, l.h), shown_text);
             }
         } else if let Some(w) = l.widget.as_ref() {
+            if cache.spell_on && !doc.fresh && doc.mode != Mode::Reading {
+                spell_props(cache, c, doc, w, v.x, y, t.danger);
+            }
             if caret_on && !doc.fresh && doc.mode == Mode::Live {
                 if let Some((cx, cy, ch)) = widgets::table_caret(c, w, doc.cur) {
                     fill(c, r(v.x + cx - 0.5, y + cy, 1.6 * v.sz.scale, ch), t.text);
@@ -2254,7 +2338,22 @@ pub fn misspelled_at(
         .iter()
         .rev()
         .find(|(_, y, l)| py >= *y && l.h > 0.0)?;
-    if *vi == 0 || l.deco == Deco::Widget || *vi > doc.buf.line_count() {
+    if l.deco == Deco::Widget {
+        // A value in the Properties block.
+        let w = l.widget.as_ref()?;
+        let (n, a, len, ..) = prop_marks(cache, c, doc, w, shown.x, *y).into_iter().find(
+            |(_, _, _, x0, x1, base)| {
+                px >= *x0 && px <= *x1 && py >= base - 16.0 && py <= base + 6.0
+            },
+        )?;
+        return Some((
+            n,
+            a,
+            len,
+            String::from(doc.line(n).get(a..a + len).unwrap_or("")),
+        ));
+    }
+    if *vi == 0 || *vi > doc.buf.line_count() {
         return None;
     }
     let n = vi - 1;

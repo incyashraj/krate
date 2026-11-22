@@ -96,6 +96,8 @@ pub struct Settings {
     pub bookmarks: File,
     pub recovery: File,
     pub hotkeys: File,
+    /// `types.json`: the type picked for each property name.
+    pub types: File,
 }
 
 impl Default for Settings {
@@ -116,10 +118,11 @@ impl Settings {
             bookmarks: File::new("bookmarks.json"),
             recovery: File::new("file-recovery.json"),
             hotkeys: File::new("hotkeys.json"),
+            types: File::new("types.json"),
         }
     }
 
-    fn files_mut(&mut self) -> [&mut File; 9] {
+    fn files_mut(&mut self) -> [&mut File; 10] {
         [
             &mut self.app,
             &mut self.appearance,
@@ -130,6 +133,7 @@ impl Settings {
             &mut self.bookmarks,
             &mut self.recovery,
             &mut self.hotkeys,
+            &mut self.types,
         ]
     }
 
@@ -195,6 +199,7 @@ impl Settings {
             &self.bookmarks,
             &self.recovery,
             &self.hotkeys,
+            &self.types,
         ]
         .iter()
         .any(|f| f.dirty)

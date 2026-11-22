@@ -386,6 +386,92 @@ impl Value {
     }
 }
 
+/// The name `.obsidian/types.json` gives a kind.
+pub fn type_name(k: Kind) -> &'static str {
+    match k {
+        Kind::Text => "text",
+        Kind::List => "multitext",
+        Kind::Number => "number",
+        Kind::Checkbox => "checkbox",
+        Kind::Date => "date",
+        Kind::DateTime => "datetime",
+        Kind::Tags => "tags",
+        Kind::Aliases => "aliases",
+    }
+}
+
+/// The kind a `.obsidian/types.json` name stands for.
+pub fn kind_named(name: &str) -> Option<Kind> {
+    Some(match name {
+        "text" => Kind::Text,
+        "multitext" => Kind::List,
+        "number" => Kind::Number,
+        "checkbox" => Kind::Checkbox,
+        "date" => Kind::Date,
+        "datetime" => Kind::DateTime,
+        "tags" => Kind::Tags,
+        "aliases" => Kind::Aliases,
+        _ => return None,
+    })
+}
+
+/// The types a vault keeps for its property names, read from the
+/// `types` object of `.obsidian/types.json`.
+pub fn types_from(json: &crate::json::Value) -> Vec<(String, Kind)> {
+    match json.get("types") {
+        Some(crate::json::Value::Obj(kv)) => kv
+            .iter()
+            .filter_map(|(k, v)| Some((k.clone(), kind_named(v.str()?)?)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Record the type a person picked for a property name in the
+/// `.obsidian/types.json` data, as Obsidian writes it: the three built-in
+/// names first when the file is new, then each name in the order it was
+/// first typed, an existing name (in any case) changed where it is.
+pub fn remember_type(json: &mut crate::json::Value, key: &str, kind: Kind) {
+    use crate::json::Value as J;
+    if !matches!(json.get("types"), Some(J::Obj(_))) {
+        let mut t = J::obj();
+        t.set("aliases", J::s("aliases"));
+        t.set("cssclasses", J::s("multitext"));
+        t.set("tags", J::s("tags"));
+        json.set("types", t);
+    }
+    if let Some(J::Obj(kv)) = json.get_mut("types") {
+        let lower = crate::text::lower(key);
+        match kv.iter_mut().find(|(k, _)| crate::text::lower(k) == lower) {
+            Some((_, v)) => *v = J::s(type_name(kind)),
+            None => kv.push((String::from(key), J::s(type_name(kind)))),
+        }
+    }
+}
+
+/// Give each property the type its name has in the vault, as Obsidian
+/// does: the kind the vault keeps wins over the one the value suggests,
+/// unless the value cannot be shown as that kind.
+pub fn apply_types(props: &mut [Prop], types: &[(String, Kind)]) {
+    if types.is_empty() {
+        return;
+    }
+    for p in props.iter_mut() {
+        let lower = crate::text::lower(&p.key);
+        let Some((_, kind)) = types.iter().find(|(k, _)| crate::text::lower(k) == lower) else {
+            continue;
+        };
+        if *kind == p.kind {
+            continue;
+        }
+        let v = convert(&p.value, *kind);
+        if v != Value::Empty || p.value == Value::Empty {
+            p.kind = *kind;
+            p.value = v;
+        }
+    }
+}
+
 /// The day of the week of a date, 0 Monday to 6 Sunday.
 pub fn weekday(y: i32, m: u32, d: u32) -> u32 {
     // Days from the civil calendar (Howard Hinnant's), 1970-01-01 a Thursday.
@@ -544,5 +630,44 @@ mod tests {
         let p = parse(&["property: 1", "property 1: 2"], 1);
         assert_eq!(new_key(&p), "property 2");
         assert!(is_number("-3.5") && !is_number("1.2.3") && !is_number("v1"));
+    }
+
+    #[test]
+    fn picked_types_are_kept_as_obsidian_writes_them() {
+        // What Obsidian 1.15.1 wrote after status -> Number, due -> Date &
+        // time, then MyKey -> Checkbox and status -> Text
+        // (evidence: setType through its DevTools, read back from disk).
+        let mut j = crate::json::Value::obj();
+        remember_type(&mut j, "status", Kind::Number);
+        remember_type(&mut j, "due", Kind::DateTime);
+        assert_eq!(
+            crate::json::pretty(&j, "  "),
+            "{\n  \"types\": {\n    \"aliases\": \"aliases\",\n    \"cssclasses\": \"multitext\",\n    \"tags\": \"tags\",\n    \"status\": \"number\",\n    \"due\": \"datetime\"\n  }\n}"
+        );
+        remember_type(&mut j, "MyKey", Kind::Checkbox);
+        remember_type(&mut j, "Status", Kind::Text);
+        let t = types_from(&j);
+        let names: Vec<&str> = t.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            names,
+            ["aliases", "cssclasses", "tags", "status", "due", "MyKey"]
+        );
+        assert_eq!(t[3].1, Kind::Text);
+        // Every note's property of that name takes the kept type.
+        let mut ps = parse(
+            &["status: 3", "due: 2026-11-22", "mykey: yes", "other: 4"],
+            1,
+        );
+        apply_types(&mut ps, &t);
+        assert_eq!(ps[0].kind, Kind::Text);
+        assert_eq!(ps[0].value, Value::Text(String::from("3")));
+        assert_eq!(ps[1].kind, Kind::DateTime);
+        assert_eq!(ps[2].kind, Kind::Checkbox);
+        assert_eq!(ps[2].value, Value::Bool(true));
+        assert_eq!(ps[3].kind, Kind::Number);
+        // A value that cannot be that kind keeps the kind it reads as.
+        let mut ps = parse(&["due: soon"], 1);
+        apply_types(&mut ps, &t);
+        assert_eq!(ps[0].kind, Kind::Text);
     }
 }

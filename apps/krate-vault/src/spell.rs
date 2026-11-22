@@ -218,4 +218,53 @@ mod tests {
         );
         assert_eq!(marks, [(0, 3), (4, 3)]);
     }
+
+    #[test]
+    fn a_property_value_is_replaced() {
+        let mut d =
+            crate::editor::Doc::new("n.md", "n", "---\ntitle: Spelling chek\n---\n# Spelling\n");
+        d.place(crate::buffer::Pos::new(1, 19), false);
+        act(
+            &mut d,
+            SpellAct::Replace {
+                line: 1,
+                start: 16,
+                len: 4,
+                with: String::from("check"),
+            },
+            0,
+        );
+        assert_eq!(d.line(1), "title: Spelling check");
+        assert_eq!(
+            crate::propedit::props(&d)[0].value,
+            crate::props::Value::Text(String::from("Spelling check"))
+        );
+        // A word in the body first, then the value (the order a person did it in).
+        let text = "---\ntitle: Spelling chek\n---\n# Spelling\n\nTeh quick brown fox jumpd over the lazy dog.\n";
+        let mut d = crate::editor::Doc::new("n.md", "n", text);
+        d.place(crate::buffer::Pos::new(5, 3), false);
+        act(
+            &mut d,
+            SpellAct::Replace {
+                line: 5,
+                start: 0,
+                len: 3,
+                with: String::from("The"),
+            },
+            10,
+        );
+        d.place(crate::buffer::Pos::new(1, 20), false);
+        act(
+            &mut d,
+            SpellAct::Replace {
+                line: 1,
+                start: 16,
+                len: 4,
+                with: String::from("check"),
+            },
+            20,
+        );
+        assert_eq!(d.line(1), "title: Spelling check");
+        assert_eq!(d.line(5), "The quick brown fox jumpd over the lazy dog.");
+    }
 }

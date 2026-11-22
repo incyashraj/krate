@@ -552,6 +552,11 @@ impl Widget {
             Widget::Props { rows, add_y, .. } => {
                 said.heading(r(ox, oy + 8.0, 140.0, 24.0), "Properties");
                 for p in rows {
+                    // The icon opens the type menu.
+                    said.button(
+                        r(ox, oy + p.y, 22.0, 30.0),
+                        &alloc::format!("Type of {}", p.key),
+                    );
                     said.text(r(ox + 22.0, oy + p.y, 120.0, 30.0), &p.key);
                     let v = p.value.shown();
                     said.text(
@@ -708,6 +713,10 @@ pub fn block(cache: &mut LayCache, c: u64, doc: &Doc, span: Span, v: &View) -> R
         if let Some(e) = doc.prop_edit.as_ref() {
             let st = alloc::format!("{:?}", e);
             fnv(&mut h, st.as_bytes());
+        }
+        for (k, kind) in &doc.prop_types {
+            fnv(&mut h, k.as_bytes());
+            fnv(&mut h, &[*kind as u8]);
         }
     }
     // An embed's look depends on what it embeds having arrived.
@@ -1057,7 +1066,8 @@ fn diagram(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
 fn properties(c: u64, doc: &Doc, span: Span, _width: f32, sz: &Sizes) -> Rc<Lay> {
     let k = sz.body / 16.0;
     let lines: Vec<&str> = (span.first + 1..span.last).map(|n| doc.line(n)).collect();
-    let parsed = props::parse(&lines, span.first + 1);
+    let mut parsed = props::parse(&lines, span.first + 1);
+    props::apply_types(&mut parsed, &doc.prop_types);
     let mut rows = Vec::new();
     let mut y = 40.0 * k;
     let editing = doc.prop_edit.as_ref();

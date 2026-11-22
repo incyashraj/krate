@@ -4289,8 +4289,17 @@ impl App {
             MenuAction::CardOpen(p) => self.open_file(&p, true),
             MenuAction::PropKind(line, kind) => {
                 let now = self.now;
+                let key = self.doc().and_then(|d| crate::propedit::key_at(d, line));
                 if let Some(d) = self.doc_mut() {
                     crate::propedit::set_kind(d, line, kind, now);
+                }
+                // The type is the vault's, kept in .obsidian/types.json.
+                if let Some(key) = key {
+                    crate::props::remember_type(&mut self.settings.types.data, &key, kind);
+                    self.settings.types.dirty = true;
+                    if let Some(v) = self.vault.as_mut() {
+                        let _ = self.settings.save(&mut *v.fs);
+                    }
                 }
             }
             MenuAction::PropRemove(line) => {

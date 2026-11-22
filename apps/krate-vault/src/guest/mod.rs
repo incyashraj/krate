@@ -1817,6 +1817,8 @@ impl Ui {
         if focused {
             self.hit(ed, Zone::Editor);
         }
+        // Property types the vault keeps (src/propedit.rs).
+        crate::propedit::share_types(&mut self.app);
         // Inline title and line numbers, as the settings say (editor.rs).
         self.cache.follow_settings(
             self.app.settings.show_inline_title(),

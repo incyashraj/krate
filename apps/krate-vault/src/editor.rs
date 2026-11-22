@@ -75,6 +75,8 @@ pub struct Doc {
     pub prop_edit: Option<crate::propedit::PropEdit>,
     /// Spelling choices for the guest to carry out (learn, ignore).
     pub spell_pending: Vec<crate::spell::SpellAct>,
+    /// The types the vault keeps for property names (`.obsidian/types.json`).
+    pub prop_types: Vec<(String, crate::props::Kind)>,
     /// Edits made while several carets type, so each caret can follow the
     /// edits made before it.
     edit_log: Option<Vec<(Pos, Pos, Pos)>>,
@@ -188,6 +190,7 @@ impl Doc {
             find: None,
             prop_edit: None,
             spell_pending: Vec::new(),
+            prop_types: Vec::new(),
             edit_log: None,
             fold_cache: RefCell::new((u64::MAX, Vec::new())),
             notes_cache: RefCell::new(None),
