@@ -1547,27 +1547,38 @@ impl Ui {
                 },
             );
             fill(me.c, r(x + sw - 1.0, body.y, 1.0, body.h), t.border);
-            // The title, a letter under the other (Krate draws no turned
-            // text: K-1341).
-            let mut y = body.y + 16.0 * k;
-            for ch in titles.get(i).map_or("", String::as_str).chars().take(60) {
-                if y > body.bottom() - 8.0 {
-                    break;
+            // The title turned a quarter clockwise, reading down the spine,
+            // as the notes app writes it (krate:gfx/canvas-text).
+            let room = (body.h - 24.0 * k).max(0.0);
+            let full = titles.get(i).map_or("", String::as_str);
+            let mut title = String::from(full);
+            if width(me.c, &title, sz.ui, 400) > room {
+                let mut cut = String::new();
+                for ch in full.chars() {
+                    cut.push(ch);
+                    let mut trial = cut.clone();
+                    trial.push('\u{2026}');
+                    if width(me.c, &trial, sz.ui, 400) > room {
+                        cut.pop();
+                        break;
+                    }
                 }
-                let mut cs = String::new();
-                cs.push(ch);
-                let cw = width(me.c, &cs, sz.ui, 400);
-                text(
-                    me.c,
-                    &cs,
-                    x + (sw - cw) * 0.5,
-                    y + sz.ui * 0.8,
-                    sz.ui,
-                    400,
-                    if focused { t.muted } else { t.faint },
-                );
-                y += sz.ui * 1.15;
+                cut.push('\u{2026}');
+                title = cut;
             }
+            let line = sz.ui * 1.3;
+            let _ = krate::gfx::canvas_text::draw_turned(
+                me.c,
+                &title,
+                krate::gfx::types::Point {
+                    x: x + (sw - line) * 0.5,
+                    y: body.y + 16.0 * k,
+                },
+                sz.ui,
+                if focused { t.muted } else { t.faint },
+                look::style(400, false, false),
+                1,
+            );
             me.tab_rects.push((pane, i, rc));
             me.said.button(rc, titles.get(i).map_or("", String::as_str));
             me.hit(rc, z);
