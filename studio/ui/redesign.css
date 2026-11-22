@@ -3326,12 +3326,9 @@ a[href]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2p
  * that rise in the order they happened, the shared hover and selected
  * shades. Tokens only, so the light theme follows. Driven by workbench.js. */
 .ide-prev.wb { min-height: 0; overflow: hidden; }
-.wb-h { height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; }
-.wb-h .grow { flex: 1; }
-.wb-h .ib { width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: none; color: var(--ink-2); cursor: pointer; }
-.wb-h .ib:hover { background: var(--hover); color: var(--ink); }
-.wb-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
-.wb-tabs button { height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: none; cursor: pointer; font: 500 12px var(--sans); color: var(--ink-3); transition: background .2s, color .2s; }
+.wb-h { height: 48px; flex: none; display: flex; align-items: center; padding: 0 12px; }
+.wb-tabs { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.wb-tabs button { flex: 1 1 0; min-width: 0; height: 26px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 0; border-radius: 999px; background: none; cursor: pointer; font: 500 12px var(--sans); color: var(--ink-3); transition: background .2s, color .2s; }
 .wb-tabs button:not(.on):hover { color: var(--ink); background: var(--hover); }
 .wb-tabs button.on { color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgba(0, 0, 0, .12); }
 .wb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -3341,7 +3338,18 @@ a[href]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2p
 .wb-lead code { font: 11.5px var(--mono); color: var(--ink-2); }
 
 /* Devices */
-.wb-devs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
+.wb-devs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 10px 10px 16px; }
+.wb-devs .grow { flex: 1; }
+/* The top bar already says whether it builds; the row keeps to one line. */
+.wb-devs .live { display: none !important; }
+@media (max-width: 1200px) {
+  .wb-h { padding: 0 8px; }
+  .wb-tabs button { font-size: 11px; padding: 0 2px; }
+  .wb-devs { gap: 3px; padding: 0 6px 10px 10px; }
+  .wb-devs button:not(.ib) { padding: 0 6px; font-size: 11px; }
+}
+.wb-devs .ib { width: 28px; height: 28px; border: 0; border-radius: 9px; display: grid; place-items: center; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-devs .ib:hover { background: var(--hover); color: var(--ink); }
 .wb-devs button { height: 26px; padding: 0 11px; border: 0; border-radius: 999px; cursor: pointer; font: 500 12px var(--sans); color: var(--ink-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); transition: background .2s, color .2s; }
 .wb-devs button:not(.on):hover { background: var(--hover); color: var(--ink); }
 .wb-devs button.on { color: var(--ink); background: var(--selected); box-shadow: inset 0 0 0 1px var(--line-strong, var(--hair)); }
@@ -3405,3 +3413,26 @@ a[href]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2p
 .wb-card.wait .wb-mark { background: var(--surface-2); }
 .wb-card.wait .wb-mark::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: krPing 1.4s var(--ease) infinite; }
 .wb-card.wait b { color: var(--ink-3); }
+
+/* Hardware: the pretend label printer and what it printed */
+.wb-hw { padding: 14px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); transition: box-shadow .3s; }
+.wb-hw.on { box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 45%, transparent), 0 0 0 4px var(--green-soft); }
+.wb-hw-head { display: flex; align-items: center; gap: 11px; }
+.wb-hw-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wb-hw-head b { font: 500 13.5px var(--sans); color: var(--ink); }
+.wb-hw-head span { font: 400 11.5px var(--sans); color: var(--ink-3); }
+.wb-hw-ico { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--ink-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.wb-hw.on .wb-hw-ico { color: var(--green-ink); background: var(--green-soft); }
+.wb-hw-st { margin: 10px 0 0; font: 400 12px/1.5 var(--sans); color: var(--ink-3); }
+.wb-jobs { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wb-jobs:empty { display: none; }
+.wb-job { padding: 10px 10px 12px; border-radius: 12px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); animation: krFadeUp .45s var(--ease) both; }
+.wb-job-h { display: flex; align-items: baseline; gap: 8px; margin: 0 2px 8px; }
+.wb-job-h b { flex: 1; min-width: 0; font: 500 12.5px var(--sans); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-job-h span { font: 400 11px var(--sans); color: var(--ink-3); white-space: nowrap; }
+.wb-labels { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.wb-label { max-width: 100%; padding: 0; border-radius: 6px; overflow: hidden; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .18), 0 12px 28px -14px rgba(0, 0, 0, .45); animation: krPrintOut .6s var(--ease) both; }
+.wb-label canvas, .wb-label img { display: block; max-width: 100%; height: auto; }
+@keyframes krPrintOut { from { clip-path: inset(0 0 100% 0); transform: translateY(-6px); } to { clip-path: inset(0 0 0 0); transform: none; } }
+.wb-receipt { margin: 0 auto; max-width: 240px; padding: 12px 14px; border-radius: 4px; white-space: pre-wrap; font: 11.5px/1.45 var(--mono); color: #111; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .18); animation: krPrintOut .6s var(--ease) both; }
+.wb-job-note { margin: 8px 2px 0; font: 400 11.5px/1.45 var(--sans); color: var(--ink-3); }

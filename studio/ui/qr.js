@@ -5,7 +5,7 @@
  * (null) rather than a wrong one. Follows ISO/IEC 18004 the way Project
  * Nayuki's reference encoder lays it out.
  *
- * One name on window, krQrSvg, so it never clashes with app.js or the
+ * Two names on window, krQrSvg and krQr, so they never clash with app.js or the
  * web bridge (they share one global scope in a tab).
  */
 (function () {
@@ -126,6 +126,10 @@
     flip(best); format(best);
     return { size, mod };
   }
+
+  // The module grid alone (true = dark), for the workbench's label preview
+  // (labels.js), which draws a ZPL ^BQ code at the printer's own size.
+  window.krQr = function (text) { const q = encode(text); return q ? q.mod : null; };
 
   window.krQrSvg = function (text, cls) {
     const q = encode(text);

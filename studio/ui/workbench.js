@@ -204,8 +204,81 @@
     }
   }
 
+  /* ---- hardware: a pretend label printer ----------------------------- */
+  // The app runs in its own window; what it prints lands in a folder Krate
+  // prints into instead of a printer, and each job is drawn here as the
+  // label would come out (labels.js: ZPL with Code 128 and QR, ESC/POS
+  // receipts as text, a PNG as itself).
+  let printing = false, poll = null, shownJobs = 0;
+  const b64bytes = (b64) => Uint8Array.from(atob(b64 || ""), (c) => c.charCodeAt(0));
+  function jobCard(job) {
+    const li = document.createElement("li");
+    li.className = "wb-job";
+    li.style.setProperty("--i", "0");
+    const head = `<div class="wb-job-h"><b>${esc(job.title || "Untitled job")}</b><span>${job.copies > 1 ? job.copies + " copies · " : ""}${esc(job.kind.toUpperCase())} · ${job.bytes.toLocaleString()} bytes</span></div>`;
+    const bytes = b64bytes(job.data);
+    const text = new TextDecoder("latin1").decode(bytes);
+    const L = window.krLabels;
+    if (job.kind === "raw" && L && L.looksLikeZpl(text)) {
+      li.innerHTML = head + `<div class="wb-labels"></div>`;
+      const box = li.querySelector(".wb-labels");
+      const unknown = new Set();
+      L.zplLabels(text).forEach((body) => {
+        const r = L.drawZpl(body, { maxWidth: 300 });
+        r.unknown.forEach((u) => unknown.add(u));
+        const fig = document.createElement("div");
+        fig.className = "wb-label";
+        fig.appendChild(r.canvas);
+        box.appendChild(fig);
+      });
+      if (unknown.size) li.insertAdjacentHTML("beforeend", `<p class="wb-job-note">Not drawn here: ${esc([...unknown].join(" "))}. The printer reads them; this preview does not.</p>`);
+    } else if (job.kind === "raw" && L) {
+      li.innerHTML = head + `<pre class="wb-receipt">${esc(L.escposText(bytes) || "(no text)")}</pre>`;
+    } else if (job.kind === "png") {
+      li.innerHTML = head + `<div class="wb-labels"><div class="wb-label"><img alt="${esc(job.title)}" src="data:image/png;base64,${job.data}"></div></div>`;
+    } else {
+      li.innerHTML = head + `<p class="wb-job-note">A ${esc(job.kind.toUpperCase())} document, sent as the printer would get it.</p>`;
+    }
+    return li;
+  }
+  async function pollJobs() {
+    if (!path) return;
+    try {
+      const r = await call("ide_hw_jobs", { path });
+      const jobs = r.jobs || [];
+      const list = $("wbJobs");
+      for (const job of jobs.slice(shownJobs)) list.prepend(jobCard(job));
+      shownJobs = Math.max(shownJobs, jobs.length);
+      if (printing && !r.running) setPrinting(false, jobs.length ? `The app closed after ${jobs.length === 1 ? "one job" : jobs.length + " jobs"}.` : "The app closed without printing.");
+      else if (printing) $("wbPrintSt").textContent = jobs.length ? `Running · ${jobs.length === 1 ? "1 job" : jobs.length + " jobs"} printed, newest first.` : "Running · print something from the app's window.";
+    } catch (err) { /* the next tick tries again */ }
+  }
+  function setPrinting(on, words) {
+    printing = on;
+    $("wbPrintRun").textContent = on ? "Stop" : "Run with it";
+    $("wbPrinter").classList.toggle("on", on);
+    if (words) $("wbPrintSt").textContent = words;
+    clearInterval(poll); poll = null;
+    if (on) poll = setInterval(pollJobs, 1000);
+  }
+  $("wbPrintRun").addEventListener("click", async () => {
+    if (!path) return;
+    if (printing) { await call("ide_hw_stop", { path }).catch(() => {}); await pollJobs(); setPrinting(false, "Stopped."); return; }
+    if (!built) { $("wbPrintSt").textContent = "Build it first: there is no app to run yet."; return; }
+    $("wbJobs").innerHTML = ""; shownJobs = 0;
+    try {
+      const name = await call("ide_hw_run", { path });
+      setPrinting(true, `Running with ${name}. Print something from the app's window.`);
+    } catch (err) {
+      setPrinting(false, String(err));
+    }
+  });
+
   /* ---- the IDE's events ------------------------------------------------ */
   window.addEventListener("kr-ide-open", (e) => {
+    if (path && printing) call("ide_hw_stop", { path }).catch(() => {});
+    setPrinting(false, "When the app asks for a printer, it gets this one. Its labels appear here as they would come out: text, boxes, barcodes and QR codes at 203 dpi.");
+    $("wbJobs").innerHTML = ""; shownJobs = 0;
     path = e.detail.path; built = false; asks = []; off = new Set();
     $("wbPerms").innerHTML = `<p class="ip-none">Build it to see what it asks for.</p>`;
     $("wbPermShot").classList.add("hidden");

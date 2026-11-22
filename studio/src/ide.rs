@@ -1628,6 +1628,149 @@ pub(crate) async fn ide_checks(
     .await
 }
 
+/* ---- the workbench's simulated hardware (IC-995) ---------------------- */
+
+/// The pretend label printer the workbench offers: a folder Krate prints
+/// into (`KRATE_PRINTER_SPOOL`), picked for the app as a person would pick
+/// it (`KRATE_PRINTER_PICK`). Its name is the queue's, with spaces.
+const PRETEND_PRINTER: &str = "Zebra_ZD421";
+
+/// Each project's app running against simulated hardware, and its folder.
+fn hardware_runs() -> &'static Mutex<HashMap<PathBuf, (std::process::Child, PathBuf)>> {
+    static RUNS: OnceLock<Mutex<HashMap<PathBuf, (std::process::Child, PathBuf)>>> =
+        OnceLock::new();
+    RUNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn spool_for(project: &Path) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    project.hash(&mut h);
+    std::env::temp_dir()
+        .join("krate-ide-hardware")
+        .join(format!("{:016x}", h.finish()))
+}
+
+/// Open the app in its own window with a pretend label printer: whatever it
+/// prints lands in a folder the workbench reads, instead of on paper. A
+/// run already going for this project is closed first.
+#[tauri::command]
+pub(crate) async fn ide_hw_run(path: String) -> Result<String, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let wasm = wasm_path(&project);
+        if !wasm.is_file() {
+            return Err("Build it first: there is no app to run yet.".to_string());
+        }
+        stop_hardware(&project);
+        let engine = engine()?;
+        let spool = spool_for(&project);
+        let _ = std::fs::remove_dir_all(&spool);
+        std::fs::create_dir_all(spool.join(PRETEND_PRINTER))
+            .map_err(|e| format!("could not make the pretend printer: {e}"))?;
+        let child = engine_cmd(&engine, false)
+            .current_dir(&project)
+            .env("KRATE_PRINTER_SPOOL", &spool)
+            .env("KRATE_PRINTER_PICK", PRETEND_PRINTER)
+            .arg("run")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(project.join("manifest.toml"))
+            .arg("--auto-grant")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        hardware_runs()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(project, (child, spool));
+        Ok(PRETEND_PRINTER.replace('_', " "))
+    })
+    .await
+}
+
+fn stop_hardware(project: &Path) {
+    let run = hardware_runs()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(project);
+    if let Some((mut child, _)) = run {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn ide_hw_stop(path: String) -> Result<(), String> {
+    blocking(move || {
+        stop_hardware(&project_dir(&path)?);
+        Ok(())
+    })
+    .await
+}
+
+/// One job the app sent to the pretend printer.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct PrintedJob {
+    n: u32,
+    kind: String,
+    title: String,
+    copies: u32,
+    bytes: u64,
+    /// The job's bytes, base64, up to 2 MiB: ZPL and ESC/POS are read as
+    /// text by the workbench, a PNG shown, a PDF offered as a file.
+    data: Option<String>,
+}
+
+/// The jobs in one pretend printer's folder, in the order they were sent,
+/// as the engine's spool writes them: `job-N.json` beside `job-N.<kind>`.
+fn printed_jobs(dir: &Path) -> Vec<PrintedJob> {
+    let mut jobs = Vec::new();
+    for n in 1..=500u32 {
+        let note = dir.join(format!("job-{n}.json"));
+        let Ok(text) = std::fs::read_to_string(&note) else {
+            break;
+        };
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        let kind = v["kind"].as_str().unwrap_or("raw").to_string();
+        let body = dir.join(format!("job-{n}.{kind}"));
+        let data = std::fs::read(&body)
+            .ok()
+            .filter(|b| b.len() <= 2 * 1024 * 1024)
+            .map(|b| base64::engine::general_purpose::STANDARD.encode(b));
+        jobs.push(PrintedJob {
+            n,
+            kind,
+            title: v["title"].as_str().unwrap_or("").to_string(),
+            copies: v["copies"].as_u64().unwrap_or(1) as u32,
+            bytes: v["bytes"].as_u64().unwrap_or(0),
+            data,
+        });
+    }
+    jobs
+}
+
+/// What the app has printed so far, oldest first, and whether it is still
+/// running.
+#[tauri::command]
+pub(crate) async fn ide_hw_jobs(path: String) -> Result<serde_json::Value, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let running = {
+            let mut runs = hardware_runs().lock().unwrap_or_else(|e| e.into_inner());
+            match runs.get_mut(&project) {
+                Some((child, _)) => matches!(child.try_wait(), Ok(None)),
+                None => false,
+            }
+        };
+        let jobs = printed_jobs(&spool_for(&project).join(PRETEND_PRINTER));
+        Ok(serde_json::json!({ "running": running, "jobs": jobs }))
+    })
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn ide_pack(app: tauri::AppHandle, path: String) -> Result<PackResult, String> {
     blocking(move || {
@@ -1882,6 +2025,39 @@ pub(crate) fn ide_stop(path: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The workbench reads a pretend printer's folder as the engine's spool
+    /// writes it (printer_host.rs SpoolFolder): in order, with the note's
+    /// title and copies, the bytes as base64, and stops at the first gap.
+    #[test]
+    fn the_workbench_reads_what_the_pretend_printer_got() {
+        let dir = tempfile::tempdir().expect("dir");
+        let zpl = b"^XA^FO50,50^A0N,30,30^FDWO-1042^FS^XZ";
+        std::fs::write(dir.path().join("job-1.raw"), zpl).unwrap();
+        std::fs::write(
+            dir.path().join("job-1.json"),
+            r#"{"kind":"raw","copies":2,"paper":"printer-default","title":"WO-1042","bytes":36}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("job-2.png"), b"\x89PNG").unwrap();
+        std::fs::write(
+            dir.path().join("job-2.json"),
+            r#"{"kind":"png","copies":1,"title":"photo","bytes":4}"#,
+        )
+        .unwrap();
+        // A job after a gap is not read: the spool numbers without gaps.
+        std::fs::write(dir.path().join("job-4.json"), r#"{"kind":"raw"}"#).unwrap();
+        let jobs = printed_jobs(dir.path());
+        assert_eq!(jobs.len(), 2);
+        assert_eq!((jobs[0].n, jobs[0].copies), (1, 2));
+        assert_eq!(jobs[0].title, "WO-1042");
+        let back = base64::engine::general_purpose::STANDARD
+            .decode(jobs[0].data.as_deref().unwrap())
+            .unwrap();
+        assert_eq!(back, zpl);
+        assert_eq!(jobs[1].kind, "png");
+        assert!(printed_jobs(&dir.path().join("none")).is_empty());
+    }
     use super::*;
     use std::io::Write as _;
 
