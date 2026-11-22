@@ -3320,3 +3320,88 @@ a[href]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2p
   }
   .set-input { min-height: 44px; }
 }
+
+/* ---- Studio's workbench (IC-995): Devices, Permissions, Checks ----------
+ * The IDE's right column, in the session view's language: pill tabs, cards
+ * that rise in the order they happened, the shared hover and selected
+ * shades. Tokens only, so the light theme follows. Driven by workbench.js. */
+.ide-prev.wb { min-height: 0; overflow: hidden; }
+.wb-h { height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; }
+.wb-h .grow { flex: 1; }
+.wb-h .ib { width: 30px; height: 30px; border: 0; border-radius: 9px; display: grid; place-items: center; background: none; color: var(--ink-2); cursor: pointer; }
+.wb-h .ib:hover { background: var(--hover); color: var(--ink); }
+.wb-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.wb-tabs button { height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: none; cursor: pointer; font: 500 12px var(--sans); color: var(--ink-3); transition: background .2s, color .2s; }
+.wb-tabs button:not(.on):hover { color: var(--ink); background: var(--hover); }
+.wb-tabs button.on { color: var(--ink); background: var(--surface); box-shadow: 0 0 0 1px var(--hair), 0 1px 2px rgba(0, 0, 0, .12); }
+.wb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wb-pane.hidden { display: none; }
+.wb-scroll { flex: 1; min-height: 0; overflow: auto; padding: 2px 16px 18px; }
+.wb-lead { margin: 4px 0 12px; font: 400 12.5px/1.5 var(--sans); color: var(--ink-3); }
+.wb-lead code { font: 11.5px var(--mono); color: var(--ink-2); }
+
+/* Devices */
+.wb-devs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
+.wb-devs button { height: 26px; padding: 0 11px; border: 0; border-radius: 999px; cursor: pointer; font: 500 12px var(--sans); color: var(--ink-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); transition: background .2s, color .2s; }
+.wb-devs button:not(.on):hover { background: var(--hover); color: var(--ink); }
+.wb-devs button.on { color: var(--ink); background: var(--selected); box-shadow: inset 0 0 0 1px var(--line-strong, var(--hair)); }
+.wb-stage { flex: 1; min-height: 0; overflow: auto; }
+.wb-stage .ip-frame.hidden, .wb-shots.hidden, .wb-permshot.hidden { display: none; }
+.wb-shots { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 4px 16px 12px; }
+.wb-shots.all { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: center; }
+.wb-dev { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; animation: krFadeUp .45s var(--ease) both; }
+.wb-dev.tall { width: min(100%, 220px); }
+.wb-dev.wide { width: 100%; }
+/* Side by side, each keeps its real size against the others: a tablet is
+   wider than a phone, not the same width. */
+.wb-shots.all .wb-dev.tall { width: calc(var(--w) * 0.2px); }
+.wb-shots.all .wb-dev.wide { width: min(100%, calc(var(--w) * 0.2px)); }
+.wb-glass { width: 100%; aspect-ratio: var(--ar); overflow: hidden; display: grid; place-items: center; background: var(--surface-2); border-radius: 12px; box-shadow: 0 0 0 1px var(--hair), 0 30px 60px -36px rgba(24, 24, 27, .35); }
+.wb-dev.tall .wb-glass { border-radius: 22px; box-shadow: 0 0 0 5px var(--surface-3), 0 0 0 6px var(--hair), 0 30px 60px -36px rgba(24, 24, 27, .35); }
+.wb-shots.all .wb-dev.tall .wb-glass { border-radius: 14px; box-shadow: 0 0 0 3px var(--surface-3), 0 0 0 4px var(--hair); }
+.wb-glass img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; animation: krMat .7s var(--ease) both; }
+.wb-dev figcaption { font: 500 11.5px var(--sans); color: var(--ink-2); text-align: center; line-height: 1.35; }
+.wb-dev figcaption span { display: block; color: var(--ink-3); font-weight: 400; font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wb-wait { display: flex; flex-direction: column; align-items: center; gap: 8px; font: 400 11.5px var(--sans); color: var(--ink-3); }
+.wb-wait i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); animation: krPing 1.4s var(--ease) infinite; }
+.wb-no { padding: 14px; font: 400 12px/1.5 var(--sans); color: var(--ink-2); text-align: left; }
+.wb-no b { display: block; margin-bottom: 4px; color: var(--danger); font-weight: 500; }
+.wb-no pre { margin: 0; white-space: pre-wrap; font: 11px/1.5 var(--mono); color: var(--ink-3); }
+
+/* Permissions */
+.wb-perms { display: flex; flex-direction: column; gap: 8px; }
+.wb-perm { display: flex; align-items: flex-start; gap: 12px; padding: 12px 12px 12px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); transition: opacity .25s, background .25s; animation: krFadeUp .4s var(--ease) both; }
+.wb-perm.is-off { background: var(--surface-2); }
+.wb-perm.is-off .wb-perm-t { opacity: .6; }
+.wb-perm-t { flex: 1; min-width: 0; }
+.wb-perm-t b { font: 500 13px var(--sans); color: var(--ink); }
+.wb-perm-t em { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font: 500 10.5px var(--sans); font-style: normal; color: var(--ink-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.wb-perm-t p { margin: 3px 0 4px; font: 400 12px/1.45 var(--sans); color: var(--ink-3); }
+.wb-perm-t code { font: 10.5px var(--mono); color: var(--ink-4); }
+.wb-perm .sw { flex: none; margin-top: 2px; }
+.wb-permshot { margin-top: 16px; }
+.wb-said { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font: 400 12.5px/1.5 var(--sans); color: var(--ink-2); background: var(--accent-soft); }
+.wb-permdev { display: flex; justify-content: center; }
+
+/* Checks */
+.wb-chk-top { display: flex; align-items: flex-start; gap: 12px; }
+.wb-chk-top .wb-lead { flex: 1; }
+.wb-go { flex: none; margin-top: 2px; height: 30px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer; font: 500 12.5px var(--sans); color: var(--surface); background: var(--ink); transition: transform .2s var(--spring), opacity .2s; }
+.wb-go:hover { transform: translateY(-1px); }
+.wb-go:disabled { opacity: .55; cursor: default; transform: none; }
+.wb-cards { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; position: relative; }
+.wb-card { position: relative; display: flex; gap: 12px; padding: 11px 14px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--hair); animation: krFadeUp .45s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.wb-card b { font: 500 13px var(--sans); color: var(--ink); }
+.wb-card p { margin: 2px 0 0; font: 400 12px/1.45 var(--sans); color: var(--ink-3); }
+.wb-card pre { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; font: 11.5px/1.5 var(--mono); color: var(--ink-2); background: var(--surface-2); }
+.wb-mark { flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; }
+.wb-card.ok .wb-mark { background: var(--green-soft); }
+.wb-card.ok .wb-mark::after { content: ""; width: 8px; height: 4px; margin-top: -2px; border: solid var(--green-ink); border-width: 0 0 1.8px 1.8px; transform: rotate(-45deg); }
+.wb-card.bad { box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+.wb-card.bad .wb-mark { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.wb-card.bad .wb-mark::after { content: "!"; font: 700 11px var(--sans); color: var(--danger); }
+.wb-card.note .wb-mark { background: var(--accent-soft); }
+.wb-card.note .wb-mark::after { content: "i"; font: 600 11px var(--sans); color: var(--accent); }
+.wb-card.wait .wb-mark { background: var(--surface-2); }
+.wb-card.wait .wb-mark::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: krPing 1.4s var(--ease) infinite; }
+.wb-card.wait b { color: var(--ink-3); }

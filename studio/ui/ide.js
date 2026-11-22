@@ -911,6 +911,9 @@
         problems([], notes);
         checkDisk();
         if (r.shot) showShot(r.shot);
+        // The workbench (workbench.js) refreshes its devices and asks from
+        // the build that just passed.
+        window.dispatchEvent(new CustomEvent("kr-ide-built", { detail: { path: ide.path } }));
         panelTab("term");
         if (runSave() && why && (why === "you saved" || / changed$/.test(why))) setTimeout(() => runApp("you saved"), 0);
       } else {
@@ -1261,6 +1264,7 @@
     $("ideAns").textContent = ""; $("ideAnsTab").classList.add("hidden");
     problems([]); panelTab("term");
     setStatus("idle", "Not built yet");
+    window.dispatchEvent(new CustomEvent("kr-ide-open", { detail: { path: ide.path, name: ide.name } }));
     paintAgent();
     try { showView("ide"); } catch (e) { /* app.js not loaded */ }
     loadSdk().then(paintApi);

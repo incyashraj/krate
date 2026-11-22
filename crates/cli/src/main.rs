@@ -23553,6 +23553,26 @@ fn print_effective_capabilities(
             requested: manifest
                 .map(|m| m.capabilities.iter().map(|c| c.cap.to_string()).collect())
                 .unwrap_or_default(),
+            // The same asks as a person reads them -- plain words, the
+            // author's reason, required or not -- for Studio's workbench,
+            // which turns each into a switch (IC-995).
+            asks: manifest
+                .map(|m| {
+                    m.capabilities
+                        .iter()
+                        .map(|c| RunCapsAsk {
+                            cap: c.cap.to_string(),
+                            plain: c
+                                .cap
+                                .parse::<Capability>()
+                                .map(|cap| cap.plain())
+                                .unwrap_or_else(|_| c.cap.to_string()),
+                            rationale: c.rationale.clone(),
+                            required: c.required,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         };
         println!("{}", serde_json::to_string_pretty(&dump)?);
         return Ok(());
@@ -23735,6 +23755,18 @@ struct RunCapsDump {
     /// Everything the manifest declares, whether or not it is granted yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     requested: Vec<String>,
+    /// `requested` in a person's words, with each ask's reason and whether
+    /// the app cannot open without it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    asks: Vec<RunCapsAsk>,
+}
+
+#[derive(Debug, Serialize)]
+struct RunCapsAsk {
+    cap: String,
+    plain: String,
+    rationale: String,
+    required: bool,
 }
 
 #[derive(Debug, Serialize)]

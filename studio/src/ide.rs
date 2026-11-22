@@ -1430,6 +1430,204 @@ fn build(engine: &Path, project: &Path, sink: Sink) -> Result<BuildResult, Strin
     })
 }
 
+/* ---- the workbench (IC-995): devices, permissions, checks ------------ */
+
+/// One screen the workbench shows the app on.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct DeviceSize {
+    name: String,
+    width: u32,
+    height: u32,
+}
+
+/// The app's first frame on one screen, or why it did not open there.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct DeviceShot {
+    name: String,
+    width: u32,
+    height: u32,
+    shot: Option<String>,
+    error: Option<String>,
+}
+
+/// The app, built, opened headless at each size at once (`KRATE_SCREEN`
+/// makes the window that screen, as check-app's screens stage does), with
+/// exactly the permissions given -- so a switch turned off on the
+/// Permissions tab shows how the app reacts without it. `None` grants all
+/// the app declares.
+#[tauri::command]
+pub(crate) async fn ide_devices(
+    path: String,
+    devices: Vec<DeviceSize>,
+    grants: Option<Vec<String>>,
+) -> Result<Vec<DeviceShot>, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let wasm = wasm_path(&project);
+        if !wasm.is_file() {
+            return Err("Build it first: there is no app to show yet.".to_string());
+        }
+        let engine = engine()?;
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let shots = std::thread::scope(|scope| {
+            let runs: Vec<_> = devices
+                .iter()
+                .take(6)
+                .map(|device| {
+                    let (engine, project, wasm, grants) = (&engine, &project, &wasm, &grants);
+                    scope.spawn(move || {
+                        shoot_on(
+                            engine,
+                            project,
+                            wasm,
+                            device,
+                            grants.as_deref(),
+                            SEQ.fetch_add(1, Ordering::SeqCst),
+                        )
+                    })
+                })
+                .collect();
+            runs.into_iter()
+                .map(|run| {
+                    run.join()
+                        .unwrap_or_else(|_| Err("the run stopped".to_string()))
+                })
+                .zip(devices.iter())
+                .map(|(result, device)| {
+                    let (shot, error) = match result {
+                        Ok(shot) => (Some(shot), None),
+                        Err(why) => (None, Some(why)),
+                    };
+                    DeviceShot {
+                        name: device.name.clone(),
+                        width: device.width,
+                        height: device.height,
+                        shot,
+                        error,
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+        Ok(shots)
+    })
+    .await
+}
+
+fn shoot_on(
+    engine: &Path,
+    project: &Path,
+    wasm: &Path,
+    device: &DeviceSize,
+    grants: Option<&[String]>,
+    seq: u64,
+) -> Result<String, String> {
+    let width = device.width.clamp(200, 4000);
+    let height = device.height.clamp(200, 4000);
+    let png =
+        std::env::temp_dir().join(format!("krate-ide-device-{}-{seq}.png", std::process::id()));
+    let _ = std::fs::remove_file(&png);
+    let mut cmd = engine_cmd(engine, false);
+    cmd.current_dir(project)
+        .env("KRATE_SCREEN", format!("{width}x{height}"))
+        .arg("run")
+        .arg(wasm)
+        .arg("--manifest")
+        .arg(project.join("manifest.toml"))
+        .arg("--headless")
+        .arg("--shoot")
+        .arg(&png);
+    match grants {
+        Some(grants) => {
+            for grant in grants {
+                cmd.arg("--grant").arg(grant);
+            }
+        }
+        None => {
+            cmd.arg("--auto-grant");
+        }
+    }
+    let out = cmd
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+    let bytes = std::fs::read(&png).ok();
+    let _ = std::fs::remove_file(&png);
+    match bytes {
+        Some(bytes) => Ok(format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )),
+        None => {
+            let said = String::from_utf8_lossy(&out.stderr);
+            let said = said
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with("krate: canvas"))
+                .take(8)
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(if said.is_empty() {
+                "It did not open on this screen.".to_string()
+            } else {
+                said
+            })
+        }
+    }
+}
+
+/// What the app asks for, as a person reads it: each permission in plain
+/// words, the author's reason, and whether the app cannot open without it.
+#[tauri::command]
+pub(crate) async fn ide_asks(path: String) -> Result<serde_json::Value, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let wasm = wasm_path(&project);
+        if !wasm.is_file() {
+            return Err("Build it first: there is no app to read yet.".to_string());
+        }
+        let engine = engine()?;
+        let out = engine_cmd(&engine, false)
+            .current_dir(&project)
+            .arg("run")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(project.join("manifest.toml"))
+            .args(["--dump-caps", "--dump-caps-format", "json"])
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        let dump: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .map_err(|_| "The engine did not say what the app asks for.".to_string())?;
+        Ok(dump.get("asks").cloned().unwrap_or(serde_json::json!([])))
+    })
+    .await
+}
+
+/// check-app in full, as data: every stage it passed or the one it stopped
+/// at, with the fix, the notes, and the app's own task -- for the Checks
+/// tab's cards. Its lines still stream to the terminal as a build does.
+#[tauri::command]
+pub(crate) async fn ide_checks(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let _job = claim(&project)?;
+        let engine = engine()?;
+        let mut cmd = engine_cmd(&engine, false);
+        cmd.arg("check-app").arg(&project).arg("--json");
+        let ran = run_streamed(cmd, &project, &line_sink(app, &project))?;
+        ran.out
+            .iter()
+            .rev()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter(|v| v.get("ok").is_some())
+            .ok_or_else(|| tail_of(&ran, "the engine stopped without a verdict"))
+    })
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn ide_pack(app: tauri::AppHandle, path: String) -> Result<PackResult, String> {
     blocking(move || {
