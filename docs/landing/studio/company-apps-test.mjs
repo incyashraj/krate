@@ -92,7 +92,13 @@ check(/<section class="kr-under co-apps" id="companyApps"[^>]*hidden>/.test(html
 check(/id="companyAppsH">Company apps</.test(html), "it is called Company apps");
 check(/\.co-open \{[^}]*min-height: 44px/.test(css), "Open is at least 44px tall");
 check(/@media \(max-width: 860px\) \{ \.co-list \{ grid-template-columns: minmax\(0, 1fr\); \} \}/.test(css), "one card to a row on a narrow window");
-const rules = css.slice(css.indexOf("/* ---------------------------------------------------------------- company apps"));
+// The section only: from its heading to the next one. Running to the end of
+// the file judged every section added after it (the workbench's white label
+// paper among them) and failed the site deploy on rules that are not these.
+const sectionStart = css.indexOf("/* ---------------------------------------------------------------- company apps");
+const sectionEnd = css.indexOf("\n/* ----------------------------------------------------------------", sectionStart + 10);
+const rules = css.slice(sectionStart, sectionEnd > sectionStart ? sectionEnd : undefined);
+check(sectionStart >= 0 && rules.includes(".co-open"), "the section the rule is about is the one read");
 check(!/#[0-9a-f]{3,8}\b|rgba?\(/i.test(rules), "the section's rules use tokens only");
 
 /* ---- one card per app ------------------------------------------------- */
