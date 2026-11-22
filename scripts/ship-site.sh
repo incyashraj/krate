@@ -64,6 +64,9 @@ if ! KRATE_SITE_QUICK=$QUICK python3 scripts/build-site-local.py --out "$OUT" --
   echo "ship-site: the build failed, so nothing was shipped. The lines above say where." >&2
   exit 1
 fi
+# As the deploy publishes it: no dot-file but .well-known.
+find "$OUT" -mindepth 1 -name '.*' ! -path "$OUT/.well-known" -prune -exec rm -rf {} +
+test -f "$OUT/.well-known/security.txt" || { echo "ship-site: the build has no .well-known/security.txt" >&2; exit 1; }
 cp cloud/site/_headers "$OUT/_headers"
 built=$(date +%s)
 
