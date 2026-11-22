@@ -643,6 +643,22 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
             let w = b.w;
             boxes.push(b);
             Some((w, (boxes.len() - 1) as u16, NONE, rsize))
+        } else if st.link
+            && !st.syntax
+            && live
+            && !show_syntax
+            && matches!(seg.target, Some(Target::Wiki(..)))
+            && text
+                .get(seg.start..seg.end)
+                .is_some_and(|t| t.contains('#'))
+            && text.get(..seg.start).is_some_and(|h| h.ends_with("[["))
+        {
+            // `[[Note#Heading]]` reads "Note > Heading", as Obsidian shows it.
+            let raw = text.get(seg.start..seg.end).unwrap_or("");
+            let shown = raw.trim_start_matches('#').replace('#', " > ");
+            let w = look::width_styled(c, &shown, rsize, rst);
+            alts.push(shown);
+            Some((w, NONE, (alts.len() - 1) as u16, rsize))
         } else if st.footnote && reading && !st.syntax {
             let n = nums.get(foot_i).copied().unwrap_or(foot_i + 1);
             foot_i += 1;
@@ -678,7 +694,11 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
                     bx,
                     alt,
                     size: asize,
-                    rise: if alt != NONE { -size * 0.38 } else { 0.0 },
+                    rise: if alt != NONE && st.footnote {
+                        -size * 0.38
+                    } else {
+                        0.0
+                    },
                     ..base
                 },
             );
@@ -1622,7 +1642,7 @@ pub fn draw_line(
                         c,
                         name,
                         ox + width - lw - 4.0,
-                        oy + l.h * 0.5 + 10.0,
+                        oy + 13.0,
                         11.0,
                         400,
                         t.faint,
@@ -1818,7 +1838,10 @@ pub fn draw_line(
         }
         if run.alt != NONE {
             if let Some(a) = l.alts.get(run.alt as usize) {
-                look::text_styled(c, a, x, base, run.size, look::style(400, false, false), col);
+                look::text_styled(c, a, x, base, run.size, run.style(), col);
+                if st.link {
+                    fill(c, r(x, base + 2.0, run.w, 1.0), look::alpha(col, 0.7));
+                }
             }
             continue;
         }
@@ -1900,7 +1923,8 @@ fn run_act(run: &Run, text: &str) -> Option<Act> {
 /// `follow` is whether a link under it should be followed (it is not on
 /// the line being edited unless Cmd is held).
 pub fn press(c: u64, doc: &Doc, shown: &Shown, px: f32, py: f32, follow: bool) -> Option<Act> {
-    for (h, rc) in &shown.find {
+    // The bar's parts before the bar itself.
+    for (h, rc) in shown.find.iter().rev() {
         if rc.contains(px, py) {
             return Some(Act::Find(*h));
         }

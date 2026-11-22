@@ -25,12 +25,12 @@ fn occurrences(line: &str, pat: &str) -> usize {
 /// A `$$` line that opens or closes a display-math block (one that holds a
 /// whole `$$...$$` toggles nothing).
 pub fn is_math_mark(line: &str) -> bool {
-    occurrences(line, "$$") % 2 == 1
+    line.as_bytes().contains(&b'$') && occurrences(line, "$$") % 2 == 1
 }
 
 /// A `%%` line that opens or closes a comment block.
 pub fn is_comment_mark(line: &str) -> bool {
-    occurrences(line, "%%") % 2 == 1
+    line.as_bytes().contains(&b'%') && occurrences(line, "%%") % 2 == 1
 }
 
 /// The delimiter lines of one kind of block, kept as the note is edited.

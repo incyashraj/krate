@@ -1712,11 +1712,13 @@ impl Ui {
     /// find bar. True when it was one (src/guest/editor.rs decides what).
     fn editor_press(&mut self, px: f32, py: f32, m: Mods) -> bool {
         // The title above the note renames it.
-        let on_title = self
-            .shown
-            .rows
-            .first()
-            .is_some_and(|(vi, y, l)| *vi == 0 && py >= *y && py < y + l.h);
+        let on_bar = self.shown.find.iter().any(|(_, rc)| rc.contains(px, py));
+        let on_title = !on_bar
+            && self
+                .shown
+                .rows
+                .first()
+                .is_some_and(|(vi, y, l)| *vi == 0 && py >= *y && py < y + l.h);
         if on_title && self.app.doc().is_some_and(|d| d.mode != Mode::Reading) {
             if let Some(path) = self.app.doc().map(|d| d.path.clone()) {
                 self.app.start_rename(&path);
@@ -3799,6 +3801,16 @@ impl krate::Guest for Component {
             ui.app.search = crate::app::Input::with(q);
             ui.app.run_search();
             ui.app.left = LeftPane::Search;
+        }
+        // `preview=<link>`: show the page preview for a link, as Cmd-hover
+        // does (a headless run has no pointer to hover with).
+        if let Some(target) = arg(&raw, "preview") {
+            ui.cache.preview = Some(widgets::Preview {
+                target: String::from(target),
+                x: 520.0,
+                y: 300.0,
+                rect: None,
+            });
         }
         if raw.split('\n').any(|a| a == "reading") {
             ui.app.run(Cmd::ToggleReading);

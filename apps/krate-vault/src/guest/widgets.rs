@@ -1552,26 +1552,37 @@ pub fn draw_find_bar(
         t.muted,
     );
     let mut x = q.right() + 8.0;
-    for (hit, glyph) in [
-        (FindHit::Prev, "↑"),
-        (FindHit::Next, "↓"),
-        (FindHit::ToggleReplace, "⇄"),
-        (FindHit::Close, "×"),
+    for hit in [
+        FindHit::Prev,
+        FindHit::Next,
+        FindHit::ToggleReplace,
+        FindHit::Close,
     ] {
         let b = r(x, q.y, 30.0, 30.0);
         if hit == FindHit::ToggleReplace && f.replacing {
             round(c, b, 5.0, t.hover);
         }
-        let gw = look::width(c, glyph, 16.0, 400);
-        look::text(
-            c,
-            glyph,
-            b.x + (b.w - gw) * 0.5,
-            b.y + 21.0,
-            16.0,
-            400,
-            t.muted,
-        );
+        let (cx, cy) = (b.x + 15.0, b.y + 15.0);
+        let ink = t.muted;
+        match hit {
+            FindHit::Prev | FindHit::Next => {
+                let d = if hit == FindHit::Prev { -1.0 } else { 1.0 };
+                look::line(c, cx, cy - 6.0 * d, cx, cy + 6.0 * d, 1.5, ink);
+                look::line(c, cx, cy + 6.0 * d, cx - 4.5, cy + 1.5 * d, 1.5, ink);
+                look::line(c, cx, cy + 6.0 * d, cx + 4.5, cy + 1.5 * d, 1.5, ink);
+            }
+            FindHit::ToggleReplace => {
+                // Two arrows, one each way: replace.
+                look::line(c, cx - 6.0, cy - 3.0, cx + 6.0, cy - 3.0, 1.5, ink);
+                look::line(c, cx + 6.0, cy - 3.0, cx + 3.0, cy - 6.0, 1.5, ink);
+                look::line(c, cx + 6.0, cy + 3.0, cx - 6.0, cy + 3.0, 1.5, ink);
+                look::line(c, cx - 6.0, cy + 3.0, cx - 3.0, cy + 6.0, 1.5, ink);
+            }
+            _ => {
+                look::line(c, cx - 5.0, cy - 5.0, cx + 5.0, cy + 5.0, 1.5, ink);
+                look::line(c, cx + 5.0, cy - 5.0, cx - 5.0, cy + 5.0, 1.5, ink);
+            }
+        }
         said.button(
             b,
             match hit {

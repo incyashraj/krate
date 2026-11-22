@@ -289,9 +289,11 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
     let reading = d.mode == Mode::Reading;
     // Folding: Cmd+Option+[ folds, Cmd+Option+] unfolds (the editor's own
     // keys); with Shift, every heading and list at once.
-    if m.primary && m.alt && (k == "[" || k == "]" || key == "BracketLeft" || key == "BracketRight")
-    {
-        let fold = k == "[" || key == "BracketLeft";
+    // Option+[ and Option+] arrive as the quotes a Mac types with them.
+    let open_b = matches!(k.as_str(), "[" | "bracketleft" | "“");
+    let close_b = matches!(k.as_str(), "]" | "bracketright" | "‘");
+    if m.primary && m.alt && (open_b || close_b) {
+        let fold = open_b;
         if m.shift {
             d.fold_all(fold);
         } else {

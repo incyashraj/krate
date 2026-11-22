@@ -261,7 +261,8 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
     let now = app.now;
     let doc = app.doc_mut()?;
     let k = lower(key);
-    if m.primary && k == "f" && !m.shift {
+    // With Option held a Mac sends the letter Option makes: "ƒ".
+    if m.primary && (k == "f" || k == "ƒ") && !m.shift {
         open(doc, m.alt && doc.mode != Mode::Reading);
         return Some(true);
     }

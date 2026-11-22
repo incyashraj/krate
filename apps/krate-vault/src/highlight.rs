@@ -263,6 +263,7 @@ pub fn display_name(lang: &str) -> &str {
         "cpp" | "c++" => "C++",
         "swift" => "Swift",
         "md" | "markdown" => "Markdown",
+        "mermaid" => "Mermaid",
         _ => lang,
     }
 }

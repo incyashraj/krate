@@ -181,6 +181,11 @@ impl Doc {
         };
         d.rebuild_blocks();
         d.recount();
+        // The caret starts below the Properties block, as it does in
+        // Obsidian, so the block shows as properties, not as YAML.
+        if let Some(f) = d.front {
+            d.cur = d.buf.clamp(Pos::new(f + 1, 0));
+        }
         d
     }
 
