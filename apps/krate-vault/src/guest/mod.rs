@@ -4166,6 +4166,10 @@ impl krate::Guest for Component {
             if let Some(d) = ui.app.next_due() {
                 due(d);
             }
+            // A playing picture's next frame (src/guest/widgets.rs).
+            if let Some(d) = widgets::anim_due(&ui.cache) {
+                due(d);
+            }
             if ui.app.vault.as_ref().is_some_and(|v| v.fs.real()) {
                 due((last_watch + disk::WATCH_EVERY_MS).saturating_sub(now));
             }

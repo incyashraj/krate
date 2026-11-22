@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="150" viewBox="0 0 300 150">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a90d9"/>
+      <stop offset="1" stop-color="#bfe0ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="150" rx="12" fill="url(#sky)"/>
+  <path d="M0 120 Q 75 80 150 115 T 300 105 V 150 H 0 Z" fill="#3c8d3c"/>
+  <g transform="translate(230 40) rotate(15)">
+    <circle r="22" fill="#ffd34d" stroke="#e0a800" stroke-width="3"/>
+  </g>
+  <polygon points="60,118 85,70 110,118" fill="#7a5230"/>
+  <text x="150" y="30" font-size="20" text-anchor="middle" fill="#ffffff" font-weight="bold">SVG in a note</text>
+</svg>

@@ -1,20 +1,45 @@
-//! Pictures in notes: PNG, JPEG, GIF (its first frame) and BMP decoded to
-//! RGBA in the app, pure Rust and `no_std`, so `![[photo.jpg]]` shows the
-//! photo with nothing from the system. WebP, AVIF and SVG are named in the
-//! error the note shows; there is no decoder for them here yet.
+//! Pictures in notes: PNG, JPEG, GIF (every frame, for playing), BMP,
+//! WebP (lossy, lossless, animated) and SVG decoded to RGBA in the app,
+//! pure Rust and `no_std`, so `![[photo.jpg]]` shows the photo with
+//! nothing from the system. AVIF is named in the error the note shows:
+//! there is no AV1 decoder that runs in the app (K-1345).
 
 use alloc::string::String;
 use alloc::vec::Vec;
+#[cfg(target_arch = "wasm32")]
+#[allow(unused_imports)]
+use krate::prelude::*;
 use zune_core::bytestream::ZCursor;
 use zune_core::colorspace::ColorSpace;
 use zune_core::options::DecoderOptions;
 
 /// A decoded picture, row by row from the top left, four bytes a pixel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Picture {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    /// An animation's frames and how long each shows (ms), the first being
+    /// `rgba`; empty for a still picture.
+    pub anim: Vec<(Vec<u8>, u32)>,
+    /// An SVG's text, drawn by the caller over the picture.
+    pub texts: Vec<crate::svg::Text>,
+    /// The size it is shown at before any |width (an SVG is rasterised
+    /// at twice its size, to stay sharp, and shown at its own).
+    pub logical: (u32, u32),
+}
+
+impl Picture {
+    pub fn still(width: u32, height: u32, rgba: Vec<u8>) -> Picture {
+        Picture {
+            width,
+            height,
+            rgba,
+            anim: Vec::new(),
+            texts: Vec::new(),
+            logical: (width, height),
+        }
+    }
 }
 
 /// The widest or tallest a picture is kept at; a bigger one is scaled
@@ -35,22 +60,52 @@ pub fn decode(bytes: &[u8]) -> Result<Picture, String> {
     } else if bytes.starts_with(b"BM") {
         bmp(bytes)?
     } else if bytes.get(8..12) == Some(b"WEBP") {
-        return Err(err("WebP pictures cannot be shown yet"));
-    } else if bytes.get(4..12).is_some_and(|b| b.starts_with(b"ftypavif")) {
-        return Err(err("AVIF pictures cannot be shown yet"));
+        let d = crate::webp::decode(bytes)?;
+        let mut p = Picture::still(d.width, d.height, Vec::new());
+        if d.frames.len() > 1 {
+            p.anim = d.frames;
+            p.rgba = p.anim.first().map(|f| f.0.clone()).unwrap_or_default();
+        } else {
+            p.rgba = d.frames.into_iter().next().map(|f| f.0).unwrap_or_default();
+        }
+        p
+    } else if bytes
+        .get(4..12)
+        .is_some_and(|b| b.starts_with(b"ftypavi") || b.starts_with(b"ftypavis"))
+    {
+        return Err(err("AVIF pictures cannot be shown in Vault yet (K-1345)"));
     } else if bytes
         .iter()
-        .take(512)
+        .take(1024)
         .copied()
         .collect::<Vec<u8>>()
         .windows(4)
         .any(|w| w == b"<svg")
     {
-        return Err(err("SVG pictures cannot be shown yet"));
+        svg(bytes)?
     } else {
         return Err(err("This file is not a picture Vault can read"));
     };
     Ok(shrink(pic))
+}
+
+/// An SVG rasterised at its own size (at most MAX_SIDE), twice that when
+/// it is small, so it stays sharp on a high-density screen.
+fn svg(bytes: &[u8]) -> Result<Picture, String> {
+    let text = core::str::from_utf8(bytes).map_err(|_| err("The SVG is not text"))?;
+    let doc = crate::svg::parse(text)?;
+    let scale = if doc.w.max(doc.h) <= 1024.0 { 2.0 } else { 1.0 };
+    let fit = (MAX_SIDE as f32 / (doc.w.max(doc.h) * scale)).min(1.0);
+    let w = ((doc.w * scale * fit).round() as u32).max(1);
+    let h = ((doc.h * scale * fit).round() as u32).max(1);
+    let (rgba, texts) = crate::svg::rasterise(&doc, w, h);
+    let mut p = Picture::still(w, h, rgba);
+    p.texts = texts;
+    p.logical = (
+        (doc.w * fit).round().max(1.0) as u32,
+        (doc.h * fit).round().max(1.0) as u32,
+    );
+    Ok(p)
 }
 
 fn png(bytes: &[u8]) -> Result<Picture, String> {
@@ -65,11 +120,7 @@ fn png(bytes: &[u8]) -> Result<Picture, String> {
         .map_err(|_| err("The PNG could not be read"))?;
     let (w, h) = d.dimensions().ok_or_else(|| err("The PNG has no size"))?;
     let cs = d.colorspace().unwrap_or(ColorSpace::RGBA);
-    Ok(Picture {
-        width: w as u32,
-        height: h as u32,
-        rgba: to_rgba(raw, cs, w * h)?,
-    })
+    Ok(Picture::still(w as u32, h as u32, to_rgba(raw, cs, w * h)?))
 }
 
 fn jpeg(bytes: &[u8]) -> Result<Picture, String> {
@@ -81,11 +132,7 @@ fn jpeg(bytes: &[u8]) -> Result<Picture, String> {
     let raw = d.decode().map_err(|_| err("The JPEG could not be read"))?;
     let (w, h) = d.dimensions().ok_or_else(|| err("The JPEG has no size"))?;
     let cs = d.output_colorspace().unwrap_or(ColorSpace::RGBA);
-    Ok(Picture {
-        width: w as u32,
-        height: h as u32,
-        rgba: to_rgba(raw, cs, w * h)?,
-    })
+    Ok(Picture::still(w as u32, h as u32, to_rgba(raw, cs, w * h)?))
 }
 
 fn to_rgba(raw: Vec<u8>, cs: ColorSpace, pixels: usize) -> Result<Vec<u8>, String> {
@@ -118,30 +165,33 @@ fn shrink(p: Picture) -> Picture {
     let step = big.div_ceil(MAX_SIDE).max(2) as usize;
     let (w, h) = (p.width as usize, p.height as usize);
     let (nw, nh) = (w / step, h / step);
-    let mut out = Vec::with_capacity(nw * nh * 4);
-    for y in 0..nh {
-        for x in 0..nw {
-            let mut acc = [0u32; 4];
-            for dy in 0..step {
-                for dx in 0..step {
-                    let i = ((y * step + dy) * w + x * step + dx) * 4;
-                    for (k, a) in acc.iter_mut().enumerate() {
-                        *a += u32::from(p.rgba.get(i + k).copied().unwrap_or(0));
+    let small = |rgba: &[u8]| -> Vec<u8> {
+        let mut out = Vec::with_capacity(nw * nh * 4);
+        for y in 0..nh {
+            for x in 0..nw {
+                let mut acc = [0u32; 4];
+                for dy in 0..step {
+                    for dx in 0..step {
+                        let i = ((y * step + dy) * w + x * step + dx) * 4;
+                        for (k, a) in acc.iter_mut().enumerate() {
+                            *a += u32::from(rgba.get(i + k).copied().unwrap_or(0));
+                        }
                     }
                 }
+                let n = (step * step) as u32;
+                out.extend(acc.iter().map(|a| (a / n) as u8));
             }
-            let n = (step * step) as u32;
-            out.extend(acc.iter().map(|a| (a / n) as u8));
         }
-    }
-    Picture {
-        width: nw as u32,
-        height: nh as u32,
-        rgba: out,
-    }
+        out
+    };
+    let mut out = Picture::still(nw as u32, nh as u32, small(&p.rgba));
+    out.anim = p.anim.iter().map(|(f, d)| (small(f), *d)).collect();
+    out.texts = p.texts;
+    out.logical = p.logical;
+    out
 }
 
-// ---- GIF: the first frame -----------------------------------------------------------------
+// ---- GIF: every frame -----------------------------------------------------------------
 
 fn le16(b: &[u8], at: usize) -> usize {
     usize::from(b.get(at).copied().unwrap_or(0))
@@ -171,19 +221,31 @@ fn gif(b: &[u8]) -> Result<Picture, String> {
         at += n * 3;
     }
     let mut transparent: Option<u8> = None;
+    let mut disposal = 0u8;
+    let mut delay = 0u32;
     let mut out = alloc::vec![0u8; w * h * 4];
+    let mut frames: Vec<(Vec<u8>, u32)> = Vec::new();
+    let done = |frames: Vec<(Vec<u8>, u32)>| -> Result<Picture, String> {
+        let first = frames.first().map(|f| f.0.clone()).ok_or_else(bad)?;
+        let mut p = Picture::still(w as u32, h as u32, first);
+        if frames.len() > 1 {
+            p.anim = frames;
+        }
+        Ok(p)
+    };
     loop {
         match b.get(at).copied() {
             Some(0x21) => {
-                // An extension: a graphics control block may name the
-                // transparent colour.
+                // An extension: a graphics control block says how long the
+                // next frame shows, how it is cleared, and its transparent
+                // colour.
                 let label = b.get(at + 1).copied().unwrap_or(0);
                 at += 2;
-                if label == 0xF9
-                    && b.get(at).copied() == Some(4)
-                    && b.get(at + 1).copied().unwrap_or(0) & 1 != 0
-                {
-                    transparent = b.get(at + 4).copied();
+                if label == 0xF9 && b.get(at).copied() == Some(4) {
+                    let packed = b.get(at + 1).copied().unwrap_or(0);
+                    disposal = (packed >> 2) & 7;
+                    delay = le16(b, at + 2) as u32 * 10;
+                    transparent = (packed & 1 != 0).then(|| b.get(at + 4).copied()).flatten();
                 }
                 while let Some(len) = b.get(at).copied() {
                     at += 1 + usize::from(len);
@@ -239,6 +301,11 @@ fn gif(b: &[u8]) -> Result<Picture, String> {
                 } else {
                     (0..fh).collect()
                 };
+                let before = if disposal == 3 {
+                    Some(out.clone())
+                } else {
+                    None
+                };
                 for (k, y) in rows.iter().enumerate() {
                     for x in 0..fw {
                         let Some(&c) = idx.get(k * fw + x) else {
@@ -258,13 +325,41 @@ fn gif(b: &[u8]) -> Result<Picture, String> {
                         }
                     }
                 }
-                return Ok(Picture {
-                    width: w as u32,
-                    height: h as u32,
-                    rgba: out,
-                });
+                // As browsers do, a frame asking for 10 ms or less shows
+                // for 100 ms.
+                frames.push((out.clone(), if delay <= 10 { 100 } else { delay }));
+                if frames.len() >= 300 {
+                    return done(frames);
+                }
+                match disposal {
+                    2 => {
+                        for y in fy..(fy + fh).min(h) {
+                            for x in fx..(fx + fw).min(w) {
+                                let i = (y * w + x) * 4;
+                                if let Some(dst) = out.get_mut(i..i + 4) {
+                                    dst.copy_from_slice(&[0, 0, 0, 0]);
+                                }
+                            }
+                        }
+                    }
+                    3 => {
+                        if let Some(b0) = before {
+                            out = b0;
+                        }
+                    }
+                    _ => {}
+                }
+                transparent = None;
+                disposal = 0;
+                delay = 0;
             }
-            _ => return Err(bad()),
+            Some(0x3B) | None => return done(frames),
+            _ => {
+                if frames.is_empty() {
+                    return Err(bad());
+                }
+                return done(frames);
+            }
         }
     }
 }
@@ -381,11 +476,7 @@ fn bmp(b: &[u8]) -> Result<Picture, String> {
             out.extend_from_slice(&[px[2], px[1], px[0], a]);
         }
     }
-    Ok(Picture {
-        width: w as u32,
-        height: h as u32,
-        rgba: out,
-    })
+    Ok(Picture::still(w as u32, h as u32, out))
 }
 
 #[cfg(test)]
@@ -468,6 +559,16 @@ mod tests {
     }
 
     #[test]
+    fn animated_gifs_keep_every_frame() {
+        let p = decode(include_bytes!("webp/fixtures/anim.gif")).unwrap();
+        assert_eq!((p.width, p.height, p.anim.len()), (6, 4, 3));
+        let delays: Vec<u32> = p.anim.iter().map(|f| f.1).collect();
+        assert_eq!(delays, [50, 120, 100], "a 0 ms frame shows for 100 ms");
+        assert_eq!(&p.anim[1].0[..4], &[0, 0, 255, 255]);
+        assert_eq!(p.rgba, p.anim[0].0);
+    }
+
+    #[test]
     fn bmp_and_unknown_formats() {
         // A 1x1 24-bit BMP, blue.
         let mut b = alloc::vec![0u8; 58];
@@ -483,21 +584,19 @@ mod tests {
         assert_eq!(p.rgba, [0, 0, 255, 255]);
         let mut webp = Vec::from(&b"RIFF\0\0\0\0WEBPVP8 "[..]);
         webp.extend_from_slice(&[0; 8]);
-        assert!(decode(&webp).unwrap_err().contains("WebP"));
-        assert!(decode(b"<?xml?><svg xmlns=''></svg>")
-            .unwrap_err()
-            .contains("SVG"));
+        assert!(decode(&webp).is_err());
+        let s = decode(br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="2"><rect width="2" height="2" fill="red"/></svg>"#).unwrap();
+        assert_eq!((s.width, s.height), (8, 4), "drawn at twice its size");
+        assert_eq!(s.logical, (4, 2), "shown at its own");
+        assert_eq!(&s.rgba[..4], &[255, 0, 0, 255]);
+        assert_eq!(s.rgba[7 * 4 + 3], 0, "the right half is empty");
         assert!(decode(b"hello").is_err());
         assert!(decode(b"\x89PNG broken").is_err());
     }
 
     #[test]
     fn big_pictures_are_scaled_down() {
-        let p = Picture {
-            width: 4100,
-            height: 10,
-            rgba: alloc::vec![200; 4100 * 10 * 4],
-        };
+        let p = Picture::still(4100, 10, alloc::vec![200; 4100 * 10 * 4]);
         let s = shrink(p);
         assert!(s.width <= MAX_SIDE && s.height >= 1);
         assert_eq!(s.rgba.len(), (s.width * s.height * 4) as usize);

@@ -82,3 +82,8 @@ required = false
 cap = "ui.open-url"
 rationale = "Open a web link in a note in your browser"
 required = false
+
+[[capabilities]]
+cap = "net.connect:*:443"
+rationale = "Show the pictures a note embeds from the web (https:// links)"
+required = false

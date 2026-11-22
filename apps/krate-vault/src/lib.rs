@@ -64,6 +64,7 @@ pub mod tables;
 pub mod text;
 pub mod vault;
 pub mod vfs;
+pub mod webp;
 pub mod workspace;
 pub mod yaml;
 

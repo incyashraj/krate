@@ -37,8 +37,40 @@ pub enum NoteText {
 }
 
 pub enum Img {
-    Ready { handle: u64, w: u32, h: u32 },
+    Ready {
+        handle: u64,
+        w: u32,
+        h: u32,
+        /// An animation: each frame kept on the canvas, and its time (ms).
+        frames: Vec<(u64, u32)>,
+        /// An SVG's text, in the picture's own pixels.
+        texts: Vec<crate::svg::Text>,
+        /// The width of the pixels kept (the shown width is `w`).
+        px_w: u32,
+    },
     Failed(String),
+}
+
+/// A picture's frames kept on the canvas (or why it could not be).
+fn keep(c: u64, pic: crate::image::Picture) -> Img {
+    let Ok(handle) = krate::gfx::canvas_images::keep(c, pic.width, pic.height, &pic.rgba) else {
+        return Img::Failed(String::from("Krate could not keep the picture"));
+    };
+    let mut frames = Vec::new();
+    for (rgba, delay) in &pic.anim {
+        match krate::gfx::canvas_images::keep(c, pic.width, pic.height, rgba) {
+            Ok(h) => frames.push((h, (*delay).max(20))),
+            Err(_) => break,
+        }
+    }
+    Img::Ready {
+        handle,
+        w: pic.logical.0,
+        h: pic.logical.1,
+        frames,
+        texts: pic.texts,
+        px_w: pic.width,
+    }
 }
 
 /// Embedded notes and pictures, read from the vault between frames.
@@ -49,6 +81,13 @@ pub struct Env {
     want_notes: BTreeSet<String>,
     want_images: BTreeSet<String>,
     generation: u64,
+    /// Pictures being fetched from the web: their key and request.
+    fetching: Vec<(String, u64)>,
+    /// The clock animated pictures play by (ms), set each frame.
+    pub now: u64,
+    /// When the next frame of a playing picture is due (ms on `now`'s
+    /// clock), set while drawing.
+    pub due: core::cell::Cell<Option<u64>>,
 }
 
 impl Env {
@@ -83,9 +122,22 @@ impl Env {
     }
 }
 
+/// How long until a playing picture needs its next frame (ms), so the app
+/// wakes for it; `None` when nothing plays. Cleared each time it is read.
+pub fn anim_due(cache: &LayCache) -> Option<u64> {
+    let due = cache.env.due.take()?;
+    let now = krate::time::monotonic_nanos() / 1_000_000;
+    Some(due.saturating_sub(now).max(16))
+}
+
 /// Read what the last frame asked for. True when something arrived (the
 /// note should be drawn again).
 pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
+    cache.env.now = krate::time::monotonic_nanos() / 1_000_000;
+    let web = poll_web(&mut cache.env, c);
+    if web {
+        cache.clear();
+    }
     let env = &mut cache.env;
     let Some(gen) = app.vault.as_ref().map(|v| v.generation) else {
         return false;
@@ -126,6 +178,31 @@ pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
     }
     for key in core::mem::take(&mut env.want_images) {
         let (target, folder) = key.split_once('\n').unwrap_or((key.as_str(), ""));
+        if target.starts_with("http://") || target.starts_with("https://") {
+            // A picture from the web: asked for now, kept when it comes.
+            let req = krate::net::Request {
+                method: krate::net::HttpMethod::Get,
+                url: String::from(target),
+                // Some picture hosts refuse a request that names no client.
+                headers: alloc::vec![krate::net::Header {
+                    name: String::from("User-Agent"),
+                    value: String::from("Vault/0.1 (a Krate notes app)"),
+                }],
+                body: Vec::new(),
+                timeout_millis: Some(20_000),
+            };
+            match krate::net::begin(req) {
+                Ok(h) => env.fetching.push((key.clone(), h)),
+                Err(_) => {
+                    env.images.insert(
+                        key.clone(),
+                        Img::Failed(String::from("Krate did not let Vault fetch this picture")),
+                    );
+                    got = true;
+                }
+            }
+            continue;
+        }
         let img = match app.vault.as_mut() {
             Some(v) => load_image(v, target, folder, c),
             None => Img::Failed(String::from("No vault is open")),
@@ -139,10 +216,48 @@ pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
     got
 }
 
-fn load_image(v: &mut crate::vault::Vault, target: &str, folder: &str, c: u64) -> Img {
-    if target.starts_with("http://") || target.starts_with("https://") {
-        return Img::Failed(String::from("Pictures from the web are not loaded"));
+/// Pictures from the web that arrived since the last frame.
+fn poll_web(env: &mut Env, c: u64) -> bool {
+    if env.fetching.is_empty() {
+        return false;
     }
+    let mut got = false;
+    let mut still = Vec::new();
+    for (key, h) in core::mem::take(&mut env.fetching) {
+        match krate::net::poll(h) {
+            krate::net::FetchStatus::Pending => still.push((key, h)),
+            krate::net::FetchStatus::Ready(res) if (200..300).contains(&res.status) => {
+                let img = match crate::image::decode(&res.body) {
+                    Ok(pic) => keep(c, pic),
+                    Err(why) => Img::Failed(why),
+                };
+                env.images.insert(key, img);
+                got = true;
+            }
+            krate::net::FetchStatus::Ready(res) => {
+                env.images.insert(
+                    key,
+                    Img::Failed(alloc::format!(
+                        "The picture could not be fetched (HTTP {})",
+                        res.status
+                    )),
+                );
+                got = true;
+            }
+            _ => {
+                env.images.insert(
+                    key,
+                    Img::Failed(String::from("The picture could not be fetched")),
+                );
+                got = true;
+            }
+        }
+    }
+    env.fetching = still;
+    got
+}
+
+fn load_image(v: &mut crate::vault::Vault, target: &str, folder: &str, c: u64) -> Img {
     let target = target.trim_start_matches("./").trim_start_matches('/');
     // Where Obsidian looks: next to the note, at the vault's root, then in
     // any folder (the attachment folder a vault sets is one of them).
@@ -157,14 +272,7 @@ fn load_image(v: &mut crate::vault::Vault, target: &str, folder: &str, c: u64) -
             continue;
         }
         return match v.fs.read_bytes(&p).and_then(|b| crate::image::decode(&b)) {
-            Ok(pic) => match krate::gfx::canvas_images::keep(c, pic.width, pic.height, &pic.rgba) {
-                Ok(handle) => Img::Ready {
-                    handle,
-                    w: pic.width,
-                    h: pic.height,
-                },
-                Err(_) => Img::Failed(String::from("Krate could not keep the picture")),
-            },
+            Ok(pic) => keep(c, pic),
             Err(why) => Img::Failed(why),
         };
     }
@@ -1206,13 +1314,65 @@ pub fn draw(
             note,
             ..
         } => match (note, env.image_ready(target, folder)) {
-            (None, Some(Img::Ready { handle, .. })) => {
+            (
+                None,
+                Some(Img::Ready {
+                    handle,
+                    frames,
+                    texts,
+                    px_w,
+                    ..
+                }),
+            ) => {
+                // An animation plays by the clock, looping.
+                let mut shown = *handle;
+                if !frames.is_empty() {
+                    let total: u64 = frames.iter().map(|f| u64::from(f.1)).sum::<u64>().max(1);
+                    let mut t = env.now % total;
+                    for (h, d) in frames {
+                        if t < u64::from(*d) {
+                            shown = *h;
+                            let next = env.now + (u64::from(*d) - t);
+                            let due = env.due.get().map_or(next, |x| x.min(next));
+                            env.due.set(Some(due));
+                            break;
+                        }
+                        t -= u64::from(*d);
+                    }
+                }
                 let _ = krate::gfx::canvas_images::draw_round(
                     c,
-                    *handle,
+                    shown,
                     look::g(r(ox + x, oy + y, *w, *h)),
                     look::radii(4.0),
                 );
+                // An SVG's text, drawn at the picture's scale.
+                let k = *w / (*px_w as f32).max(1.0);
+                for tx in texts {
+                    let size = tx.size * k;
+                    let st = look::style(if tx.bold { 700 } else { 400 }, false, false);
+                    let tw = look::width_styled(c, &tx.text, size, st);
+                    let dx = match tx.anchor {
+                        1 => tw * 0.5,
+                        2 => tw,
+                        _ => 0.0,
+                    };
+                    let col = krate::gfx::types::Color {
+                        r: tx.color[0],
+                        g: tx.color[1],
+                        b: tx.color[2],
+                        a: tx.color[3],
+                    };
+                    look::text_styled(
+                        c,
+                        &tx.text,
+                        ox + x + tx.x * k - dx,
+                        oy + y + tx.y * k,
+                        size,
+                        st,
+                        col,
+                    );
+                }
             }
             (Some(n), _) => {
                 look::fit(c, n, ox + x, oy + y + h * 0.65, 14.0, 400, t.faint, *w);
