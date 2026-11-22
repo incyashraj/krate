@@ -1,0 +1,35 @@
+# Vault's job: keep a folder of linked notes and get around it. Open the
+# sample vault (a headless run has no folder picker to answer), jump to a
+# note with the quick switcher, see what links to it, type a [[link]] with
+# completion, and find a word across the whole vault.
+name = "switch to a note, see its backlinks, link and search"
+[[step]]
+click = "Explore the sample vault"
+[[step]]
+expect_text = "Start here"
+[[step]]
+key = "Primary+o"
+[[step]]
+type = "gardn"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "Spring beds"
+[[step]]
+expect_text = "Linked mentions  3"
+[[step]]
+key = "Primary+ArrowDown"
+[[step]]
+type = " [[tomato"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "[[Tomato sauce]]"
+[[step]]
+key = "Shift+Primary+f"
+[[step]]
+type = "tomatoes"
+[[step]]
+wait_ms = 300
+[[step]]
+expect_text = "2 notes"

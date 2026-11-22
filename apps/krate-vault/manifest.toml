@@ -1,0 +1,68 @@
+[app]
+id = "dev.krate.vault"
+name = "Vault"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_vault.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the Vault window"
+required = true
+
+# The person picks the folder that is their vault, and the pick is the
+# grant: every note is read and written through picked/<token>/ for this
+# run only, so Vault can touch nothing outside the folder they chose.
+[[capabilities]]
+cap = "ui.dialog:open-folder"
+rationale = "Open a folder of Markdown notes as your vault -- Vault can read and save only inside it, and only while it is open"
+required = true
+
+# Automated and benchmark runs, which cannot answer a folder picker: the
+# argument `vault=./vault` opens the folder `vault` inside the app's own
+# folder (`krate run --sandbox-root <dir>`). Optional, so a person is never
+# asked for them; a run grants them by name.
+[[capabilities]]
+cap = "fs.read:./vault/**"
+rationale = "For automated runs: read the notes in the vault folder next to the app"
+required = false
+
+[[capabilities]]
+cap = "fs.list:./vault/**"
+rationale = "For automated runs: list the notes in the vault folder next to the app"
+required = false
+
+[[capabilities]]
+cap = "fs.write:./vault/**"
+rationale = "For automated runs: save notes in the vault folder next to the app"
+required = false
+
+[[capabilities]]
+cap = "fs.mkdir:./vault/**"
+rationale = "For automated runs: make folders in the vault folder next to the app"
+required = false
+
+[[capabilities]]
+cap = "fs.remove:./vault/**"
+rationale = "For automated runs: delete notes in the vault folder next to the app"
+required = false
+
+[[capabilities]]
+cap = "ui.clipboard:write"
+rationale = "Copy the text you select in a note"
+required = false
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the vault and editor state on exit, for automated runs"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag and the vault to open, for automated runs"
+required = false
+
+[[capabilities]]
+cap = "ui.open-url"
+rationale = "Open a web link in a note in your browser"
+required = false
