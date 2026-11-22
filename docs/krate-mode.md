@@ -976,6 +976,7 @@ takes this path, so any of them is a model for the wiring.
 - `canvas-images::draw: func(canvas: u64, image: u64, area: rect) -> result<_, gfx-error>`
 - `canvas-images::draw-round: func(canvas: u64, image: u64, area: rect, radii: corner-radii) -> result<_, gfx-error>`
 - `canvas-images::forget: func(canvas: u64, image: u64)`
+- `canvas-text::draw-turned: func(canvas: u64, text: string, at: point, font-size: f32, ink: color, style: text-style, quarter-turns: u8) -> result<_, gfx-error>`
 - `scene3d::bind: func(window: u64, widget: u64) -> result<u64, gfx-error>`
 - `scene3d::clear: func(scene: u64, sky: color) -> result<_, gfx-error>`
 - `scene3d::camera: func(scene: u64, eye: list<f32>, look-at: list<f32>, fov-degrees: f32) -> result<_, gfx-error>`

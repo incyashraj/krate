@@ -340,6 +340,35 @@ impl WebUi {
         Ok(())
     }
 
+    /// Text turned by quarters (krate:gfx/canvas-text, K-1341): the same
+    /// picture the computer draws (`turned_text_image`), at this canvas's
+    /// scale, with its top-left at `(x, y)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn canvas_text_turned(
+        &mut self,
+        canvas: u64,
+        text: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        c: Rgba,
+        style: Option<CanvasTextStyle>,
+        quarter_turns: u8,
+    ) -> Result<(), Value> {
+        let surface = self.surface(canvas)?;
+        let (image, w, h) = krate_lowering::canvas_raster::turned_text_image(
+            surface.scale(),
+            text,
+            size,
+            (c.0, c.1, c.2, c.3),
+            style.unwrap_or_default(),
+            quarter_turns,
+        )
+        .map_err(|e| unsupported(e.to_string()))?;
+        surface.draw_pixels_owned(x, y, w, h, image);
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn canvas_sprite(
         &mut self,

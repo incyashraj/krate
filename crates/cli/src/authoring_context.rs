@@ -690,6 +690,11 @@ the picture's `width`/`height` -- fit the rect to that shape. A \
 non-empty `problem` says why it cannot play: show it. A computer other \
 than a Mac answers `Err(Platform)` for now: say so. A sound file (mp3, \
 m4a, wav) opens and plays through the same calls with no picture.\n\n\
+Turned text -- a tab title up its spine, a chart's axis label: \
+`krate::gfx::canvas_text::draw_turned(canvas, text, at, size, ink, style, 1)` \
+turns it a quarter clockwise (3: anticlockwise), as sharp as level text; \
+`at` is the top-left of the turned box (the measured box, width and \
+height swapped).\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \
 `draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \

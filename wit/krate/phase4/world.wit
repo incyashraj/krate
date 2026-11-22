@@ -64,6 +64,7 @@ world gui {
   import krate:gfx/scene3d@0.1.0;
   import krate:gpu/gpu@0.1.0;
   import krate:gfx/canvas-images@0.1.0;
+  import krate:gfx/canvas-text@0.1.0;
   import krate:gfx/video@0.1.0;
 
   import krate:audio/playback@0.1.0;

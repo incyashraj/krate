@@ -737,7 +737,7 @@ pub mod ui {
     }
 }
 
-/// `krate:gfx`: canvas2d, canvas_images, scene3d, video.
+/// `krate:gfx`: canvas2d, canvas_images, canvas_text, scene3d, video.
 pub mod gfx {
     /// `krate:gfx/canvas2d`.
     pub mod canvas2d {
@@ -1130,6 +1130,36 @@ pub mod gfx {
         /// Let a kept picture go.
         pub fn forget(canvas: u64, image: u64) {
             crate::bindings::krate::gfx::canvas_images::forget(canvas, image)
+        }
+    }
+    /// `krate:gfx/canvas_text`.
+    pub mod canvas_text {
+        pub use crate::bindings::krate::gfx::canvas_text::{Color, GfxError, Point, TextStyle};
+
+        /// Draw `text` turned by `quarter-turns` (1: a quarter clockwise, reading
+        /// top to bottom; 2: upside down; 3: a quarter anticlockwise, reading
+        /// bottom to top; 0: as `draw-text-styled`). `at` is the top-left corner
+        /// of the turned run's box, which is the run's measured box with width
+        /// and height swapped for 1 and 3. Drawn as sharp as level text: the
+        /// host sets the run at the window's own scale and turns the pixels.
+        pub fn draw_turned(
+            canvas: u64,
+            text: &str,
+            at: Point,
+            font_size: f32,
+            ink: Color,
+            style: TextStyle,
+            quarter_turns: u8,
+        ) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::canvas_text::draw_turned(
+                canvas,
+                text,
+                at,
+                font_size,
+                ink,
+                style,
+                quarter_turns,
+            )
         }
     }
     /// `krate:gfx/scene3d`.

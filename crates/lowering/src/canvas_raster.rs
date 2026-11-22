@@ -2871,3 +2871,138 @@ mod clip_tests {
         assert_ne!(pixel(&s, 20, 30), 0, "circle missing inside the clip");
     }
 }
+
+/// `rgba` (`w` by `h`, 4 bytes a pixel) turned by `turns` quarters
+/// clockwise, exactly: no pixel is resampled, so turned text stays as sharp
+/// as level text. Returns the new width and height with the bytes.
+pub fn turn_quarters(rgba: &[u8], w: u32, h: u32, turns: u8) -> (u32, u32, Vec<u8>) {
+    let (w, h) = (w as usize, h as usize);
+    let turns = turns % 4;
+    if turns == 0 {
+        return (w as u32, h as u32, rgba.to_vec());
+    }
+    let (nw, nh) = if turns % 2 == 1 { (h, w) } else { (w, h) };
+    let mut out = vec![0u8; nw * nh * 4];
+    for y in 0..h {
+        for x in 0..w {
+            let (nx, ny) = match turns {
+                1 => (h - 1 - y, x),
+                2 => (w - 1 - x, h - 1 - y),
+                _ => (y, w - 1 - x),
+            };
+            let from = (y * w + x) * 4;
+            let to = (ny * nw + nx) * 4;
+            out[to..to + 4].copy_from_slice(&rgba[from..from + 4]);
+        }
+    }
+    (nw as u32, nh as u32, out)
+}
+
+/// A text run as ink over nothing: set white on black, read the white as
+/// how much of each pixel the glyphs cover, and give every pixel the ink's
+/// colour at that coverage. Setting the ink on a clear surface instead
+/// blends its edges toward black at full opacity -- a dark fringe on any
+/// light background.
+pub fn text_coverage(
+    run: &mut CanvasSurface,
+    text: &str,
+    baseline: f32,
+    font_size: f32,
+    style: krate_adapter_common::vector_text::CanvasTextStyle,
+    ink: (f32, f32, f32, f32),
+) -> Result<ImagePixels, UiAdapterError> {
+    run.clear(pack_color(0.0, 0.0, 0.0, 1.0));
+    run.text_styled(
+        text,
+        0.0,
+        baseline,
+        font_size,
+        pack_color(1.0, 1.0, 1.0, 1.0),
+        style,
+    );
+    let mut image = run.to_image()?;
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let rgb = [byte(ink.0), byte(ink.1), byte(ink.2)];
+    let ink_a = ink.3.clamp(0.0, 1.0);
+    for px in image.rgba.chunks_exact_mut(4) {
+        let cover = px[0].max(px[1]).max(px[2]) as f32 / 255.0;
+        px[..3].copy_from_slice(&rgb);
+        px[3] = (cover * ink_a * 255.0).round() as u8;
+    }
+    Ok(image)
+}
+
+/// Text turned by `quarter_turns` (krate:gfx/canvas-text, K-1341), as a
+/// picture at `scale` plus the logical size of its turned box: the run is
+/// set by the same layout as level text, read as coverage and turned pixel
+/// for pixel. The runtime and the web Player both draw it as a picture.
+pub fn turned_text_image(
+    scale: f32,
+    text: &str,
+    font_size: f32,
+    ink: (f32, f32, f32, f32),
+    style: krate_adapter_common::vector_text::CanvasTextStyle,
+    quarter_turns: u8,
+) -> Result<(ImagePixels, f32, f32), UiAdapterError> {
+    let m = CanvasSurface::new_scaled(1, 1, scale)?.measure_text_styled(text, font_size, style);
+    let w = m.width.ceil().max(1.0) as u32;
+    let h = m.height.ceil().max(1.0) as u32;
+    let mut run = CanvasSurface::new_scaled(w, h, scale)?;
+    let image = text_coverage(&mut run, text, m.ascent, font_size, style, ink)?;
+    let (iw, ih, rgba) = turn_quarters(&image.rgba, image.width, image.height, quarter_turns);
+    let (bw, bh) = if quarter_turns % 2 == 1 {
+        (h, w)
+    } else {
+        (w, h)
+    };
+    Ok((ImagePixels::new(iw, ih, rgba)?, bw as f32, bh as f32))
+}
+
+#[cfg(test)]
+mod turned_text_tests {
+    use super::*;
+
+    /// Each quarter turn moves every pixel to its exact place, and four of
+    /// them come back to where they started.
+    #[test]
+    fn a_quarter_turn_moves_pixels_exactly() {
+        // 2 wide, 1 high: red then blue.
+        let px = [255, 0, 0, 255, 0, 0, 255, 255];
+        let (w, h, one) = turn_quarters(&px, 2, 1, 1);
+        assert_eq!((w, h), (1, 2));
+        assert_eq!(&one[..4], &[255, 0, 0, 255], "clockwise: red on top");
+        let (w, h, three) = turn_quarters(&px, 2, 1, 3);
+        assert_eq!((w, h), (1, 2));
+        assert_eq!(&three[..4], &[0, 0, 255, 255], "anticlockwise: blue on top");
+        let (_, _, half) = turn_quarters(&px, 2, 1, 2);
+        assert_eq!(&half[..4], &[0, 0, 255, 255]);
+        let mut back = (2, 1, px.to_vec());
+        for _ in 0..4 {
+            back = turn_quarters(&back.2, back.0, back.1, 1);
+        }
+        assert_eq!(back, (2, 1, px.to_vec()));
+    }
+
+    /// The run is ink on nothing: a clear corner, soft edges, and every
+    /// inked pixel the ink's own colour, never darkened.
+    #[test]
+    fn a_turned_run_is_ink_on_nothing_in_a_box_turned_with_it() {
+        let style = krate_adapter_common::vector_text::CanvasTextStyle::default();
+        let red = (1.0, 0.0, 0.0, 1.0);
+        let (level, lw, lh) = turned_text_image(2.0, "Tab", 14.0, red, style, 0).expect("level");
+        let (turned, tw, th) = turned_text_image(2.0, "Tab", 14.0, red, style, 1).expect("turned");
+        assert_eq!((tw, th), (lh, lw), "the box turns with the text");
+        assert_eq!((turned.width, turned.height), (level.height, level.width));
+        assert_eq!(turned.rgba[3], 0, "the corner is clear");
+        let inked: Vec<_> = turned.rgba.chunks_exact(4).filter(|p| p[3] > 0).collect();
+        assert!(inked.iter().any(|p| p[3] == 255), "the run was drawn");
+        assert!(
+            inked.iter().any(|p| p[3] < 255),
+            "its edges are soft, not cut"
+        );
+        assert!(
+            inked.iter().all(|p| p[..3] == [255, 0, 0]),
+            "every inked pixel is the ink's own red: no dark fringe"
+        );
+    }
+}

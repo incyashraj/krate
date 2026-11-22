@@ -6841,6 +6841,60 @@ fn canvas_style(
     }
 }
 
+/// Text turned by quarters (krate:gfx/canvas-text, K-1341): set at the
+/// canvas's own scale and turned pixel for pixel by
+/// `canvas_raster::turned_text_image` (shared with the web Player), then
+/// drawn through `draw-pixels`, so the display list and the CPU painter
+/// draw it as any picture.
+impl crate::phase4_gui_bindings::krate::gfx::canvas_text::Host for Phase3GuiHost {
+    fn draw_turned(
+        &mut self,
+        canvas: u64,
+        text: String,
+        at: gfx::types::Point,
+        font_size: f32,
+        ink: gfx::types::Color,
+        style: gfx::types::TextStyle,
+        quarter_turns: u8,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        if text.is_empty() {
+            return Ok(Ok(()));
+        }
+        let scale = {
+            let canvases = self.canvases.borrow();
+            let Some((_, _, surface)) = canvases.get(&canvas) else {
+                return Ok(Err(gfx::types::GfxError::InvalidTarget));
+            };
+            surface.scale()
+        };
+        let turned = krate_lowering::canvas_raster::turned_text_image(
+            scale,
+            &text,
+            font_size,
+            (ink.r, ink.g, ink.b, ink.a),
+            canvas_style(&style),
+            quarter_turns,
+        );
+        let (image, width, height) = match turned {
+            Ok(turned) => turned,
+            Err(err) => return Ok(Err(gfx::types::GfxError::Unsupported(err.to_string()))),
+        };
+        gfx::canvas2d::Host::draw_pixels(
+            self,
+            canvas,
+            gfx::types::Rect {
+                x: at.x,
+                y: at.y,
+                width,
+                height,
+            },
+            image.width,
+            image.height,
+            image.rgba,
+        )
+    }
+}
+
 impl gfx::canvas2d::Host for Phase3GuiHost {
     fn bind(
         &mut self,

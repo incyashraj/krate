@@ -126,6 +126,7 @@ fn home(iface: &str) -> (&'static str, &'static str) {
         "ui/text-entry",
         "ui/screen",
         "gfx/canvas-images",
+        "gfx/canvas-text",
         "gpu/types",
         "gpu/gpu",
         "audio/playback-queue",

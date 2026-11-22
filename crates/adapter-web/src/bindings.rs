@@ -605,6 +605,32 @@ impl Ui {
         )
     }
 
+    /// Text turned by `turns` quarters with its box's top-left at (x, y)
+    /// (krate:gfx/canvas-text). `style` as for `c_text`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn c_text_turned(
+        &mut self,
+        canvas: u64,
+        text: &str,
+        x: f32,
+        y: f32,
+        size: f32,
+        color: Vec<f32>,
+        style: Vec<f32>,
+        turns: u8,
+    ) -> Option<String> {
+        fail(self.inner.canvas_text_turned(
+            canvas,
+            text,
+            x,
+            y,
+            size,
+            rgba(&color),
+            style_of(&style),
+            turns,
+        ))
+    }
+
     /// `{"ok":[width, height, ascent, descent]}`.
     pub fn c_measure(&mut self, canvas: u64, text: &str, size: f32, style: Vec<f32>) -> String {
         answer(

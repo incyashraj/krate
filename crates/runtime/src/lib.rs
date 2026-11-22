@@ -1845,6 +1845,8 @@ impl Runtime {
         link_gui!(ui4::web_page);
         // Phase 4 only: pictures a canvas keeps and draws by handle.
         link_gui!(phase4_gui_bindings::krate::gfx::canvas_images);
+        // Phase 4 only: text turned by quarters (K-1341).
+        link_gui!(phase4_gui_bindings::krate::gfx::canvas_text);
         link_gui!(phase4_gui_bindings::krate::gfx::video);
         // Phase 4 only: the GPU as WebGPU shapes it (IC-540, IC-916).
         link_gui!(phase4_gui_bindings::krate::gpu::types);

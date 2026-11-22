@@ -358,6 +358,20 @@ interface canvas-images {
   forget: func(canvas: u64, image: u64);
 }
 
+/// Text turned a quarter, a half or three quarters: a tab's title up its
+/// spine, an axis label, a vertical sign (K-1341). Phase 4 only.
+interface canvas-text {
+  use types.{point, color, text-style, gfx-error};
+
+  /// Draw `text` turned by `quarter-turns` (1: a quarter clockwise, reading
+  /// top to bottom; 2: upside down; 3: a quarter anticlockwise, reading
+  /// bottom to top; 0: as `draw-text-styled`). `at` is the top-left corner
+  /// of the turned run's box, which is the run's measured box with width
+  /// and height swapped for 1 and 3. Drawn as sharp as level text: the
+  /// host sets the run at the window's own scale and turns the pixels.
+  draw-turned: func(canvas: u64, text: string, at: point, font-size: f32, ink: color, style: text-style, quarter-turns: u8) -> result<_, gfx-error>;
+}
+
 interface scene3d {
   use types.{color, gfx-error};
 

@@ -806,6 +806,17 @@ export function buildImports(ctx) {
     post: ctx.audioPost || (() => {}),
     memory: ctx.audio || makeAudioMemory(),
   }));
+  // Turned text (K-1341): the same picture the computer draws.
+  impl['krate:gfx/canvas-text'] = {
+    drawTurned: (c, text, at, size, ink, s, turns) => g(ui.c_text_turned(c, text, at.x, at.y, size, col(ink), sty(s), turns)),
+  };
+  // The computer's Trash (K-1337): a tab has none, so it says so and the app
+  // deletes for good or keeps its own bin.
+  impl['krate:ui/trash'] = {
+    moveToTrash() {
+      throw new HostError({ tag: 'unavailable', val: 'A browser tab has no Trash. Open the app in Krate on your computer to use it.' });
+    },
+  };
   impl['krate:gfx/canvas-images'] = {
     keep: (c, w, h, rgba) => BigInt(unwrap(ui.c_keep(c, w, h, rgba))),
     draw: (c, image, a) => g(ui.c_draw_kept(c, image, geo(a))),
