@@ -455,7 +455,8 @@
   // has passed under the header, or the last card once the page is at its end.
   (function () {
     var links = Array.prototype.slice.call(document.querySelectorAll("#accnav a"));
-    var cards = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+    // a.hash, not the href text: the site build writes "#ways" as "/account/#ways".
+    var cards = links.map(function (a) { return document.getElementById((a.hash || "").slice(1)); });
     var ticking = false;
     function mark() {
       ticking = false;
