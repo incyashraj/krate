@@ -44,6 +44,19 @@
 .sw[aria-checked="true"]::after { transform: translateX(18px); }
 .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .sw[disabled] { opacity: .5; cursor: default; }
+/* the sections, beside the page (wide) or as chips above it (narrow) */
+#acct { position: relative; }
+.cards .card { scroll-margin-top: calc(var(--hd) + 20px); }
+.accnav { position: absolute; top: 0; bottom: 0; right: calc(100% + 48px); width: 190px; }
+.accnav .toc a { white-space: nowrap; }
+@media (max-width: 1239px) {
+  .accnav { position: static; width: auto; margin: -8px 0 20px; }
+  .accnav .toc { position: static; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .accnav .toc::-webkit-scrollbar { display: none; }
+  /* A phone gives every link 44px (the site's touch rule): the words sit in the middle of it. */
+  .accnav .toc a { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; font-size: 13.5px; line-height: 1; color: var(--ink-2); background: var(--s2); box-shadow: inset 0 0 0 1px var(--hair); }
+  .accnav .toc a.on { color: var(--ink); border: 0; box-shadow: inset 0 0 0 1px var(--ink-4); }
+}
 /* ways to sign in (rows and buttons are written by the live script) */
 #waysList { margin-top: 12px; }
 .wayrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px; }
@@ -166,6 +179,24 @@
       <a href="#" id="signout" class="btn ghost sm hidden">Sign out</a>
     </div>
 
+    <!-- The page's sections, beside it on a wide screen and as a row of
+         chips above it on a narrow one: the page is long, and every card
+         is a place someone comes here for. The live script marks the one
+         in view. -->
+    <nav class="accnav" id="accnav" aria-label="Account sections">
+      <div class="toc">
+        <a href="#ways">Ways to sign in</a>
+        <a href="#orgs">Organisations</a>
+        <a href="#mail">Emails from Krate</a>
+        <a href="#sessions">Signed in now</a>
+        <a href="#conn">Connected AI apps</a>
+        <a href="#invite">Invite someone</a>
+        <a href="#apps">Published apps</a>
+        <a href="#support">Support</a>
+        <a href="#data">Your data</a>
+      </div>
+    </nav>
+
     <div class="cards">
       <div class="card" id="ways">
         <h2>Ways to sign in</h2>
@@ -187,7 +218,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="orgs">
         <div class="row orgrow">
           <div class="grow"><h2>Organisations</h2>
             <p class="sub">Send apps privately to your team. Each release goes out only after a second person approves it.</p></div>
@@ -202,7 +233,7 @@
         <p class="note" id="mailNote" aria-live="polite"></p>
       </div>
 
-      <div class="card">
+      <div class="card" id="sessions">
         <div class="row"><div class="grow"><h2>Signed in now</h2>
           <p class="sub">Every browser and computer where you are signed in. Sign out any you do not recognise.</p></div>
           <button class="btn ghost sm" id="sessShow" type="button">Show them</button></div>
@@ -217,7 +248,7 @@
         <p class="note hidden" id="connNote" aria-live="polite"></p>
       </div>
 
-      <div class="card">
+      <div class="card" id="invite">
         <h2>Invite someone</h2>
         <p class="sub">Share your link with someone who builds things.</p>
         <div class="refbox">
@@ -227,13 +258,13 @@
         <p class="note" id="refNote"></p>
       </div>
 
-      <div class="card">
+      <div class="card" id="apps">
         <h2>Your published apps</h2>
         <p class="sub">What you've sent to the cloud. Apps on your computer stay on your computer.</p>
         <div id="appList"><p class="sub">Loading…</p></div>
       </div>
 
-      <div class="card">
+      <div class="card" id="support">
         <div class="row"><div class="grow"><h2>Support</h2>
           <p class="sub" id="supSub">A real person answers.</p></div>
           <span class="tag on hidden" id="supPriority">priority</span></div>
@@ -316,6 +347,8 @@
     $("askLogin").classList.add("hidden");
     $("acct").classList.remove("hidden");
     $("signout").classList.remove("hidden");
+    // The side list marks the section in view; it could not while hidden.
+    dispatchEvent(new Event("resize"));
     $("uname").textContent = m.user.name || m.user.login || "You";
     $("uemail").textContent = m.user.email || ("@" + m.user.login);
     if (m.user.avatar_url) $("avatar").src = m.user.avatar_url;
@@ -417,6 +450,29 @@
     }).catch(function () { box.innerHTML = '<p class="sub">This list did not load. Try again in a minute.</p>'; });
   }
   connectors();
+
+  // The section in view, marked in the side list: the last card whose top
+  // has passed under the header, or the last card once the page is at its end.
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll("#accnav a"));
+    var cards = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+    var ticking = false;
+    function mark() {
+      ticking = false;
+      var at = 0;
+      // A third of the way down: a card a link jumped to counts as in view.
+      var line = Math.max(160, innerHeight * 0.33);
+      cards.forEach(function (c, i) { if (c && c.getBoundingClientRect().top <= line) at = i; });
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) at = cards.length - 1;
+      links.forEach(function (a, i) { a.classList.toggle("on", i === at); });
+    }
+    addEventListener("scroll", function () { if (!ticking) { ticking = true; requestAnimationFrame(mark); } }, { passive: true });
+    addEventListener("resize", mark);
+    links.forEach(function (a, i) {
+      a.addEventListener("click", function () { links.forEach(function (b, j) { b.classList.toggle("on", j === i); }); });
+    });
+    mark();
+  })();
 
   // Ways to sign in (IC-996). Adding one goes to the provider and back
   // here; the hub only adds it when THIS page confirms it, with this
