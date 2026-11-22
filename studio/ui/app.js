@@ -10129,6 +10129,73 @@ async function runUpdate(latest) {
 }
 
 /* ---- profile page ------------------------------------------------------ */
+/* Ways to sign in (IC-996): GitHub, Google, Apple and email, each opening
+ * this same account. Listed and removed here; adding one opens the account
+ * page in the browser, because the provider comes back there and the page
+ * confirms it with the account's own session. */
+const WAY_NAMES = { github: "GitHub", google: "Google", apple: "Apple", email: "Email" };
+async function loadSignInWays() {
+  const box = $("setWays");
+  const note = $("setWaysNote");
+  if (!box) return;
+  const say = (text) => {
+    if (!note) return;
+    note.textContent = text || "";
+    note.classList.toggle("hidden", !text);
+  };
+  let r;
+  try {
+    r = await invoke("sign_ins");
+  } catch (e) {
+    box.innerHTML = `<div class="set-row"><div><div class="lab">This list did not load</div><div class="hint">${escapeHtml(String((e && e.message) || e || "Try again in a minute."))}</div></div></div>`;
+    return;
+  }
+  const ways = (r && r.ways) || [];
+  const can = (r && r.can_add) || {};
+  const have = new Set(ways.map((w) => w.kind));
+  const when = (t) => (t ? `added ${new Date(t * 1000).toLocaleDateString()}` : "");
+  const rows = ways.map((w) => {
+    const detail = [w.kind === "email" ? "" : w.label, when(w.at)].filter(Boolean).join(" · ");
+    const name = w.kind === "email" ? w.label : WAY_NAMES[w.kind] || w.kind;
+    return `<div class="set-row"><div><div class="lab">${escapeHtml(name)}</div>${detail ? `<div class="hint">${escapeHtml(detail)}</div>` : w.kind === "email" ? `<div class="hint">Email link</div>` : ""}</div>`
+      + `<div class="ctl">${w.removable ? `<button class="set-mini" data-way-remove="${escapeHtml(w.kind)}" data-way-id="${escapeHtml(w.id || "-")}">Remove</button>` : `<span class="set-val">The only way in</span>`}</div></div>`;
+  });
+  const adds = ["github", "google", "apple"].filter((k) => can[k] && !have.has(k));
+  if (can.email) adds.push("email");
+  if (adds.length) {
+    rows.push(`<div class="set-row"><div><div class="lab">Add a way to sign in</div><div class="hint">Opens your account page in the browser</div></div>`
+      + `<div class="ctl">${adds.map((k) => `<button class="set-mini" data-way-add="${k}">${k === "email" ? "Email address" : WAY_NAMES[k]}</button>`).join("")}</div></div>`);
+  }
+  box.innerHTML = rows.join("");
+  box.querySelectorAll("[data-way-add]").forEach((b) => {
+    b.addEventListener("click", () => {
+      invoke("open_external", { url: `https://krate.tech/account/#add=${b.dataset.wayAdd}` }).catch(() => {});
+      say("Finish in your browser, then come back: this list updates when you do.");
+    });
+  });
+  box.querySelectorAll("[data-way-remove]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      const kind = b.dataset.wayRemove;
+      const also = kind === "github" ? " Apps you published with it stay published." : "";
+      if (!confirm(`Remove ${WAY_NAMES[kind] || kind} as a way to sign in? Places signed in with it are signed out.${also}`)) return;
+      b.disabled = true;
+      try {
+        await invoke("sign_in_remove", { kind, id: b.dataset.wayId });
+        say("Removed.");
+        loadSignInWays();
+      } catch (e) {
+        b.disabled = false;
+        say(String((e && e.message) || e || "That did not remove it. Try again."));
+      }
+    });
+  });
+}
+// Back from the browser: the list may have a new way in it.
+window.addEventListener("focus", () => {
+  const group = $("setWaysGroup");
+  if (group && !group.classList.contains("hidden") && !$("setSheet")?.classList.contains("hidden")) loadSignInWays();
+});
+
 async function loadProfilePage() {
   wireAccountOptions();
   // The folder, shown and openable from the account section too. Read from
@@ -10160,6 +10227,8 @@ async function loadProfilePage() {
   $("profStats")?.classList.toggle("hidden", !signedIn);
   $("profSignOutRow")?.classList.toggle("hidden", !signedIn);
   $("profSignInRow")?.classList.toggle("hidden", signedIn);
+  $("setWaysGroup")?.classList.toggle("hidden", !signedIn);
+  if (signedIn) loadSignInWays();
   if (!signedIn) {
     $("profName").textContent = "Not signed in";
     $("profMail").textContent = "";

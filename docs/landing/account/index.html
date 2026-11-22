@@ -44,6 +44,19 @@
 .sw[aria-checked="true"]::after { transform: translateX(18px); }
 .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .sw[disabled] { opacity: .5; cursor: default; }
+/* ways to sign in (rows and buttons are written by the live script) */
+#waysList { margin-top: 12px; }
+.wayrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.wayrow:first-child { border-top: 0; padding-top: 4px; }
+.wayrow .wi { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); box-shadow: inset 0 0 0 1px var(--hair); }
+.wayrow .wi svg { width: 16px; height: 16px; }
+.wayrow .wt { flex: 1; min-width: 0; }
+.wayrow .wt b { font-weight: 500; }
+.wayrow .wt .m { display: block; font-size: 13px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wayrow .btn { flex: none; }
+.wayadd { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.wayadd:empty { display: none; }
+#wayMail { margin-top: 12px; }
 /* invite */
 .refbox { display: flex; gap: 8px; margin-top: 16px; }
 .refbox .inp { flex: 1; min-width: 0; font-size: 14px; color: var(--ink-2); }
@@ -154,6 +167,18 @@
     </div>
 
     <div class="cards">
+      <div class="card" id="ways">
+        <h2>Ways to sign in</h2>
+        <p class="sub">Each of these opens this same account, with the same apps.</p>
+        <div id="waysList"><p class="sub">Loading…</p></div>
+        <div class="wayadd" id="waysAdd"></div>
+        <form class="refbox hidden" id="wayMail" autocomplete="off">
+          <input class="inp" id="wayMailIn" type="email" placeholder="you@example.com" aria-label="Email address to add" maxlength="254">
+          <button class="btn dark sm" type="submit">Send link</button>
+        </form>
+        <p class="note" id="waysNote" aria-live="polite"></p>
+      </div>
+
       <div class="card">
         <div class="row">
           <div class="grow"><h2>Krate is free</h2>
@@ -392,6 +417,110 @@
     }).catch(function () { box.innerHTML = '<p class="sub">This list did not load. Try again in a minute.</p>'; });
   }
   connectors();
+
+  // Ways to sign in (IC-996). Adding one goes to the provider and back
+  // here; the hub only adds it when THIS page confirms it, with this
+  // account's session and the nonce this browser kept when it started.
+  var WAY = { github: "GitHub", google: "Google", apple: "Apple", email: "Email" };
+  var WAY_ICON = {
+    github: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>',
+    google: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="#4285F4" d="M15.68 8.18c0-.57-.05-1.11-.15-1.64H8v3.1h4.3a3.68 3.68 0 0 1-1.6 2.42v2h2.6c1.52-1.4 2.38-3.46 2.38-5.88z"/><path fill="#34A853" d="M8 16c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.14-2.52H.88v2.07A8 8 0 0 0 8 16z"/><path fill="#FBBC05" d="M3.56 9.54a4.8 4.8 0 0 1 0-3.08V4.39H.88a8 8 0 0 0 0 7.22l2.68-2.07z"/><path fill="#EA4335" d="M8 3.18c1.22 0 2.3.42 3.16 1.24l2.3-2.3A8 8 0 0 0 .88 4.39l2.68 2.07A4.77 4.77 0 0 1 8 3.18z"/></svg>',
+    apple: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.18 8.5c-.02-1.6 1.31-2.38 1.37-2.42-.75-1.09-1.91-1.24-2.32-1.26-.99-.1-1.93.58-2.43.58-.5 0-1.27-.57-2.09-.55-1.07.02-2.07.63-2.62 1.59-1.12 1.94-.29 4.81.8 6.38.53.77 1.17 1.63 2 1.6.8-.03 1.1-.52 2.07-.52.97 0 1.24.52 2.09.5.86-.01 1.41-.78 1.93-1.55.61-.89.86-1.75.88-1.8-.02-.01-1.68-.65-1.7-2.55zM9.6 3.8c.44-.54.74-1.28.66-2.03-.64.03-1.41.43-1.87.96-.41.47-.77 1.23-.67 1.96.71.05 1.44-.36 1.88-.89z"/></svg>',
+    email: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M2 4l6 5 6-5"/></svg>'
+  };
+  function linkNonce(fresh) {
+    var n = "";
+    try { n = localStorage.getItem("krate.link.nonce") || ""; } catch (e) {}
+    if (fresh || !n) {
+      var a = new Uint8Array(18); crypto.getRandomValues(a);
+      n = Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+      try { localStorage.setItem("krate.link.nonce", n); } catch (e) {}
+    }
+    return n;
+  }
+  function waysSay(text) { $("waysNote").textContent = text || ""; }
+  function waysShow(r) {
+    var list = r.ways || [], can = r.can_add || {};
+    $("waysList").innerHTML = list.map(function (w) {
+      var what = w.kind === "email" ? w.label : (w.label || "");
+      return '<div class="wayrow"><span class="wi">' + (WAY_ICON[w.kind] || "") + '</span><span class="wt"><b>' + esc(WAY[w.kind] || w.kind) + '</b>'
+        + (what ? '<span class="m">' + esc(what) + (w.at ? " · added " + when(w.at) : "") + '</span>' : (w.at ? '<span class="m">added ' + when(w.at) + '</span>' : ""))
+        + '</span>' + (w.removable ? '<button class="btn ghost sm" type="button" data-way="' + esc(w.kind) + '" data-id="' + esc(w.id || "-") + '">Remove</button>' : "") + '</div>';
+    }).join("");
+    var have = {}; list.forEach(function (w) { have[w.kind] = true; });
+    var add = "";
+    ["github", "google", "apple"].forEach(function (k) {
+      if (can[k] && !have[k]) add += '<button class="btn ghost sm" type="button" data-add="' + k + '">Add ' + WAY[k] + '</button>';
+    });
+    if (can.email) add += '<button class="btn ghost sm" type="button" id="wayMailOpen">Add an email address</button>';
+    $("waysAdd").innerHTML = add;
+    Array.prototype.forEach.call($("waysAdd").querySelectorAll("[data-add]"), function (b) {
+      b.addEventListener("click", function () { wayAdd(b.getAttribute("data-add"), b); });
+    });
+    var open = $("wayMailOpen");
+    if (open) open.addEventListener("click", function () { $("wayMail").classList.remove("hidden"); $("wayMailIn").focus(); open.classList.add("hidden"); });
+    Array.prototype.forEach.call($("waysList").querySelectorAll("[data-way]"), function (b) {
+      b.addEventListener("click", function () {
+        var kind = b.getAttribute("data-way"), id = b.getAttribute("data-id");
+        var also = kind === "github" ? " Apps you published with it stay published." : "";
+        if (!confirm("Remove " + (WAY[kind] || kind) + " as a way to sign in? Places signed in with it are signed out." + also)) return;
+        b.disabled = true;
+        api("/me/sign-ins/" + encodeURIComponent(kind) + "/" + encodeURIComponent(id), { method: "DELETE" }).then(function (out) {
+          if (out && out.ok) { waysSay("Removed."); ways(); return; }
+          b.disabled = false; waysSay((out && out.message) || "That did not remove it. Try again.");
+        }).catch(function () { b.disabled = false; waysSay("That did not remove it. Try again."); });
+      });
+    });
+  }
+  function ways() {
+    return api("/me/sign-ins").then(waysShow).catch(function () {
+      $("waysList").innerHTML = '<p class="sub">This list did not load. Try again in a minute.</p>';
+    });
+  }
+  function wayAdd(kind, b) {
+    if (b) b.disabled = true;
+    waysSay("Opening " + (WAY[kind] || kind) + "…");
+    api("/me/sign-ins/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: kind, nonce: linkNonce(true) }) }).then(function (out) {
+      if (out && out.go) { location.href = out.go; return; }
+      if (b) b.disabled = false; waysSay((out && out.message) || "That did not start. Try again.");
+    }).catch(function () { if (b) b.disabled = false; waysSay("That did not start. Try again."); });
+  }
+  $("wayMail").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var email = $("wayMailIn").value.trim();
+    if (!email) return;
+    waysSay("Sending…");
+    api("/me/sign-ins/email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email }) }).then(function (out) {
+      if (out && out.sent) { waysSay("Sent. Open the link in this browser to add " + out.email + "."); $("wayMail").classList.add("hidden"); ways(); return; }
+      waysSay((out && out.message) || "That did not send. Try again.");
+    }).catch(function () { waysSay("That did not send. Try again."); });
+  });
+  // Back from a provider, or from the link in an email.
+  (function () {
+    var h = new URLSearchParams((location.hash || "").slice(1));
+    var code = h.get("link"), add = h.get("add");
+    if (code || add) { try { history.replaceState(null, "", location.pathname + location.search + "#ways"); } catch (e) {} }
+    if (code) {
+      var sent = h.get("nonce") || "";
+      // A provider link carries the nonce this browser kept; an email link
+      // carries none (it may open on another device) and rests on the
+      // session check alone.
+      if (sent && sent !== linkNonce(false)) {
+        waysSay("That link was started in a different browser, so nothing was added.");
+        ways();
+        return;
+      }
+      waysSay("Adding…");
+      api("/me/sign-ins/confirm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: code }) }).then(function (out) {
+        waysSay(out && out.ok ? (WAY[out.kind] || "It") + " added. Sign in with it any time and you land here." : (out && out.message) || "That did not add it. Try again.");
+        ways();
+      }).catch(function () { waysSay("That did not add it. Try again."); ways(); });
+      try { document.getElementById("ways").scrollIntoView({ block: "start" }); } catch (e) {}
+      return;
+    }
+    ways().then(function () { if (add && WAY[add] && add !== "email") wayAdd(add); });
+    if (add === "email") { $("wayMail").classList.remove("hidden"); }
+  })();
 
   api("/my/apps").then(function (r) {
     var box = $("appList");

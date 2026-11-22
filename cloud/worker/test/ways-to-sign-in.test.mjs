@@ -193,7 +193,7 @@ test("Sign in with Apple: a checked token signs in; a forged one does not", asyn
     const sig = createSign("RSA-SHA256").update(`${head}.${body}`).sign(key).toString("base64url");
     return `${head}.${body}.${sig}`;
   };
-  const begin = await hit(env, `/login/apple?from=web&nonce=${NONCE}`);
+  const begin = await hit(env, `/login/apple/start?from=web&nonce=${NONCE}`);
   assert.equal(begin.status, 302);
   const state = new URL(begin.location).searchParams.get("state");
   const claims = { iss: "https://appleid.apple.com", aud: "tech.krate.signin", exp: Math.floor(Date.now() / 1000) + 600, sub: "apple-1", nonce: state, email: "x@privaterelay.appleid.com", email_verified: "true" };
@@ -206,7 +206,7 @@ test("Sign in with Apple: a checked token signs in; a forged one does not", asyn
   const refused = await hit(env, "/login/apple/callback", { method: "POST", form: forged });
   assert.doesNotMatch(refused.location || "", /token=/, "a forged token signs nobody in");
 
-  const begin2 = await hit(env, `/login/apple?from=web&nonce=${NONCE}`);
+  const begin2 = await hit(env, `/login/apple/start?from=web&nonce=${NONCE}`);
   const state2 = new URL(begin2.location).searchParams.get("state");
   const real = new FormData();
   real.set("state", state2);

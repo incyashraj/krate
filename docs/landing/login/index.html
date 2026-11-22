@@ -137,6 +137,12 @@ html.krate-booting .booting { display: flex; }
           Google
         </a>
       </div>
+      <!-- Shown only when the hub says Sign in with Apple is switched on
+           (/login/ways), never as a button that leads to an error. -->
+      <a class="btn ghost btn-login hidden" id="appleBtn" href="#">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.18 8.5c-.02-1.6 1.31-2.38 1.37-2.42-.75-1.09-1.91-1.24-2.32-1.26-.99-.1-1.93.58-2.43.58-.5 0-1.27-.57-2.09-.55-1.07.02-2.07.63-2.62 1.59-1.12 1.94-.29 4.81.8 6.38.53.77 1.17 1.63 2 1.6.8-.03 1.1-.52 2.07-.52.97 0 1.24.52 2.09.5.86-.01 1.41-.78 1.93-1.55.61-.89.86-1.75.88-1.8-.02-.01-1.68-.65-1.7-2.55zM9.6 3.8c.44-.54.74-1.28.66-2.03-.64.03-1.41.43-1.87.96-.41.47-.77 1.23-.67 1.96.71.05 1.44-.36 1.88-.89z"/></svg>
+        Apple
+      </a>
       <div class="or login-or"><span>or</span></div>
       <form class="login-email" id="emailForm">
         <input class="inp" type="email" id="emailInput" placeholder="you@example.com" aria-label="Email address" autocomplete="email" required>
@@ -317,6 +323,12 @@ html.krate-booting .booting { display: flex; }
   }
   document.getElementById("ghBtn").href = door("/login/start");
   document.getElementById("googleBtn").href = door("/login/google/start");
+  // Sign in with Apple, once the hub has it switched on (IC-996).
+  var appleBtn = document.getElementById("appleBtn");
+  appleBtn.href = door("/login/apple/start");
+  fetch(HUB + "/login/ways").then(function (r) { return r.json(); }).then(function (w) {
+    if (w && w.apple) appleBtn.classList.remove("hidden");
+  }).catch(function () {});
   if (orgSlug) {
     var orgBtn = document.getElementById("orgBtn");
     orgBtn.href = door("/login/oidc/start", { org: orgSlug });
@@ -329,14 +341,14 @@ html.krate-booting .booting { display: flex; }
   // Studio's sign-in popup already asked which way: #github or #google
   // (a fragment, so Windows' `start` keeps it) goes straight on to it.
   var via = location.hash.replace(/^#/, "");
-  if (via === "github" || via === "google") {
+  if (via === "github" || via === "google" || via === "apple") {
     // The loader, not the card: the page is only passing through.
-    document.querySelector(".booting-main").firstChild.textContent = via === "github" ? "Opening GitHub" : "Opening Google";
+    document.querySelector(".booting-main").firstChild.textContent = via === "github" ? "Opening GitHub" : via === "apple" ? "Opening Apple" : "Opening Google";
     document.querySelector(".booting-sub").textContent = "";
     document.documentElement.classList.add("krate-booting");
     // Back from the provider without signing in: the card again, not the loader.
     addEventListener("pageshow", function (e) { if (e.persisted) document.documentElement.classList.remove("krate-booting"); });
-    location.replace(door(via === "github" ? "/login/start" : "/login/google/start"));
+    location.replace(door(via === "github" ? "/login/start" : via === "apple" ? "/login/apple/start" : "/login/google/start"));
   } else if (via === "email") {
     setTimeout(function () { var i = document.getElementById("emailInput"); if (i) i.focus(); }, 50);
   }

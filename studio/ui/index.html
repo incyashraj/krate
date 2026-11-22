@@ -1031,6 +1031,18 @@
               <div class="ctl"><button class="set-mini" id="profSignIn">Sign in</button></div>
             </div>
           </div>
+          <!-- Ways to sign in (IC-996): every one opens this same account.
+               Part of Profile, the account's own tab. Rows are written by
+               app.js; adding one opens the account page, where the
+               provider comes back to. -->
+          <div class="set-ways hidden" id="setWaysGroup">
+            <h3 class="set-ways-h">Ways to sign in</h3>
+            <p class="set-sub">Sign in with any of these and you reach this same account, with the same apps.</p>
+            <div class="set-panel" id="setWays">
+              <div class="set-row"><div><div class="lab">Loading…</div></div></div>
+            </div>
+            <p class="set-sub hidden" id="setWaysNote" aria-live="polite"></p>
+          </div>
         </div>
 
         <div class="set-group">

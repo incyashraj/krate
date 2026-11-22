@@ -1810,6 +1810,24 @@ const COMMANDS = {
     return bridge.me || {};
   },
 
+  /* Ways to sign in (IC-996): the account's GitHub, Google, Apple and
+   * email sign-ins. Adding one happens on the account page, where the
+   * provider comes back to; this lists and removes. */
+  async sign_ins() {
+    if (!bridge.token) throw new Error("Sign in first.");
+    return hub("/me/sign-ins");
+  },
+
+  async sign_in_remove({ kind, id } = {}) {
+    try {
+      return await hub(`/me/sign-ins/${encodeURIComponent(kind)}/${encodeURIComponent(id || "-")}`, { method: "DELETE" });
+    } catch (err) {
+      let words = String((err && err.message) || err || "");
+      try { words = JSON.parse(words).message || words; } catch (e) {}
+      throw new Error(words || "That did not remove it. Try again.");
+    }
+  },
+
   login_browser() {
     // The site's own sign-in, which knows how to come back here: /login
     // remembers `next` and /login/done honours it. Whatever is in the box

@@ -1884,6 +1884,11 @@ button.kr-stt:hover { background: var(--hover); }
 .kr-agc-empty { margin: 0; font-size: 13px; color: var(--ink-3); }
 #setSheet .set-sub { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-3); }
 #setSheet .set-group > .set-panel { margin-top: 14px; }
+/* Ways to sign in, inside Profile (IC-996). */
+#setSheet .set-ways { margin-top: 26px; }
+#setSheet .set-ways-h { margin: 0; font: 600 15px var(--sans); letter-spacing: -0.01em; color: var(--ink); }
+#setSheet .set-ways > .set-panel { margin-top: 12px; }
+#setSheet .set-ways .set-row .ctl { flex-wrap: wrap; justify-content: flex-end; }
 /* Reduce motion, chosen in Settings */
 body.kr-calm *, body.kr-calm *::before, body.kr-calm *::after { animation-duration: 1ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 /* An off switch on a light page was white on white. */

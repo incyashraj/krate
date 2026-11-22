@@ -4096,6 +4096,80 @@ async fn me_info() -> Result<serde_json::Value, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The account's ways to sign in (IC-996): GitHub, Google, Apple, email.
+/// Adding one is the account page's job (the provider comes back there);
+/// Settings lists them and removes one.
+#[tauri::command]
+async fn sign_ins() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let token = hub_token().ok_or("Sign in first.")?;
+        match krate_http::get(&format!("{}/me/sign-ins", hub_url()))
+            .set("authorization", &format!("Bearer {token}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .call()
+        {
+            Ok(resp) => resp.into_json().map_err(|e| e.to_string()),
+            Err(ureq::Error::Status(_, resp)) => Err(hub_refusal_words(resp)),
+            Err(_) => Err("could not reach krate.tech - check your connection".into()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn sign_in_remove(kind: String, id: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = hub_token().ok_or("Sign in first.")?;
+        let id = if id.is_empty() { "-".to_string() } else { id };
+        let url = format!(
+            "{}/me/sign-ins/{}/{}",
+            hub_url(),
+            urlencoding_component(&kind),
+            urlencoding_component(&id)
+        );
+        match krate_http::request("DELETE", &url)
+            .set("authorization", &format!("Bearer {token}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .call()
+        {
+            Ok(resp) => resp.into_json().map_err(|e| e.to_string()),
+            Err(ureq::Error::Status(_, resp)) => Err(hub_refusal_words(resp)),
+            Err(_) => Err("could not reach krate.tech - check your connection".into()),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The hub's own sentence from a refusal (`{"message": ...}`), or its body.
+fn hub_refusal_words(resp: ureq::Response) -> String {
+    let body = resp
+        .into_string()
+        .unwrap_or_else(|_| "the hub said no".into());
+    serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| {
+            v.get("message")
+                .and_then(|m| m.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or(body)
+}
+
+/// Percent-encode one path segment.
+fn urlencoding_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 /* ---- support: real conversations with a person ------------------------ */
 
 #[tauri::command]
@@ -6243,6 +6317,8 @@ fn main() {
             billing_info,
             billing_checkout,
             me_info,
+            sign_ins,
+            sign_in_remove,
             support_new,
             support_list,
             support_reply,

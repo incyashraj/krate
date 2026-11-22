@@ -875,7 +875,7 @@ export default {
       if (request.method === "GET" && pathname === "/login/ways") {
         return cors(json(addable(env)));
       }
-      if (request.method === "GET" && pathname === "/login/apple") {
+      if (request.method === "GET" && pathname === "/login/apple/start") {
         return noteStep(env, "signin", "apple-start", appleStart(url, env));
       }
       if (request.method === "POST" && pathname === "/login/apple/callback") {
