@@ -2357,6 +2357,10 @@ impl App {
 
     /// Recompute `[[` completion for the caret.
     pub fn refresh_completion(&mut self) {
+        // `[[Note#` offers headings, `[[Note#^` blocks (src/links.rs).
+        if crate::links::anchor_completion(self) {
+            return;
+        }
         let query = match self.doc() {
             Some(d) if d.mode != Mode::Reading && self.focus == Focus::Editor => d.link_query(),
             _ => None,
@@ -3111,6 +3115,11 @@ impl App {
 
     /// A key press. True when the app used it (and should redraw).
     pub fn key(&mut self, key: &str, m: Mods) -> bool {
+        // The find bar, several carets and folding (src/links.rs).
+        if let Some(used) = crate::links::key(self, key, m) {
+            self.refresh_completion();
+            return used;
+        }
         // Hotkeys that work everywhere: the app's defaults, or the ones the
         // person set in hotkeys.json.
         if let Some(cmd) = self.hotkey(key, m) {
@@ -3520,6 +3529,11 @@ impl App {
             return;
         }
         if self.focus == Focus::Tree {
+            return;
+        }
+        // The find bar's typing, or every caret's (src/links.rs).
+        if crate::links::text(self, s) {
+            self.refresh_completion();
             return;
         }
         let now = self.now;

@@ -275,7 +275,7 @@ fn symbol(name: &str) -> Option<(&'static str, Class)> {
         "pm" => ("±", Bin),
         "mp" => ("∓", Bin),
         "times" => ("×", Bin),
-        "cdot" => ("⋅", Bin),
+        "cdot" => ("·", Bin),
         "div" => ("÷", Bin),
         "ast" => ("∗", Bin),
         "star" => ("⋆", Bin),
@@ -1752,7 +1752,7 @@ mod tests {
             false,
             &Fixed,
         ));
-        for s in ["α", "β", "≤", "γ", "⋅", "ℝ", " if "] {
+        for s in ["α", "β", "≤", "γ", "·", "ℝ", " if "] {
             assert!(t.iter().any(|x| x.0 == s), "{s} in {t:?}");
         }
         let bad = layout("\\notacommand x", 20.0, false, &Fixed);

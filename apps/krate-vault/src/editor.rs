@@ -1247,7 +1247,7 @@ impl Doc {
         }
         let mut carets: Vec<(Option<Pos>, Pos)> = core::mem::take(&mut self.extra);
         carets.push((self.anchor, self.cur));
-        carets.sort_by(|x, y| y.1.cmp(&x.1));
+        carets.sort_by_key(|x| core::cmp::Reverse(x.1));
         carets.dedup_by(|x, y| x.1 == y.1);
         self.buf.begin_group(self.cur);
         let mut done: Vec<(Option<Pos>, Pos)> = Vec::new();
@@ -1268,7 +1268,7 @@ impl Doc {
             done.push((self.anchor, self.cur));
         }
         // The first caret in the note leads; the rest stay with it.
-        done.sort_by(|x, y| x.1.cmp(&y.1));
+        done.sort_by_key(|x| x.1);
         done.dedup_by(|x, y| x.1 == y.1);
         let lead = done.remove(0);
         self.anchor = lead.0;

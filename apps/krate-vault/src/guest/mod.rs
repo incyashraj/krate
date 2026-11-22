@@ -12,12 +12,12 @@ mod disk;
 mod editor;
 mod look;
 mod views;
+mod widgets;
 
 use crate::app::{
     App, Cmd, Focus, Hit, HostRequest, LeftPane, ListKind, Mods, Overlay, RightPane, RowKind, View,
 };
 use crate::editor::Mode;
-use crate::md::Target;
 use crate::panes::{Area, Divider};
 use crate::text::{count, grouped};
 use crate::vault::Vault;
@@ -325,6 +325,7 @@ impl Ui {
         } else {
             self.draw_workspace(w, h);
         }
+        self.draw_editor_extras(w, h);
         self.draw_overlay(w, h);
         if !show {
             return;
@@ -1706,6 +1707,63 @@ impl Ui {
         }
     }
 
+    /// A press on the note that is not plain caret placing: a link, a tag,
+    /// a checkbox, a fold, a callout, a property, a block drawn whole, the
+    /// find bar. True when it was one (src/guest/editor.rs decides what).
+    fn editor_press(&mut self, px: f32, py: f32, m: Mods) -> bool {
+        // The title above the note renames it.
+        let on_title = self
+            .shown
+            .rows
+            .first()
+            .is_some_and(|(vi, y, l)| *vi == 0 && py >= *y && py < y + l.h);
+        if on_title && self.app.doc().is_some_and(|d| d.mode != Mode::Reading) {
+            if let Some(path) = self.app.doc().map(|d| d.path.clone()) {
+                self.app.start_rename(&path);
+            }
+            return true;
+        }
+        let act = {
+            let Some(doc) = self.app.doc() else {
+                return false;
+            };
+            let on_line = doc.mode != Mode::Reading
+                && self
+                    .shown
+                    .rows
+                    .iter()
+                    .rev()
+                    .find(|(_, y, l)| py >= *y && l.h > 0.0)
+                    .is_some_and(|(vi, _, _)| *vi == doc.cur.line + 1);
+            editor::press(self.c, doc, &self.shown, px, py, !on_line || m.primary)
+        };
+        let Some(act) = act else {
+            return false;
+        };
+        if let editor::Act::Url(u) = &act {
+            if krate::ui::launcher::open_url(u).is_err() {
+                self.app.say("Krate did not let this app open web links");
+            }
+            return true;
+        }
+        crate::links::act_on(&mut self.app, act, m)
+    }
+
+    /// The pointer moved over the window: fold chevrons and page previews.
+    fn editor_hover(&mut self, px: f32, py: f32, cmd: bool) -> bool {
+        let doc = self.app.doc();
+        widgets::hover(&mut self.cache, self.c, doc, &self.shown, px, py, cmd)
+    }
+
+    /// After the panes: the page preview, and reading in what embeds asked for.
+    fn draw_editor_extras(&mut self, w: f32, h: f32) {
+        let t = self.t();
+        widgets::draw_preview(&mut self.cache, self.c, t, &self.sz, r(0.0, 0.0, w, h));
+        if widgets::fetch(&mut self.cache, &mut self.app, self.c) {
+            let _ = window::request_redraw(self.win);
+        }
+    }
+
     fn caret_visible(&self) -> bool {
         if self.app.focus != Focus::Editor
             || self.app.overlay.is_some()
@@ -3029,71 +3087,8 @@ impl Ui {
                 1
             };
         self.last_click = (now_ms, px, py, clicks);
-        // Links, tags and checkboxes in what is drawn.
-        let mut follow: Option<Hit> = None;
-        let mut toggle: Option<usize> = None;
-        let mut tag: Option<String> = None;
-        let mut url: Option<String> = None;
-        if let Some(doc) = self.app.doc() {
-            let mode = doc.mode;
-            let active_line = doc.cur.line;
-            if let Some((vi, y, l)) = self.shown.rows.iter().rev().find(|(_, y, _)| py >= *y) {
-                if *vi == 0 && mode != Mode::Reading {
-                    let path = doc.path.clone();
-                    self.app.start_rename(&path);
-                    return;
-                }
-                if *vi > 0 {
-                    let n = vi - 1;
-                    let text = doc.line(n);
-                    let lx = px - self.shown.x;
-                    let row = l.row_at(py - y);
-                    if let editor::Deco::Task(_) = l.deco {
-                        if lx < l.x0 && lx >= l.marker - 12.0 && row == 0 {
-                            toggle = Some(n);
-                        }
-                    }
-                    let on_line = n == active_line && mode != Mode::Reading;
-                    if toggle.is_none() && mode != Mode::Source && (!on_line || m.primary) {
-                        if let Some(run) = l.run_at(row, lx) {
-                            match run.target {
-                                Some(Target::Wiki(a, b)) => {
-                                    follow = Some(Hit::LinkNote(String::from(
-                                        text.get(a..b).unwrap_or(""),
-                                    )));
-                                }
-                                Some(Target::Tag(a, b)) => {
-                                    tag = Some(String::from(text.get(a + 1..b).unwrap_or("")))
-                                }
-                                Some(Target::Url(a, b)) => {
-                                    url = Some(String::from(text.get(a..b).unwrap_or("")))
-                                }
-                                None => {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if let Some(n) = toggle {
-            let now = self.app.now;
-            if let Some(d) = self.app.doc_mut() {
-                d.toggle_task(n, now);
-            }
-            return;
-        }
-        if let Some(h) = follow {
-            self.app.click(h, m);
-            return;
-        }
-        if let Some(t) = tag {
-            self.app.search_tag(&t);
-            return;
-        }
-        if let Some(u) = url {
-            if krate::ui::launcher::open_url(&u).is_err() {
-                self.app.say("Krate did not let this app open web links");
-            }
+        // Links, tags, checkboxes, folds and blocks drawn whole.
+        if self.editor_press(px, py, m) {
             return;
         }
         let Some((_, pos)) = self.editor_pos(px, py) else {
@@ -3116,7 +3111,9 @@ impl Ui {
                     };
                     d.select_range(crate::buffer::Pos::new(pos.line, 0), end);
                 }
+                _ if m.alt && !m.shift && d.mode != Mode::Reading => d.add_caret(pos),
                 _ => {
+                    d.extra.clear();
                     d.place(pos, m.shift);
                     self.drag = Drag::Select;
                 }
@@ -4008,6 +4005,9 @@ impl krate::Guest for Component {
                                 }
                                 if z != ui.hover {
                                     ui.hover = z;
+                                    changed = true;
+                                }
+                                if ui.editor_hover(p.x, p.y, m.primary) {
                                     changed = true;
                                 }
                             }

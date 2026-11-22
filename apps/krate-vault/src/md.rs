@@ -978,6 +978,20 @@ impl Fences {
     }
 }
 
+/// Whether reading view shows nothing of a line: all of it is syntax, a
+/// `%%comment%%` or a block id.
+pub fn reading_empty(line: &str) -> bool {
+    !line.trim().is_empty()
+        && inline(line, 0).iter().all(|s| {
+            s.style.syntax
+                || s.style.comment
+                || s.style.blockid
+                || line
+                    .get(s.start..s.end)
+                    .is_some_and(|t| t.trim().is_empty())
+        })
+}
+
 /// One heading for the outline pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {

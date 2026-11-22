@@ -192,6 +192,22 @@ impl Vfs for DiskFs {
         String::from_utf8(bytes).map_err(|_| String::from("it is not UTF-8 text"))
     }
 
+    fn read_bytes(&mut self, path: &str) -> Result<Vec<u8>, String> {
+        let file = files::open(&self.at_path(path), OpenMode::Read).map_err(why)?;
+        let mut bytes: Vec<u8> = Vec::new();
+        loop {
+            let chunk = file.read(CHUNK as u32).map_err(why)?;
+            if chunk.is_empty() {
+                break;
+            }
+            bytes.extend_from_slice(&chunk);
+            if bytes.len() > 64 << 20 {
+                return Err(String::from("the picture is larger than 64 MB"));
+            }
+        }
+        Ok(bytes)
+    }
+
     fn write(&mut self, path: &str, text: &str) -> Result<(), String> {
         self.mine(path);
         let file = files::open(&self.at_path(path), OpenMode::Write).map_err(why)?;

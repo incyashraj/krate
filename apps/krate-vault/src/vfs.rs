@@ -26,6 +26,11 @@ pub trait Vfs {
     fn rename(&mut self, from: &str, to: &str) -> Result<(), String>;
     fn remove_file(&mut self, path: &str) -> Result<(), String>;
     fn exists(&mut self, path: &str) -> bool;
+    /// A file's bytes, for the pictures a note embeds. A folder held in
+    /// memory holds only text.
+    fn read_bytes(&mut self, path: &str) -> Result<Vec<u8>, String> {
+        self.read(path).map(String::into_bytes)
+    }
     /// What changed on disk since the last ask, outside the app, as paths
     /// in the vault. A folder in memory never changes behind the app's back.
     fn outside_changes(&mut self) -> Vec<String> {
