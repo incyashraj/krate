@@ -1,0 +1,5 @@
+config*.env
+!config.example.env
+build/
+runs/
+__pycache__/

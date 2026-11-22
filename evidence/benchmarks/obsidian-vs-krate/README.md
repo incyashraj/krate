@@ -1,9 +1,10 @@
 # Obsidian versus Krate: the Krate side (IC-999)
 
-This directory holds the Krate half of the Obsidian benchmark: the replica
-app, the vaults both apps open, and how to run the replica against them. The
-measurements, protocol, seal and claims come later and live here too; nothing
-in this directory is a benchmark result yet.
+This directory holds the Obsidian benchmark: the replica app, the vaults
+both apps open, how to run the replica against them, the protocol written
+before any run ([PROTOCOL.md](PROTOCOL.md)) and the kit that measures both
+apps and seals the result (section 4). Nothing in this directory is a
+benchmark result yet.
 
 - The app: `apps/krate-vault` ("Vault"), a Krate app that does the work the
   Electron notes app does on the same vault. What it does and does not do is
@@ -113,3 +114,38 @@ the work at each load:
   lines in total (`lines_laid_out:44`) -- only the lines shown; Cmd+Down to
   the end and typing worked, and the 14 MB note saved (`saves:1`).
 - a flat folder of 4,100 notes: cannot be listed (screens/11, K-1334).
+
+## 4. Measure both apps (the kit)
+
+[PROTOCOL.md](PROTOCOL.md) says what is measured, how, how often and what
+counts; it was committed before any run and a run is held to it.
+
+```sh
+cd evidence/benchmarks/obsidian-vs-krate
+./scripts/self-test.sh                 # headless proof of the kit, about 30 s
+cp config.example.env config.env       # set KRATE_BIN, KRATE_VAULT_BUNDLE, KRATE_INSTALLER
+./scripts/install-obsidian.sh          # verify the DMG, copy Obsidian to ~/krate-bench/apps (no launch)
+./scripts/prepare.sh                   # vaults, targets, Swift instruments, input check
+./scripts/run-suite.sh                 # the session; ends with analysis.md, seal.sha256, audit.txt
+```
+
+Before `run-suite.sh`: the checklist in PROTOCOL.md section 9, and Terminal
+holding Screen Recording (every leg: the note must be read off the window)
+and Accessibility (the interaction leg posts keys and wheel events). The kit
+checks both and never changes them. The full session is about 4.5 hours
+(start 20 min, resources and idle 80 min, network 5 min, interaction 35 min,
+growth 2 h); without `growth` in `BENCH_LEGS`, about 2.5 hours.
+
+| File | Does |
+|---|---|
+| `scripts/install-obsidian.sh`, `fetch-obsidian.sh` | the pinned DMG, verified; installed by copy, never opened |
+| `scripts/obsidian-profile.py` | an isolated Obsidian profile that opens the vault on the target note, and the check that it stayed isolated |
+| `scripts/note-phrases.py` | the target note of each vault, its phrases, the switcher and search targets |
+| `scripts/swift/start_probe.swift` | launch to window and launch to the note's text, from outside, the same for both apps |
+| `scripts/swift/tree_sample.swift` | footprint, RSS, threads, files, CPU, wakeups of the whole process tree, from the kernel |
+| `scripts/swift/interact.swift` | switcher, search, open, typing echo and scroll pacing, from frame timestamps |
+| `scripts/net-poll.py` | remote addresses held after launch |
+| `scripts/measure-*-leg.sh`, `run-suite.sh` | one leg each, ABBA order, every raw sample kept |
+| `scripts/record.py` | one sample's raw output into one row, accepted or rejected by the protocol's rules |
+| `scripts/analyze.py`, `seal.py`, `audit.py` | median/p90/n from raw only; sha256 of every file; the fail-closed verdict |
+| `scripts/synth-run.py` | a synthetic run for the self-test, refused by the audit anywhere else |
