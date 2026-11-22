@@ -15,9 +15,9 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 Contributors: add a line here with your change.
 
-## [0.5.5] - 2026-11-22
+## [0.6.0] - 2026-11-22
 
-The first stable 0.5 release: everything in the 0.5.5 pre-releases below, and these since rc9.
+The first stable release since 0.5.4: everything in the 0.5.5 pre-releases below, and these since rc9.
 
 ### Added
 - Make an app in a Claude chat: add Krate as a connector in Claude (`https://hub.krate.tech/mcp`) and ask in plain words. Claude writes the app, Krate builds and checks it and publishes it unlisted to your account, and you get a link that opens on any phone or computer. A failed build gives Claude Krate's own words to fix it. Building asks you to sign in to Krate once.
@@ -28,6 +28,7 @@ The first stable 0.5 release: everything in the 0.5.5 pre-releases below, and th
 - Spreadsheets: `krate::sheets` opens and writes `.xlsx`, `.ods` and `.csv` files the person chooses.
 - An app serving the local network can announce itself by name, so other devices find it the way they find a printer.
 - The Krate connector also answers ChatGPT's `search` and `fetch` tools, and connectors can sign in with a published identity.
+- Krate Studio's IDE becomes a workbench: the app on a phone, a tablet and a desktop side by side; every permission as a switch that opens the app again without it; check-app's stages as cards; and a pretend Zebra label printer that draws each label it is sent (ZPL, Code 128, QR) and, on Mac and Linux, a pretend bench scale on a real serial port.
 
 ### Changed
 - The guide an AI reads opens with the first-build failures and their one-line fixes, and a failed build names the import a missing float method needs (`use krate::prelude::*;`).
@@ -36,6 +37,10 @@ The first stable 0.5 release: everything in the 0.5.5 pre-releases below, and th
 - "Open with Krate" starts every permission the app asks for ticked and names each in plain words ("Save a file where you choose"); an optional one that started unticked left the app's export failing with nothing asking again.
 - A link opened in a browser remembers your yes for that app, and asks again only when the app wants something new.
 - A `krate-check.toml` task's `pick` step now answers a save dialog as well as an open one, so `check-app` can prove an export.
+- Studio's Ask AI and Fix with AI land: where the cursor is goes to the AI as a note, not as words the change is judged by, and a request to fix a build error is judged by the build.
+- An app an AI changed no longer carries the model app Krate put beside the AI while it worked.
+- Studio's IDE: Krate's bookkeeping files stay out of the file tree and the change review, the manifest checker no longer marks rationales, and line numbers stay readable when code scrolls sideways.
+- Studio's smallest window keeps the full layout.
 - Every system email uses the site's layout and mark, and Studio's buttons and rail share one hover and one pressed look.
 - Web Player: in a browser tab, the haptics, motion and unlock interfaces now answer `available() = false` (and the calls answer as a phone without the feature does) instead of showing a "works in Krate on a computer" notice, which a tab cannot promise.
 

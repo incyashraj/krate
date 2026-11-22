@@ -2436,7 +2436,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "krate"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "calamine",
  "dlmalloc",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "krate-accountsync"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-appsql",
  "krate-http",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-android"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "jni 0.21.1",
  "krate-adapter-common",
@@ -2475,7 +2475,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-common"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "fontique",
  "jiff",
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-ios"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -2505,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-linux"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "krate-adapter-common",
@@ -2519,7 +2519,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-macos"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "block2 0.6.2",
@@ -2534,7 +2534,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-web"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "js-sys",
  "krate-adapter-common",
@@ -2551,7 +2551,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-windows"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "arboard",
  "krate-adapter-common",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "krate-apksig"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -2577,14 +2577,14 @@ dependencies = [
 
 [[package]]
 name = "krate-appsql"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "rusqlite",
 ]
 
 [[package]]
 name = "krate-author"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2592,7 +2592,7 @@ dependencies = [
 
 [[package]]
 name = "krate-bundle"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "crc32fast",
  "krate-http",
@@ -2612,7 +2612,7 @@ dependencies = [
 
 [[package]]
 name = "krate-cli"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "calamine",
@@ -2654,7 +2654,7 @@ dependencies = [
 
 [[package]]
 name = "krate-gpu-names"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "wgpu-types 27.0.1",
  "wgpu-types 29.0.4",
@@ -2662,7 +2662,7 @@ dependencies = [
 
 [[package]]
 name = "krate-http"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -2675,7 +2675,7 @@ dependencies = [
 
 [[package]]
 name = "krate-hub"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-bundle",
  "sha2",
@@ -2684,7 +2684,7 @@ dependencies = [
 
 [[package]]
 name = "krate-layout"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "criterion",
  "krate-adapter-common",
@@ -2694,7 +2694,7 @@ dependencies = [
 
 [[package]]
 name = "krate-lease"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "ring",
  "serde_json",
@@ -2702,7 +2702,7 @@ dependencies = [
 
 [[package]]
 name = "krate-lowering"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-adapter-common",
  "krate-layout",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "krate-manifest"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-adapter-common",
  "serde",
@@ -2720,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "krate-mcp"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "krate-author",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "krate-orgaccess"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-bundle",
  "krate-http",
@@ -2746,7 +2746,7 @@ dependencies = [
 
 [[package]]
 name = "krate-orgdata"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-orgkeys",
  "serde",
@@ -2755,7 +2755,7 @@ dependencies = [
 
 [[package]]
 name = "krate-orgkeys"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -2773,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "krate-player-android"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "android_logger",
  "jni 0.21.1",
@@ -2795,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "krate-player-ios"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -2821,7 +2821,7 @@ dependencies = [
 
 [[package]]
 name = "krate-policy"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-adapter-common",
  "krate-manifest",
@@ -2830,7 +2830,7 @@ dependencies = [
 
 [[package]]
 name = "krate-port"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-manifest",
  "serde",
@@ -2841,7 +2841,7 @@ dependencies = [
 
 [[package]]
 name = "krate-presenter-gpu"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-adapter-common",
  "parley",
@@ -2852,7 +2852,7 @@ dependencies = [
 
 [[package]]
 name = "krate-runtime"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "block2 0.6.2",
  "cpal",
@@ -2915,7 +2915,7 @@ dependencies = [
 
 [[package]]
 name = "krate-scene3d-gpu"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "bytemuck",
  "krate-adapter-common",
@@ -2927,7 +2927,7 @@ dependencies = [
 
 [[package]]
 name = "krate-sql-web"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "krate-appsql",
  "serde_json",
@@ -2935,7 +2935,7 @@ dependencies = [
 
 [[package]]
 name = "krate-tools"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "krate-bundle",
@@ -2968,7 +2968,7 @@ dependencies = [
 
 [[package]]
 name = "krate-wasi-fold"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "wasm-encoder 0.244.0",
  "wasmparser 0.244.0",

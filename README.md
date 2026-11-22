@@ -359,9 +359,7 @@ middle.
 frame.png` writes the app's first frame to a PNG so output can be looked at
 rather than guessed about.
 
-## Next release, on `main` now
-
-Not in `v0.5.5-rc9` yet; built, tested and merged:
+## New in 0.6
 
 - **Make an app in your Claude chat.** Add Krate to Claude as a connector
   (`https://hub.krate.tech/mcp`) and ask for an app in plain words: Claude
@@ -375,8 +373,15 @@ Not in `v0.5.5-rc9` yet; built, tested and merged:
   included, on desktop and in a browser tab.
 - **Apps reach the factory floor.** Serial ports (`device.serial`), label and
   receipt printers the person picks once (`device.printer`, raw ZPL, EPL or
-  ESC/POS), and serving on the computer or the local network
-  (`net.listen:<port>`), each behind the permission wall.
+  ESC/POS), USB devices of a model the app names (`krate:usb`), spreadsheets
+  (`.xlsx`, `.ods`, `.csv`), and serving on the computer or the local
+  network, announced by name (`net.listen:<port>`), each behind the
+  permission wall.
+- **Krate Studio's workbench.** Beside the code: the app on a phone, a
+  tablet and a desktop at once; every permission as a switch, to see what a
+  person who says no sees; Krate's checks as cards; and a pretend Zebra
+  label printer and (on Mac and Linux) bench scale, so a label app is built
+  with no printer on the desk.
 - **Every app you make is signed as you, from its first file.** One
   publisher key per person per computer, made with no account and no
   question. Your app keeps its data through every rebuild, and no other app
