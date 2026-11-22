@@ -209,6 +209,9 @@ pub struct Phase3GuiHost {
     /// and the next handle. One Arc per picture, so every frame that draws
     /// it hands the adapters the same picture and they upload it once.
     kept_images: std::cell::RefCell<std::collections::BTreeMap<(u64, u64), Arc<ImagePixels>>>,
+    /// PDFs the app opened (krate:gfx/pdf, K-1342).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) pdfs: std::cell::RefCell<crate::pdf_pages::PdfDocs>,
     /// The videos this run opened (krate:gfx/video, IC-922) and the frame
     /// each last showed, so a draw between new frames hands the adapters the
     /// same picture and they upload it once.
@@ -664,6 +667,8 @@ impl Phase3GuiHost {
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kept_images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            #[cfg(not(target_arch = "wasm32"))]
+            pdfs: Default::default(),
             videos: std::cell::RefCell::new(crate::video::Videos::default()),
             video_frames: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             video_states: std::cell::RefCell::new(std::collections::BTreeMap::new()),

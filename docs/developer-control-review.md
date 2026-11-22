@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 85 boundaries reviewed, 76 of them WIT interfaces (76 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 48 optional.
+- 86 boundaries reviewed, 77 of them WIT interfaces (77 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 49 optional.
 - 8 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -35,6 +35,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:gfx@0.1.0/canvas-images` | wit | keeping a decoded picture in the host for a canvas and drawing it by handle, with the same placement as draw-pixels | which pictures to keep, when to forget them, where and how big to draw them | draw-pixels, which sends the pixels every call | no | -- |
 | `krate:gfx@0.1.0/canvas-text` | wit | that turned text is set by the same font layout as level text and is as sharp, at the window's own scale | what to write turned, where, and by how many quarters | draw the letters one under another with draw-text-styled, or draw a picture of the text the app made itself | no | -- |
 | `krate:gfx@0.1.0/canvas2d` | wit | the handoff of drawn pixels and draw operations to the host painter, which is the only way onto the screen | any rasterizer, layout engine, text shaper or scene graph the app brings; Krate's draw calls are a convenience, not a requirement | set-pixels on a canvas or an image widget: the app renders with anything and hands over the pixels | yes | os-safety |
+| `krate:gfx@0.1.0/pdf` | wit | that a PDF page looks the same on every system, drawn by Krate with no reader installed, and that only the app that handed over the bytes sees the pixels | which PDF, which pages, at what scale, and how to show them | open the file in the system's own viewer with ui.open-url, or draw pages the app rendered itself | no | -- |
 | `krate:gfx@0.1.0/scene3d` | wit | nothing: an optional software 3D helper | any 3D approach; the app may ignore this entirely | canvas pixels from the app's own renderer | no | -- |
 | `krate:gfx@0.1.0/types` | wit | colour, rectangle and error shapes every host lowers to | everything drawn with them | none needed: a type carries no authority | yes | portability |
 | `krate:gfx@0.1.0/video` | wit | playing a bundled or granted-host video with the platform decoder and drawing its current frame into a canvas by handle | which video, its controls and their look, where and how big to draw it, when to play, pause, seek, loop or mute | decode frames in the app and draw them with draw-pixels | no | -- |

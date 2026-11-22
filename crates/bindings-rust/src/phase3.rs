@@ -762,7 +762,7 @@ pub mod ui {
     }
 }
 
-/// `krate:gfx`: canvas2d, canvas_images, canvas_text, scene3d, video.
+/// `krate:gfx`: canvas2d, canvas_images, canvas_text, pdf, scene3d, video.
 pub mod gfx {
     /// `krate:gfx/canvas2d`.
     pub mod canvas2d {
@@ -1185,6 +1185,38 @@ pub mod gfx {
                 style,
                 quarter_turns,
             )
+        }
+    }
+    /// `krate:gfx/pdf`.
+    pub mod pdf {
+        pub use crate::bindings::krate::gfx::pdf::{GfxError, PagePixels};
+
+        /// Read a PDF from its bytes and keep it open under the handle returned.
+        /// Fails on a file that is not a PDF or is locked with a password.
+        pub fn open(bytes: &[u8]) -> Result<u64, GfxError> {
+            crate::bindings::krate::gfx::pdf::open(bytes)
+        }
+
+        /// How many pages it has.
+        pub fn page_count(doc: u64) -> Result<u32, GfxError> {
+            crate::bindings::krate::gfx::pdf::page_count(doc)
+        }
+
+        /// A page's size in points (1/72 inch), as it is shown (turned pages
+        /// already turned). Pages count from 0.
+        pub fn page_size(doc: u64, page: u32) -> Result<(f32, f32), GfxError> {
+            crate::bindings::krate::gfx::pdf::page_size(doc, page)
+        }
+
+        /// Draw page `page` at `scale` pixels per point on white: 2.0 is sharp on
+        /// a Retina screen. The longest side is held to 8192 pixels.
+        pub fn render(doc: u64, page: u32, scale: f32) -> Result<PagePixels, GfxError> {
+            crate::bindings::krate::gfx::pdf::render(doc, page, scale)
+        }
+
+        /// Let the PDF go.
+        pub fn close(doc: u64) {
+            crate::bindings::krate::gfx::pdf::close(doc)
         }
     }
     /// `krate:gfx/scene3d`.

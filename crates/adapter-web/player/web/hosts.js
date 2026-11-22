@@ -820,6 +820,9 @@ export function buildImports(ctx) {
   // Spelling (K-1340): a tab cannot reach the computer's spell checker, so
   // it says there is none and nothing is ever marked.
   impl['krate:ui/spelling'] = { available: () => false, check: () => [], suggest: () => [], learn() {} };
+  // PDF pages (K-1342): drawn by Krate on a computer; a tab says so.
+  const noPdf = () => { throw new HostError({ tag: 'unsupported', val: 'PDF pages are drawn in Krate on a computer; a browser tab cannot draw them yet.' }); };
+  impl['krate:gfx/pdf'] = { open: noPdf, pageCount: noPdf, pageSize: noPdf, render: noPdf, close() {} };
   impl['krate:gfx/canvas-images'] = {
     keep: (c, w, h, rgba) => BigInt(unwrap(ui.c_keep(c, w, h, rgba))),
     draw: (c, image, a) => g(ui.c_draw_kept(c, image, geo(a))),

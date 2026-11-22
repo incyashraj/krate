@@ -1258,6 +1258,94 @@ fn modifiers_to_phase4(m: ui3::types::Modifiers) -> ui4::types::Modifiers {
     }
 }
 
+/// PDF pages as pictures (krate:gfx/pdf, K-1342). No permission: the app
+/// already holds the bytes, and the pixels go back only to it.
+impl crate::phase4_gui_bindings::krate::gfx::pdf::Host for Phase3GuiHost {
+    fn open(&mut self, bytes: Vec<u8>) -> wasmtime::Result<Result<u64, gfx3::types::GfxError>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self
+            .pdfs
+            .borrow_mut()
+            .open(bytes)
+            .map_err(gfx3::types::GfxError::Unsupported));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = bytes;
+            Ok(Err(gfx3::types::GfxError::Unsupported(
+                "PDF pages are not drawn here yet".to_string(),
+            )))
+        }
+    }
+
+    fn page_count(&mut self, doc: u64) -> wasmtime::Result<Result<u32, gfx3::types::GfxError>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self
+            .pdfs
+            .borrow()
+            .page_count(doc)
+            .map_err(gfx3::types::GfxError::Unsupported));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = doc;
+            Ok(Err(gfx3::types::GfxError::InvalidTarget))
+        }
+    }
+
+    fn page_size(
+        &mut self,
+        doc: u64,
+        page: u32,
+    ) -> wasmtime::Result<Result<(f32, f32), gfx3::types::GfxError>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self
+            .pdfs
+            .borrow()
+            .page_size(doc, page)
+            .map_err(gfx3::types::GfxError::Unsupported));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (doc, page);
+            Ok(Err(gfx3::types::GfxError::InvalidTarget))
+        }
+    }
+
+    fn render(
+        &mut self,
+        doc: u64,
+        page: u32,
+        scale: f32,
+    ) -> wasmtime::Result<
+        Result<crate::phase4_gui_bindings::krate::gfx::pdf::PagePixels, gfx3::types::GfxError>,
+    > {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self
+            .pdfs
+            .borrow()
+            .render(doc, page, scale)
+            .map(
+                |p| crate::phase4_gui_bindings::krate::gfx::pdf::PagePixels {
+                    width: p.width,
+                    height: p.height,
+                    rgba: p.rgba,
+                },
+            )
+            .map_err(gfx3::types::GfxError::Unsupported));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (doc, page, scale);
+            Ok(Err(gfx3::types::GfxError::InvalidTarget))
+        }
+    }
+
+    fn close(&mut self, doc: u64) -> wasmtime::Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.pdfs.borrow_mut().close(doc);
+        #[cfg(target_arch = "wasm32")]
+        let _ = doc;
+        Ok(())
+    }
+}
+
 /// The computer's spell checker (krate:ui/spelling, K-1340).
 impl ui4::spelling::Host for Phase3GuiHost {
     fn available(&mut self) -> wasmtime::Result<bool> {

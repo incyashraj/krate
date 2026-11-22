@@ -39,6 +39,9 @@ speech = ["dep:whisper-rs"]
 #
 # The same shape `rfd` already uses above for Android and iOS.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# krate:gfx/pdf (K-1342): PDF pages as pictures, in pure Rust (Apache-2.0
+# OR MIT), so every system renders a page the same way with no reader.
+hayro = "0.9.0"
 # HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
 # so there is one certificate story in the workspace rather than two.
 ureq.workspace = true

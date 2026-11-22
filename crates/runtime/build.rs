@@ -127,6 +127,7 @@ fn home(iface: &str) -> (&'static str, &'static str) {
         "ui/screen",
         "gfx/canvas-images",
         "gfx/canvas-text",
+        "gfx/pdf",
         "ui/spelling",
         "gpu/types",
         "gpu/gpu",

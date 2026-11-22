@@ -701,6 +701,13 @@ checker does not know (`start`, `len` in UTF-8 bytes) -- underline them -- \
 `suggest(word)` gives corrections best first and `learn(word)` is \
 \"Add to dictionary\". `available()` is false in a browser tab or on a \
 phone: then mark nothing. Check the lines on screen, not the whole file.\n\n\
+A PDF (a manual, an invoice, a vault's attachment): read its bytes the \
+ordinary way, then `let d = krate::gfx::pdf::open(&bytes)?`, \
+`page_count(d)`, `page_size(d, i)` in points, and \
+`render(d, i, scale)` gives `{ width, height, rgba }` to keep with \
+`canvas_images::keep` and draw each frame -- render a page once, not every \
+frame, and only the pages on screen. A browser tab answers \
+`Unsupported`: say so.\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \
 `draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \

@@ -372,6 +372,40 @@ interface canvas-text {
   draw-turned: func(canvas: u64, text: string, at: point, font-size: f32, ink: color, style: text-style, quarter-turns: u8) -> result<_, gfx-error>;
 }
 
+/// PDF pages as pictures (K-1342): a vault's PDF in a tab, an invoice
+/// preview, a manual. The app reads the file's bytes the ordinary way
+/// (`fs.files`, a picked file, its assets, a download) and hands them here;
+/// the host lays out each page it is asked for and gives back its pixels to
+/// draw with `draw-pixels` or `canvas-images`. Rendered by the same code on
+/// every system, with no reader installed. Phase 4 only.
+interface pdf {
+  use types.{gfx-error};
+
+  /// One rendered page: `width*height*4` straight-alpha RGBA bytes.
+  record page-pixels {
+    /// Pixels across.
+    width: u32,
+    /// Pixels down.
+    height: u32,
+    /// The pixels, row by row.
+    rgba: list<u8>,
+  }
+
+  /// Read a PDF from its bytes and keep it open under the handle returned.
+  /// Fails on a file that is not a PDF or is locked with a password.
+  open: func(bytes: list<u8>) -> result<u64, gfx-error>;
+  /// How many pages it has.
+  page-count: func(doc: u64) -> result<u32, gfx-error>;
+  /// A page's size in points (1/72 inch), as it is shown (turned pages
+  /// already turned). Pages count from 0.
+  page-size: func(doc: u64, page: u32) -> result<tuple<f32, f32>, gfx-error>;
+  /// Draw page `page` at `scale` pixels per point on white: 2.0 is sharp on
+  /// a Retina screen. The longest side is held to 8192 pixels.
+  render: func(doc: u64, page: u32, scale: f32) -> result<page-pixels, gfx-error>;
+  /// Let the PDF go.
+  close: func(doc: u64);
+}
+
 interface scene3d {
   use types.{color, gfx-error};
 

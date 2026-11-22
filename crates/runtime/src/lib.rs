@@ -90,6 +90,8 @@ pub use krate_orgdata::merge as org_merge;
 #[cfg(not(target_arch = "wasm32"))]
 mod org_live;
 pub mod org_store;
+#[cfg(all(feature = "phase2-bindings", not(target_arch = "wasm32")))]
+mod pdf_pages;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
 #[cfg(feature = "phase2-bindings")]
@@ -1851,6 +1853,8 @@ impl Runtime {
         link_gui!(phase4_gui_bindings::krate::gfx::canvas_images);
         // Phase 4 only: text turned by quarters (K-1341).
         link_gui!(phase4_gui_bindings::krate::gfx::canvas_text);
+        // Phase 4 only: PDF pages as pictures (K-1342).
+        link_gui!(phase4_gui_bindings::krate::gfx::pdf);
         link_gui!(phase4_gui_bindings::krate::gfx::video);
         // Phase 4 only: the GPU as WebGPU shapes it (IC-540, IC-916).
         link_gui!(phase4_gui_bindings::krate::gpu::types);
