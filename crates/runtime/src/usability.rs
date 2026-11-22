@@ -162,8 +162,9 @@ pub struct TaskStep {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shoot: Option<String>,
     /// Press and release one key, by the runtime's key name ("Enter", "a"),
-    /// with `Shift+` and `Primary+` in front for a chord: "Shift+ArrowLeft"
-    /// selects, "Primary+a" is Cmd+A on a Mac and Ctrl+A elsewhere.
+    /// with `Shift+`, `Primary+` and `Alt+` in front for a chord:
+    /// "Shift+ArrowLeft" selects, "Primary+a" is Cmd+A on a Mac and Ctrl+A
+    /// elsewhere, "Primary+Alt+f" is Cmd+Option+F (`Option+` reads the same).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
     /// Paste this text the way a person does: it is put on the run's own
@@ -334,23 +335,31 @@ impl TaskStep {
         "an empty step".to_string()
     }
 
-    /// A `key` step as (key, shift, primary): "Shift+Primary+a" is
-    /// ("a", true, true).
-    pub fn key_chord(&self) -> Option<(String, bool, bool)> {
+    /// A `key` step as its key and the modifiers held: "Shift+Primary+a" is
+    /// ("a", shift and primary). Alt (Option on a Mac) is a modifier too, so
+    /// Cmd+Option chords -- replace in a note, fold, add a caret -- can be
+    /// driven (K-1339); before, "Primary+Alt+f" was typed as text.
+    pub fn key_chord(&self) -> Option<(String, Chord)> {
         let mut rest = self.key.as_deref()?;
-        let (mut shift, mut primary) = (false, false);
+        let mut chord = Chord::default();
         loop {
             if let Some(after) = rest.strip_prefix("Shift+") {
-                shift = true;
+                chord.shift = true;
                 rest = after;
             } else if let Some(after) = rest.strip_prefix("Primary+") {
-                primary = true;
+                chord.primary = true;
+                rest = after;
+            } else if let Some(after) = rest
+                .strip_prefix("Alt+")
+                .or_else(|| rest.strip_prefix("Option+"))
+            {
+                chord.alt = true;
                 rest = after;
             } else {
                 break;
             }
         }
-        Some((rest.to_string(), shift, primary))
+        Some((rest.to_string(), chord))
     }
 
     /// Where `click_at` presses, as fractions of the window, or why it cannot.
@@ -783,6 +792,15 @@ impl FrameBuffer {
     }
 }
 
+/// The modifiers a `key` step holds. Primary is Cmd on a Mac and Ctrl
+/// elsewhere; Alt is Option on a Mac.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Chord {
+    pub shift: bool,
+    pub primary: bool,
+    pub alt: bool,
+}
+
 #[cfg(test)]
 mod fit_tests {
     use super::*;
@@ -1025,5 +1043,61 @@ mod tests {
         assert!(back.opened_window);
         assert_eq!(back.ran_millis, 1234);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod chord_tests {
+    use super::*;
+
+    fn chord(key: &str) -> (String, Chord) {
+        TaskStep {
+            key: Some(key.to_string()),
+            ..Default::default()
+        }
+        .key_chord()
+        .expect("a key step")
+    }
+
+    /// K-1339: Cmd+Option+F (replace in a note), Cmd+Option+[ (fold) and
+    /// Cmd+Option+Down (add a caret) are chords, not text.
+    #[test]
+    fn alt_and_option_are_held_like_shift_and_primary() {
+        let all = Chord {
+            shift: true,
+            primary: true,
+            alt: true,
+        };
+        assert_eq!(
+            chord("Primary+Alt+f"),
+            (
+                "f".into(),
+                Chord {
+                    primary: true,
+                    alt: true,
+                    ..Default::default()
+                }
+            )
+        );
+        assert_eq!(
+            chord("Option+Primary+ArrowDown").1,
+            Chord {
+                primary: true,
+                alt: true,
+                ..Default::default()
+            }
+        );
+        assert_eq!(chord("Shift+Alt+Primary+["), ("[".into(), all));
+        assert_eq!(
+            chord("Shift+ArrowLeft"),
+            (
+                "ArrowLeft".into(),
+                Chord {
+                    shift: true,
+                    ..Default::default()
+                }
+            )
+        );
+        assert_eq!(chord("a"), ("a".into(), Chord::default()));
     }
 }

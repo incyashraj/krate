@@ -3020,8 +3020,8 @@ impl Phase3GuiHost {
                     modifiers: Default::default(),
                 })
                 .is_ok()
-        } else if let Some((key, shift, primary)) = step.key_chord() {
-            let modifiers = chord_modifiers(shift, primary);
+        } else if let Some((key, chord)) = step.key_chord() {
+            let modifiers = chord_modifiers(chord.shift, chord.primary, chord.alt);
             [true, false].iter().all(|&pressed| {
                 let routed = dispatcher
                     .route_key_event(crate::phase3_ui::KeyRouteRequest {
@@ -3041,7 +3041,7 @@ impl Phase3GuiHost {
             // The run's own clipboard: a check run is headless, so this is
             // Krate's in-process one, never the person's.
             dispatcher.put_on_run_clipboard(text);
-            let modifiers = chord_modifiers(false, true);
+            let modifiers = chord_modifiers(false, true, false);
             let focused = dispatcher.focused_widget(window).ok().flatten();
             [true, false].iter().all(|&pressed| {
                 dispatcher
@@ -6772,12 +6772,12 @@ impl Drop for PickRoot {
 /// An app reads its keys once a frame; a slow frame is well under this.
 const COPY_KEYSTROKE_LASTS: std::time::Duration = std::time::Duration::from_secs(1);
 
-fn chord_modifiers(shift: bool, primary: bool) -> krate_adapter_common::ui::Modifiers {
+fn chord_modifiers(shift: bool, primary: bool, alt: bool) -> krate_adapter_common::ui::Modifiers {
     let mac = cfg!(target_os = "macos");
     krate_adapter_common::ui::Modifiers {
         shift,
         control: primary && !mac,
-        alt: false,
+        alt,
         meta: primary && mac,
     }
 }

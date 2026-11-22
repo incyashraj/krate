@@ -213,7 +213,8 @@ store on disk (its key-value store and database), `expect_notified =\n\
 for it -- not against anything the app says on screen, so an app that\n\
 saves, reminds or fetches proves it did.\n\
 `key = \"Shift+ArrowLeft\"` or\n\
-`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) presses a chord,\n\
+`\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) or `\"Primary+Alt+f\"`\n\
+(Alt is Option on a Mac) presses a chord,\n\
 `paste = \"text\"` pastes it as a person would, and `pick = \"notes.txt\"`\n\
 (before the click that opens a picker) answers the app's next file or\n\
 folder picker with an empty file or folder of that name, made for the\n\
