@@ -185,6 +185,13 @@
         <p class="note hidden" id="sessNote"></p>
       </div>
 
+      <div class="card" id="conn">
+        <h2>Connected AI apps</h2>
+        <p class="sub">An AI app you connected, like Claude, can make apps in your account while it stays connected. End it here and it stops at once.</p>
+        <div id="connList"><p class="sub">Loading…</p></div>
+        <p class="note hidden" id="connNote" aria-live="polite"></p>
+      </div>
+
       <div class="card">
         <h2>Invite someone</h2>
         <p class="sub">Share your link with someone who builds things.</p>
@@ -358,6 +365,33 @@
     }).catch(function () { box.innerHTML = '<p class="sub">They did not load. Try again in a minute.</p>'; });
   }
   $("sessShow").addEventListener("click", function () { $("sessShow").classList.add("hidden"); sessions(); });
+
+  // The AI apps this account connected (K-1305): the hub's own list, and
+  // the same End it already honoured for a request through the contact page.
+  function connectors() {
+    var box = $("connList"), note = $("connNote");
+    api("/me/connectors").then(function (r) {
+      var list = r.connectors || [];
+      if (!list.length) {
+        box.innerHTML = '<p class="sub">None. To make apps by asking, add Krate to Claude as a connector: <a href="/docs/pages/make-an-app-with-claude.html">how</a>.</p>';
+        return;
+      }
+      box.innerHTML = list.map(function (c) {
+        return '<div class="approw"><span><b>' + esc(c.client || "An AI app") + '</b> <span class="m">connected ' + when(c.allowed_at) + '</span></span><span class="grow"></span>'
+          + '<button class="btn ghost sm" type="button" data-conn="' + esc(c.id) + '">End</button></div>';
+      }).join("");
+      Array.prototype.forEach.call(box.querySelectorAll("[data-conn]"), function (b) {
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          api("/me/connectors/" + encodeURIComponent(b.getAttribute("data-conn")), { method: "DELETE" }).then(function (out) {
+            if (out && out.ok) { note.textContent = "Ended. It can no longer make apps in your account."; note.classList.remove("hidden"); connectors(); return; }
+            b.disabled = false; note.textContent = (out && (out.error_description || out.message)) || "That did not end it. Try again."; note.classList.remove("hidden");
+          }).catch(function () { b.disabled = false; note.textContent = "That did not end it. Try again."; note.classList.remove("hidden"); });
+        });
+      });
+    }).catch(function () { box.innerHTML = '<p class="sub">This list did not load. Try again in a minute.</p>'; });
+  }
+  connectors();
 
   api("/my/apps").then(function (r) {
     var box = $("appList");
