@@ -9,6 +9,15 @@
 //! whole point: a path would let it read the chosen file's siblings, walk up to
 //! its folder, or store the location and come back on a later run for a file
 //! nobody offered again. A token buys one file, for one run.
+//!
+//! A FOLDER the person picked is the one exception, because "reopen my
+//! vault" is what a person expects of a notes app, a photo library or an
+//! editor (K-1336). When the run has somewhere to remember it (the CLI's
+//! `folder_memory`, beside this app's grants, only for an app whose lineage
+//! it can check and only when a person decided), the folder's token is kept:
+//! the same token works on this app's later runs until the folder is gone or
+//! the person takes it back (`krate permissions --forget`). The app still
+//! never learns the path, and no other app can use the token.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -41,11 +50,145 @@ pub struct ChosenFiles {
     /// Counts every token ever issued in this run, so a token is never reused
     /// even after one is dropped.
     issued: u64,
+    /// Where this app's kept folders are written (K-1336); `None` keeps
+    /// every pick for the run alone.
+    folder_memory: Option<PathBuf>,
+    /// Folders kept across runs, newest last, at most [`MAX_KEPT_FOLDERS`].
+    kept: Vec<KeptFolder>,
+}
+
+/// How many picked folders one app keeps across runs. The oldest goes first.
+const MAX_KEPT_FOLDERS: usize = 16;
+
+/// The schema every file under `grants/` carries.
+const KEPT_SCHEMA: &str = "krate.grants.v1";
+
+/// One folder kept for an app: the token it holds and where it points.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct KeptFolder {
+    pub token: String,
+    pub path: PathBuf,
+    pub name: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct KeptFile {
+    schema: String,
+    folders: Vec<KeptFolder>,
+}
+
+/// The folders kept in `memory`, as written; empty when there is no file or
+/// it is not one of ours. Folders that no longer exist are still listed
+/// (they are skipped when a run starts), so `krate permissions` can show them.
+pub fn kept_folders_in(memory: &Path) -> Vec<KeptFolder> {
+    let Ok(text) = std::fs::read_to_string(memory) else {
+        return Vec::new();
+    };
+    match serde_json::from_str::<KeptFile>(&text) {
+        Ok(file) if file.schema == KEPT_SCHEMA => file
+            .folders
+            .into_iter()
+            .filter(|f| f.token.starts_with("kept-") && f.path.is_absolute())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A token nobody can guess or read a path from.
+fn kept_token() -> Option<String> {
+    use ring::rand::SecureRandom;
+    let mut bytes = [0u8; 12];
+    ring::rand::SystemRandom::new().fill(&mut bytes).ok()?;
+    Some(format!(
+        "kept-{}",
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    ))
 }
 
 impl ChosenFiles {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A store that keeps picked folders in `memory` (K-1336), starting with
+    /// the ones kept there that still exist. `None` is [`ChosenFiles::new`].
+    pub fn with_folder_memory(memory: Option<PathBuf>) -> Self {
+        let mut files = Self::new();
+        if let Some(path) = memory {
+            files.kept = kept_folders_in(&path)
+                .into_iter()
+                .rev()
+                .take(MAX_KEPT_FOLDERS)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            for folder in &files.kept {
+                if folder.path.is_dir() {
+                    files
+                        .folders_by_token
+                        .insert(folder.token.clone(), folder.path.clone());
+                }
+            }
+            files.folder_memory = Some(path);
+        }
+        files
+    }
+
+    /// Record a folder the person picked in a dialog, kept for this app's
+    /// later runs when this store has a memory (see the module docs). The
+    /// same folder picked again keeps its token, so an app that saved it
+    /// does not end up holding two.
+    pub fn keep_folder(&mut self, path: PathBuf) -> Option<String> {
+        let Some(memory) = self.folder_memory.clone() else {
+            return self.remember_folder(path);
+        };
+        if let Some(at) = self.kept.iter().position(|k| k.path == path) {
+            let folder = self.kept.remove(at);
+            let token = folder.token.clone();
+            self.folders_by_token.insert(token.clone(), path);
+            self.kept.push(folder);
+            self.save_kept(&memory);
+            return Some(token);
+        }
+        if self.held() >= MAX_CHOSEN_FILES {
+            return None;
+        }
+        let Some(token) = kept_token() else {
+            return self.remember_folder(path);
+        };
+        self.issued += 1;
+        self.folders_by_token.insert(token.clone(), path.clone());
+        self.kept.push(KeptFolder {
+            token: token.clone(),
+            name: Self::display_name(&path),
+            path,
+        });
+        while self.kept.len() > MAX_KEPT_FOLDERS {
+            let gone = self.kept.remove(0);
+            self.folders_by_token.remove(&gone.token);
+        }
+        self.save_kept(&memory);
+        Some(token)
+    }
+
+    /// Best effort, like every remembered grant: a machine that cannot write
+    /// here still ran the app; the next run asks for the folder again.
+    fn save_kept(&self, memory: &Path) {
+        let file = KeptFile {
+            schema: KEPT_SCHEMA.to_string(),
+            folders: self.kept.clone(),
+        };
+        let Ok(body) = serde_json::to_vec_pretty(&file) else {
+            return;
+        };
+        if let Some(parent) = memory.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let staged = memory.with_extension("json.part");
+        if std::fs::write(&staged, body).is_ok() {
+            let _ = std::fs::rename(&staged, memory);
+        }
     }
 
     /// Record a chosen file and return the token the app will use.
@@ -113,7 +256,8 @@ impl ChosenFiles {
         std::mem::take(&mut self.ready)
     }
 
-    /// The folder behind a token, if this run issued it.
+    /// The folder behind a token, if this run issued it or it was kept for
+    /// this app on an earlier run and still exists.
     pub fn resolve_folder(&self, token: &str) -> Option<&Path> {
         self.folders_by_token.get(token).map(PathBuf::as_path)
     }
@@ -161,6 +305,84 @@ impl ChosenFiles {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-1336: a vault app reopens the vault the person picked last time.
+    #[test]
+    fn a_kept_folder_opens_on_the_apps_next_run_until_taken_back() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vault = dir.path().join("My Vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        let memory = dir.path().join("grants/folders/app@k.json");
+
+        let mut first = ChosenFiles::with_folder_memory(Some(memory.clone()));
+        let token = first.keep_folder(vault.clone()).expect("token");
+        assert!(token.starts_with("kept-"), "{token}");
+        assert!(
+            !token.contains("Vault"),
+            "a token carries no part of the path"
+        );
+        // Picked again: the same token, not a second one.
+        assert_eq!(first.keep_folder(vault.clone()), Some(token.clone()));
+        assert_eq!(kept_folders_in(&memory).len(), 1);
+
+        let second = ChosenFiles::with_folder_memory(Some(memory.clone()));
+        assert_eq!(second.resolve_folder(&token), Some(vault.as_path()));
+
+        // A run with no memory (another app, or --auto-grant) knows nothing.
+        assert_eq!(ChosenFiles::new().resolve_folder(&token), None);
+
+        // The folder is gone: nothing, rather than a dead mount.
+        std::fs::remove_dir_all(&vault).unwrap();
+        let third = ChosenFiles::with_folder_memory(Some(memory.clone()));
+        assert_eq!(third.resolve_folder(&token), None);
+
+        // Taken back (krate permissions --forget removes the file): nothing.
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::remove_file(&memory).unwrap();
+        let fourth = ChosenFiles::with_folder_memory(Some(memory));
+        assert_eq!(fourth.resolve_folder(&token), None);
+    }
+
+    #[test]
+    fn an_app_keeps_its_sixteen_newest_folders() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let memory = dir.path().join("kept.json");
+        let mut files = ChosenFiles::with_folder_memory(Some(memory.clone()));
+        let mut tokens = Vec::new();
+        for i in 0..20 {
+            let folder = dir.path().join(format!("f{i}"));
+            std::fs::create_dir_all(&folder).unwrap();
+            tokens.push(files.keep_folder(folder).expect("token"));
+        }
+        let kept = kept_folders_in(&memory);
+        assert_eq!(kept.len(), MAX_KEPT_FOLDERS);
+        assert_eq!(kept.first().map(|k| k.name.as_str()), Some("f4"));
+        assert_eq!(files.resolve_folder(&tokens[0]), None, "the oldest went");
+        let next = ChosenFiles::with_folder_memory(Some(memory));
+        assert!(next.resolve_folder(&tokens[19]).is_some());
+        assert!(next.resolve_folder(&tokens[3]).is_none());
+    }
+
+    #[test]
+    fn a_kept_folder_file_in_another_shape_is_no_memory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let memory = dir.path().join("kept.json");
+        let write = |folders: serde_json::Value| {
+            let body = serde_json::json!({"schema": "krate.grants.v1", "folders": folders});
+            std::fs::write(&memory, body.to_string()).unwrap();
+        };
+        // The well-formed one is read, so the refusals below are real.
+        write(serde_json::json!([{"token": "kept-ab", "path": dir.path(), "name": "x"}]));
+        assert_eq!(kept_folders_in(&memory).len(), 1);
+        // A run-only token, or a relative path, is not a kept folder.
+        write(serde_json::json!([
+            {"token": "folder-1", "path": dir.path(), "name": "x"},
+            {"token": "kept-ab", "path": "relative/x", "name": "y"}
+        ]));
+        assert!(kept_folders_in(&memory).is_empty());
+        std::fs::write(&memory, b"not json").unwrap();
+        assert!(kept_folders_in(&memory).is_empty());
+    }
 
     #[test]
     fn a_phone_save_is_ready_once_written_and_let_go_of_and_only_then() {

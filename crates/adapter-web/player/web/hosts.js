@@ -321,7 +321,8 @@ export function buildImports(ctx) {
     }
     read(n) {
       if (this.mode !== 'read' && this.mode !== 'read-write') throw fsFail({ tag: 'permission-denied' });
-      if (n > MAX_IO) throw fsFail({ tag: 'io', val: `read request exceeds limit (${MAX_IO} bytes)` });
+      // "Up to n bytes", the most one call moves (K-1335): never refused.
+      n = Math.min(Number(n), MAX_IO);
       if (this.writes) {
         const out = this.buf.slice(this.pos, Math.min(this.len, this.pos + n));
         this.pos += out.length;
@@ -342,7 +343,8 @@ export function buildImports(ctx) {
     }
     write(bytes) {
       if (!this.writes) throw fsFail({ tag: 'permission-denied' });
-      if (bytes.length > MAX_IO) throw fsFail({ tag: 'io', val: `write request exceeds limit (${MAX_IO} bytes)` });
+      // The most one call moves; the caller's write_all sends the rest (K-1335).
+      if (bytes.length > MAX_IO) bytes = bytes.subarray(0, MAX_IO);
       const at = this.mode === 'append' ? this.len : this.pos;
       const end = at + bytes.length;
       if (end > this.buf.length) {

@@ -6490,8 +6490,9 @@ impl ui::dialog::Host for Phase3GuiHost {
     /// are reached through `picked/<token>/...` paths on the ordinary fs
     /// calls -- the resolver mounts the token for this run and containment
     /// is enforced against the picked folder exactly as it is against the
-    /// sandbox. Nothing about the folder's location reaches the app, and
-    /// the grant dies with the run.
+    /// sandbox. Nothing about the folder's location reaches the app. The
+    /// token is kept for this app's later runs when the run has a folder
+    /// memory (K-1336), so "reopen my vault" needs no dialog.
     fn open_folder(
         &mut self,
         window: u64,
@@ -6534,7 +6535,7 @@ impl ui::dialog::Host for Phase3GuiHost {
                 return Ok(Ok(None));
             };
             let name = crate::chosen_files::ChosenFiles::display_name(&folder);
-            let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+            let Some(token) = self.chosen_files.borrow_mut().keep_folder(folder) else {
                 return Ok(Err(ui::types::UiError::Unsupported(
                     "too many files or folders chosen in one run".to_string(),
                 )));
@@ -6552,7 +6553,7 @@ impl ui::dialog::Host for Phase3GuiHost {
                 return Ok(Ok(None));
             };
             let name = crate::chosen_files::ChosenFiles::display_name(&folder);
-            let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+            let Some(token) = self.chosen_files.borrow_mut().keep_folder(folder) else {
                 return Ok(Err(ui::types::UiError::Unsupported(
                     "too many files or folders chosen in one run".to_string(),
                 )));

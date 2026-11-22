@@ -7164,6 +7164,8 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
     // The printer each app was given (krate:print, IC-986), kept beside its
     // grants under the same file name.
     let printers = files_in(&dir.join(PRINTERS_DIR));
+    // And the folders it was given to keep (K-1336).
+    let folders = files_in(&dir.join(FOLDERS_DIR));
 
     if let Some(app_id) = forget {
         // The file name is "<app id>@<publisher>", and one app id can have
@@ -7172,7 +7174,7 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
         // the printer it was given goes with its grants, so its next print
         // asks again.
         let mut forgotten = 0;
-        for path in entries.iter().chain(&printers) {
+        for path in entries.iter().chain(&printers).chain(&folders) {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
             if app_id_of_grants_file(&name) == sanitize_storage_name(app_id)
                 && fs::remove_file(path).is_ok()
@@ -7214,6 +7216,17 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
             .and_then(|memory| krate_runtime::printer_host::remembered_in(&memory));
         if let Some((_, name)) = printer {
             println!("  - prints to {name} without asking (device.printer)");
+        }
+        let kept = path
+            .file_name()
+            .map(|file| dir.join(FOLDERS_DIR).join(file))
+            .map(|memory| krate_runtime::chosen_files::kept_folders_in(&memory))
+            .unwrap_or_default();
+        for folder in kept {
+            println!(
+                "  - opens the folder \"{}\" you picked (ui.dialog:open-folder)",
+                folder.name
+            );
         }
     }
     if shown == 0 {
@@ -19393,6 +19406,12 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             .as_ref()
             .filter(|_| !request.auto_grant)
             .and_then(|principal| remembered_printer_path(&store_home, principal)),
+        // The folders the person picked for this app, kept on the same terms
+        // so "reopen my vault" works on the next run (K-1336).
+        folder_memory: storage
+            .as_ref()
+            .filter(|_| !request.auto_grant)
+            .and_then(|principal| remembered_folders_path(&store_home, principal)),
         usability_plan: match (request.usability_report.as_ref(), request.task.as_deref()) {
             (Some(path), task) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
@@ -23167,6 +23186,18 @@ fn remembered_printer_path(home: &Path, principal: &StoragePrincipal) -> Option<
 
 /// The folder under `grants/` that holds remembered printers.
 const PRINTERS_DIR: &str = "printers";
+
+/// Where the folders the person picked for this app are kept (K-1336),
+/// beside its grants under the same file name, as its printer is.
+fn remembered_folders_path(home: &Path, principal: &StoragePrincipal) -> Option<PathBuf> {
+    remembered_grants_path(home, principal).map(|grants| {
+        let file = grants.file_name().map(PathBuf::from).unwrap_or_default();
+        home.join("grants").join(FOLDERS_DIR).join(file)
+    })
+}
+
+/// The folder under `grants/` that holds kept folders.
+const FOLDERS_DIR: &str = "folders";
 
 /// What this person has already granted this app, as a policy.
 ///

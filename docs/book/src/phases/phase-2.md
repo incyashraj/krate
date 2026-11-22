@@ -127,11 +127,11 @@ rejects reserved Windows device-style names such as `con`, `nul`, `com1`, and
 `lpt1` before host I/O, and now rejects path segments ending in `.` or a
 trailing space to avoid Windows filename normalization edge behavior. It now also
 rejects oversized path segments and oversized normalized logical paths before
-host I/O so cross-host path behavior remains predictable in this phase. Read
-and list bounds are now explicit too: one file read call is capped at 8 MiB,
-and one directory list call is capped at 4096 entries in this early adapter
-slice. Write bounds now match that direction: one stream or file write call is
-capped at 8 MiB in the same early adapter path. Absolute
+host I/O so cross-host path behavior remains predictable in this phase. One read
+or write call moves at most 8 MiB: a bigger read returns the first 8 MiB
+and a bigger write takes the first 8 MiB and says how much it took, so the
+SDK's `read_to_end` and `write_all` move a file of any size in pieces. One
+directory list call answers up to a million names (64 MiB of them). Absolute
 logical paths are now sandbox-rooted too, so `/notes/file.txt` resolves under
 the configured sandbox root instead of host root. For relative
 paths, the local adapter now checks canonical existing targets, or the canonical

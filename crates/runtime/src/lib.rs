@@ -181,12 +181,30 @@ use krate_adapter_windows as host_os_adapter;
 
 pub const DEFAULT_MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 pub const DEFAULT_HTTP_TIMEOUT_MILLIS: u32 = 5_000;
+/// The most one read or write call moves. A bigger request is served in part
+/// -- "up to n bytes" for a read, the count written for a write -- and the
+/// caller asks again for the rest, the way every file API works. Refusing
+/// it instead (as this did) made a 14 MB note unsaveable and every app that
+/// trusted `write_all` lose the file (K-1335).
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_READ_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_WRITE_BYTES: usize = 8 * 1024 * 1024;
+/// A folder listing is one answer, so it has a ceiling -- but one no real
+/// folder reaches. 4,096 entries refused a notes vault, a photo folder and a
+/// log folder outright (K-1334); a million names, at most 64 MiB of them, is
+/// a guard against a hostile tree and nothing else.
 #[cfg(feature = "phase2-bindings")]
-const MAX_PHASE2_LIST_ENTRIES: usize = 4096;
+const MAX_PHASE2_LIST_ENTRIES: usize = 1_000_000;
+#[cfg(feature = "phase2-bindings")]
+const MAX_PHASE2_LIST_NAME_BYTES: usize = 64 * 1024 * 1024;
+
+/// Whether a listing of `entries` names, `name_bytes` long in all, is past
+/// what one `list` call answers.
+#[cfg(feature = "phase2-bindings")]
+fn listing_too_big(entries: usize, name_bytes: usize) -> bool {
+    entries > MAX_PHASE2_LIST_ENTRIES || name_bytes > MAX_PHASE2_LIST_NAME_BYTES
+}
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
 #[cfg(feature = "phase2-bindings")]
@@ -311,6 +329,10 @@ pub struct Config {
     /// when a person, not `--auto-grant`, is deciding; `None` keeps a pick
     /// for the run alone.
     pub printer_memory: Option<PathBuf>,
+    /// Where the folders the person picked for this app are kept (K-1336),
+    /// so a token from `open-folder` works on its later runs. Set on the
+    /// same terms as `printer_memory`; `None` keeps a pick for the run alone.
+    pub folder_memory: Option<PathBuf>,
 }
 
 impl Config {
@@ -363,6 +385,7 @@ impl Default for Config {
             interpreter: false,
             declared_capabilities: None,
             printer_memory: None,
+            folder_memory: None,
         }
     }
 }
@@ -1999,7 +2022,9 @@ impl HostState {
         let output = Rc::new(RefCell::new(output));
         create_dir_all_on_host(&config.sandbox_root)?;
         #[cfg(feature = "phase2-bindings")]
-        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Rc::new(RefCell::new(
+            chosen_files::ChosenFiles::with_folder_memory(config.folder_memory.clone()),
+        ));
         #[cfg(feature = "phase2-bindings")]
         let net_log: Rc<RefCell<Vec<String>>> = Default::default();
         #[cfg(feature = "phase2-bindings")]
@@ -2602,24 +2627,17 @@ fn logical_path_to_sandbox_relative(path: &LogicalPath) -> PathBuf {
 }
 
 #[cfg(feature = "phase2-bindings")]
-fn bounded_read_len(n: u32) -> std::result::Result<usize, AdapterError> {
-    let n = n as usize;
-    if n > MAX_PHASE2_READ_BYTES {
-        return Err(AdapterError::Io(format!(
-            "read request exceeds limit ({MAX_PHASE2_READ_BYTES} bytes)"
-        )));
-    }
-    Ok(n)
+fn bounded_read_len(n: u32) -> usize {
+    // "Read up to n bytes": a bigger ask gets the most one call moves, so
+    // the buffer stays bounded and `read_to_end` loops for the rest.
+    (n as usize).min(MAX_PHASE2_READ_BYTES)
 }
 
+/// How many of `n` bytes one write call takes: all of them, or the most one
+/// call moves. The caller's `write_all` sends the rest.
 #[cfg(feature = "phase2-bindings")]
-fn bounded_write_len(n: usize) -> std::result::Result<u32, AdapterError> {
-    if n > MAX_PHASE2_WRITE_BYTES {
-        return Err(AdapterError::Io(format!(
-            "write request exceeds limit ({MAX_PHASE2_WRITE_BYTES} bytes)"
-        )));
-    }
-    u32::try_from(n).map_err(|_| AdapterError::Io("write length overflow".to_string()))
+fn bounded_write_len(n: usize) -> usize {
+    n.min(MAX_PHASE2_WRITE_BYTES)
 }
 
 /// Whether an app could read these arguments: the same rule `args_raw` holds
@@ -2848,7 +2866,7 @@ impl IoAdapter for LocalPhase2Adapter {
         handle: &FileHandle,
         n: u32,
     ) -> std::result::Result<Vec<u8>, AdapterError> {
-        let len = bounded_read_len(n)?;
+        let len = bounded_read_len(n);
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdin) => {
@@ -2875,9 +2893,9 @@ impl IoAdapter for LocalPhase2Adapter {
         handle: &FileHandle,
         bytes: &[u8],
     ) -> std::result::Result<u32, AdapterError> {
-        let len = bounded_write_len(bytes.len())?;
-        self.write_all_stream(handle, bytes)?;
-        Ok(len)
+        let len = bounded_write_len(bytes.len());
+        self.write_all_stream(handle, &bytes[..len])?;
+        u32::try_from(len).map_err(|_| AdapterError::Io("write length overflow".to_string()))
     }
 
     fn write_all_stream(
@@ -3003,7 +3021,7 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn read(&self, handle: &FileHandle, n: u32) -> std::result::Result<Vec<u8>, AdapterError> {
-        let len = bounded_read_len(n)?;
+        let len = bounded_read_len(n);
         let mut state = self.state.borrow_mut();
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
@@ -3015,12 +3033,12 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn write(&self, handle: &FileHandle, bytes: &[u8]) -> std::result::Result<u32, AdapterError> {
-        bounded_write_len(bytes.len())?;
+        let take = bounded_write_len(bytes.len());
         let mut state = self.state.borrow_mut();
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        let len = write_file_on_host(file, bytes).map_err(map_io_error)?;
+        let len = write_file_on_host(file, &bytes[..take]).map_err(map_io_error)?;
         u32::try_from(len).map_err(|_| AdapterError::Io("write length overflow".to_string()))
     }
 
@@ -3069,16 +3087,18 @@ impl FsAdapter for LocalPhase2Adapter {
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError> {
         let path = self.resolve_fs_path(path, FsOperation::Existing)?;
         let mut entries = Vec::new();
+        let mut name_bytes = 0usize;
         for entry in read_dir_on_host(path.as_path()).map_err(map_io_error)? {
             let entry = entry.map_err(map_io_error)?;
             let name = entry
                 .file_name()
                 .into_string()
                 .map_err(|_| AdapterError::InvalidPath)?;
+            name_bytes += name.len();
             entries.push(name);
-            if entries.len() > MAX_PHASE2_LIST_ENTRIES {
+            if listing_too_big(entries.len(), name_bytes) {
                 return Err(AdapterError::Io(format!(
-                    "directory listing exceeds limit ({MAX_PHASE2_LIST_ENTRIES} entries)"
+                    "this folder holds more than {MAX_PHASE2_LIST_ENTRIES} entries"
                 )));
             }
         }
@@ -5075,7 +5095,7 @@ mod tests {
 
     #[cfg(feature = "phase2-bindings")]
     #[test]
-    fn local_fs_adapter_rejects_oversized_read_request() {
+    fn local_fs_adapter_serves_an_oversized_read_in_part() {
         let unique = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
@@ -5103,17 +5123,13 @@ mod tests {
         let handle = adapter
             .open("note.txt", OpenMode::Read)
             .expect("open fixture file");
-        let err = adapter
-            .read(&handle, (MAX_PHASE2_READ_BYTES + 1) as u32)
-            .expect_err("oversized read should be rejected");
-
-        match err {
-            AdapterError::Io(message) => assert!(
-                message.contains("read request exceeds limit"),
-                "unexpected message: {message}"
-            ),
-            other => panic!("unexpected error variant: {other:?}"),
-        }
+        // K-1335: "up to n bytes" -- an ask past the per-call ceiling is
+        // served, not refused (the buffer is capped, the file is short).
+        let bytes = adapter
+            .read(&handle, u32::MAX)
+            .expect("an oversized read is served in part");
+        assert_eq!(bytes, b"hello");
+        assert_eq!(bounded_read_len(u32::MAX), MAX_PHASE2_READ_BYTES);
 
         drop(handle);
         drop(adapter);
@@ -5123,7 +5139,54 @@ mod tests {
 
     #[cfg(feature = "phase2-bindings")]
     #[test]
-    fn local_io_adapter_rejects_oversized_stream_write_request() {
+    fn local_fs_adapter_saves_a_file_past_one_calls_ceiling() {
+        // K-1335: the 14 MB note. The first call takes 8 MiB and says so;
+        // the caller's write_all sends the rest, and the file is whole.
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp =
+            std::env::temp_dir().join(format!("krate-big-write-{}-{unique}", std::process::id(),));
+        std::fs::create_dir_all(&temp).expect("create sandbox");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            temp.clone(),
+            Default::default(),
+        );
+        let total = MAX_PHASE2_WRITE_BYTES + 1024 * 1024 + 7;
+        let bytes: Vec<u8> = (0..total).map(|i| (i % 251) as u8).collect();
+        let handle = adapter
+            .open("big.md", OpenMode::Write)
+            .expect("open for writing");
+        let mut written = 0usize;
+        let mut calls = 0;
+        while written < total {
+            let n = adapter.write(&handle, &bytes[written..]).expect("write") as usize;
+            assert!(n > 0, "a write made no progress");
+            written += n;
+            calls += 1;
+        }
+        assert_eq!(calls, 2);
+        drop(handle);
+        assert_eq!(
+            std::fs::read(temp.join("big.md")).expect("read back"),
+            bytes
+        );
+
+        drop(adapter);
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_io_adapter_takes_an_oversized_stream_write_in_part() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
             None,
@@ -5137,17 +5200,10 @@ mod tests {
         );
 
         let handle = adapter.stdout().expect("open stdout");
-        let err = adapter
+        let took = adapter
             .write_stream(&handle, &vec![b'x'; MAX_PHASE2_WRITE_BYTES + 1])
-            .expect_err("oversized stream write should be rejected");
-
-        match err {
-            AdapterError::Io(message) => assert!(
-                message.contains("write request exceeds limit"),
-                "unexpected message: {message}"
-            ),
-            other => panic!("unexpected error variant: {other:?}"),
-        }
+            .expect("an oversized stream write is taken in part");
+        assert_eq!(took as usize, MAX_PHASE2_WRITE_BYTES);
     }
 
     #[cfg(feature = "phase2-bindings")]
@@ -5280,64 +5336,18 @@ mod tests {
 
     #[cfg(feature = "phase2-bindings")]
     #[test]
-    fn local_fs_adapter_rejects_oversized_write_request() {
+    fn local_fs_adapter_lists_a_folder_past_the_old_4096_ceiling() {
+        // K-1334: a vault of 4,100 notes in one folder listed as an error.
         let unique = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
             .as_nanos();
-        let temp = std::env::temp_dir().join(format!(
-            "krate-oversized-write-{}-{unique}",
-            std::process::id(),
-        ));
-        std::fs::create_dir_all(&temp).expect("create sandbox");
-
-        let adapter = LocalPhase2Adapter::new(
-            Rc::new(RefCell::new(OutputMode::Sink)),
-            None,
-            None,
-            None,
-            None,
-            Vec::new(),
-            1024,
-            temp.clone(),
-            Default::default(),
-        );
-
-        let handle = adapter
-            .open("note.txt", OpenMode::Write)
-            .expect("open fixture file");
-        let err = adapter
-            .write(&handle, &vec![b'x'; MAX_PHASE2_WRITE_BYTES + 1])
-            .expect_err("oversized file write should be rejected");
-
-        match err {
-            AdapterError::Io(message) => assert!(
-                message.contains("write request exceeds limit"),
-                "unexpected message: {message}"
-            ),
-            other => panic!("unexpected error variant: {other:?}"),
-        }
-
-        drop(handle);
-        drop(adapter);
-        std::fs::remove_dir_all(temp).expect("remove fixture directory");
-    }
-
-    #[cfg(feature = "phase2-bindings")]
-    #[test]
-    fn local_fs_adapter_rejects_oversized_directory_listing() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let temp = std::env::temp_dir().join(format!(
-            "krate-oversized-list-{}-{unique}",
-            std::process::id(),
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("krate-big-list-{}-{unique}", std::process::id(),));
         let list_dir = temp.join("many");
         std::fs::create_dir_all(&list_dir).expect("create fixture directory");
-        for index in 0..=MAX_PHASE2_LIST_ENTRIES {
-            let path = list_dir.join(format!("f{index:04}.txt"));
+        for index in 0..5_000 {
+            let path = list_dir.join(format!("f{index:05}.md"));
             std::fs::write(path, b"x").expect("write fixture entry");
         }
 
@@ -5353,16 +5363,15 @@ mod tests {
             Default::default(),
         );
 
-        let err = adapter
-            .list("many")
-            .expect_err("oversized directory listing should be rejected");
-        match err {
-            AdapterError::Io(message) => assert!(
-                message.contains("directory listing exceeds limit"),
-                "unexpected message: {message}"
-            ),
-            other => panic!("unexpected error variant: {other:?}"),
-        }
+        let names = adapter.list("many").expect("a 5,000-entry folder lists");
+        assert_eq!(names.len(), 5_000);
+        assert_eq!(names.first().map(String::as_str), Some("f00000.md"));
+        assert_eq!(names.last().map(String::as_str), Some("f04999.md"));
+
+        // The ceiling still stands, by count and by bytes.
+        assert!(!listing_too_big(MAX_PHASE2_LIST_ENTRIES, 0));
+        assert!(listing_too_big(MAX_PHASE2_LIST_ENTRIES + 1, 0));
+        assert!(listing_too_big(1, MAX_PHASE2_LIST_NAME_BYTES + 1));
 
         drop(adapter);
         std::fs::remove_dir_all(temp).expect("remove fixture directory");

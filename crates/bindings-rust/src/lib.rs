@@ -610,7 +610,8 @@ pub mod io {
                 let mut out = Vec::new();
 
                 loop {
-                    let chunk = self.read(8192)?;
+                    // 1 MiB a call: a 14 MB file in 14 calls, not 1,700.
+                    let chunk = self.read(1024 * 1024)?;
                     if chunk.is_empty() {
                         break;
                     }
@@ -1230,7 +1231,8 @@ pub mod fs {
             let mut out = Vec::new();
 
             loop {
-                let chunk = self.read(8192)?;
+                // 1 MiB a call: a 14 MB file in 14 calls, not 1,700 (K-1335).
+                let chunk = self.read(1024 * 1024)?;
                 if chunk.is_empty() {
                     break;
                 }
@@ -1246,9 +1248,14 @@ pub mod fs {
         }
 
         fn write_all(&self, bytes: &[u8]) -> Result<(), FsError> {
+            // At most 4 MiB a call, well under the most one call moves, so a
+            // big file is sent in pieces rather than whole on every retry
+            // (K-1335: a Krate before 0.6.2 refused a call over 8 MiB).
+            const PIECE: usize = 4 * 1024 * 1024;
             let mut written = 0;
             while written < bytes.len() {
-                let count = self.write(&bytes[written..])? as usize;
+                let end = bytes.len().min(written + PIECE);
+                let count = self.write(&bytes[written..end])? as usize;
                 if count == 0 {
                     return Err(FsError::Io("file write made no progress".to_string()));
                 }
