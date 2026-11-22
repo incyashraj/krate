@@ -5328,9 +5328,9 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
 .kr-spin {
   display: inline-block; width: 28px; height: 28px; border-radius: 50%;
   border: 2.5px solid var(--film-strong); border-top-color: var(--blue);
-  animation: krSpin 0.8s linear infinite;
+  animation: updSpin 0.8s linear infinite;
 }
-@keyframes krSpin { to { transform: rotate(360deg); } }
+@keyframes updSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .kr-spin, .upd-bar.indet i { animation-duration: 3s; }
   .kr-updating { transition: none; }
