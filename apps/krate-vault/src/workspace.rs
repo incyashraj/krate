@@ -6,7 +6,7 @@
 
 use crate::app::{
     App, AskFor, Cmd, Confirm, ConfirmAction, Focus, GraphTab, Input, LeftPane, Menu, MenuAction,
-    Mods, Overlay, RecoveryTab, RightPane, SettingsPage, Tab, Unlinked, View, COMMANDS,
+    Mods, Overlay, RecoveryTab, RightPane, SettingsPage, SideTab, Tab, Unlinked, View, COMMANDS,
 };
 use crate::bookmarks::{self, Bookmark, Kind as BKind};
 use crate::buffer::Pos;
@@ -32,8 +32,9 @@ pub enum Control {
     Choice(String),
     Text(String),
     Button(&'static str),
-    /// A hotkey, as text.
-    Keys(String),
+    /// A hotkey, as text; whether the person set it; whether another
+    /// command has the same one.
+    Keys(String, bool, bool),
     Heading,
     None,
 }
@@ -68,6 +69,8 @@ enum Act {
     Plugin(&'static str),
     ClearRecovery,
     OpenVault,
+    /// Record a hotkey for the command at this place in the list.
+    Hotkey(usize),
 }
 
 fn h(name: &str) -> (SettingRow, Act) {
@@ -169,6 +172,13 @@ impl App {
         if let Some(own) = self.settings.hotkeys_for(c.id) {
             let mut out = String::new();
             if let Some((p, s, a, k)) = own.first() {
+                let k = match k.as_str() {
+                    "ArrowLeft" => "Left",
+                    "ArrowRight" => "Right",
+                    "ArrowUp" => "Up",
+                    "ArrowDown" => "Down",
+                    other => other,
+                };
                 if *p {
                     out.push_str("Cmd+");
                 }
@@ -292,7 +302,7 @@ impl App {
             SettingsPage::Files => {
                 let mut v = alloc::vec![
                     row("Confirm file deletion", "Prompt before deleting a file.", Control::Toggle(b(F::App, "promptDelete", true)), Act::Bool(F::App, "promptDelete", true)),
-                    row("Deleted files", "What happens to a file after you delete it. Vault moves it to the .trash folder either way.", choice(F::App, "trashOption", "system", TRASH), Act::Cycle(F::App, "trashOption", TRASH)),
+                    row("Deleted files", "What happens to a file after you delete it.", choice(F::App, "trashOption", "system", TRASH), Act::Cycle(F::App, "trashOption", TRASH)),
                     h("Links"),
                     row("Automatically update internal links", "When you rename a file, automatically update internal links to it.", Control::Toggle(b(F::App, "alwaysUpdateLinks", false)), Act::Bool(F::App, "alwaysUpdateLinks", false)),
                     row("Default location for new notes", "Where newly created notes are placed.", choice(F::App, "newFileLocation", "root", NEW_FILE), Act::Cycle(F::App, "newFileLocation", NEW_FILE)),
@@ -321,18 +331,42 @@ impl App {
             ],
             SettingsPage::Hotkeys => COMMANDS
                 .iter()
-                .filter(|c| c.plugin.is_empty() || self.settings.plugin_on(c.plugin))
-                .map(|c| {
+                .enumerate()
+                .filter(|(_, c)| c.plugin.is_empty() || self.settings.plugin_on(c.plugin))
+                .map(|(ci, c)| {
                     let keys = self.keys_for(c.cmd);
-                    row(
-                        c.title,
-                        "",
-                        Control::Keys(if keys.is_empty() {
-                            String::from("Blank")
-                        } else {
-                            keys
-                        }),
-                        Act::None,
+                    let recording = self.recording == Some(ci);
+                    let clash = if keys.is_empty() {
+                        Vec::new()
+                    } else {
+                        self.conflicts(ci)
+                    };
+                    let desc = if recording {
+                        String::from("Press a hotkey... Esc to cancel, Backspace to remove it")
+                    } else if !clash.is_empty() {
+                        let mut d = String::from("This hotkey conflicts with ");
+                        d.push_str(&clash.join(", "));
+                        d
+                    } else {
+                        String::new()
+                    };
+                    (
+                        SettingRow {
+                            name: String::from(c.title),
+                            desc,
+                            control: Control::Keys(
+                                if recording {
+                                    String::from("Press hotkey...")
+                                } else if keys.is_empty() {
+                                    String::from("Blank")
+                                } else {
+                                    keys
+                                },
+                                self.settings.hotkeys.data.get(c.id).is_some(),
+                                !clash.is_empty(),
+                            ),
+                        },
+                        Act::Hotkey(ci),
                     )
                 })
                 .collect(),
@@ -467,6 +501,14 @@ impl App {
                     self.settings.set_plugin(id, on);
                 }
             }
+            Act::Hotkey(ci) => {
+                self.recording = if self.recording == Some(ci) {
+                    None
+                } else {
+                    Some(ci)
+                };
+                return;
+            }
             Act::ClearRecovery => {
                 let paths: Vec<String> = self.recovery.files.keys().cloned().collect();
                 self.recovery.files.clear();
@@ -509,6 +551,21 @@ impl App {
             Some(Overlay::Settings(p)) => *p,
             _ => return false,
         };
+        if let Some(ci) = self.recording {
+            match key {
+                "Shift" | "Meta" | "Control" | "Alt" | "Super" => {}
+                "Escape" => self.recording = None,
+                "Backspace" | "Delete" if !m.primary && !m.alt && !m.shift => {
+                    self.set_hotkey(ci, None);
+                    self.recording = None;
+                }
+                _ => {
+                    self.set_hotkey(ci, Some((m, key)));
+                    self.recording = None;
+                }
+            }
+            return true;
+        }
         if let Some((row, inp)) = self.setting_edit.as_mut() {
             match key {
                 "Enter" => {
@@ -534,11 +591,98 @@ impl App {
         true
     }
 
+    /// "Restore default" on a settings row.
+    pub fn setting_reset(&mut self, row: usize) {
+        let page = match &self.overlay {
+            Some(Overlay::Settings(p)) => *p,
+            _ => return,
+        };
+        if let Some((_, Act::Hotkey(ci))) = self.spec(page).into_iter().nth(row) {
+            self.reset_hotkey(ci);
+        }
+    }
+
     /// Typed text while the settings window is open.
     pub(crate) fn settings_text(&mut self, s: &str) {
+        if let Some(ci) = self.recording.take() {
+            let k = String::from(s.trim());
+            if !k.is_empty() {
+                self.set_hotkey(ci, Some((Mods::default(), k.as_str())));
+            }
+            return;
+        }
         if let Some((_, inp)) = self.setting_edit.as_mut() {
             inp.insert(s);
         }
+    }
+
+    /// Bind command `ci` to a key (`None`: no key at all), in hotkeys.json
+    /// as the notes app writes it.
+    pub fn set_hotkey(&mut self, ci: usize, to: Option<(Mods, &str)>) {
+        let Some(c) = COMMANDS.get(ci) else {
+            return;
+        };
+        let list = match to {
+            None => Value::Arr(Vec::new()),
+            Some((m, key)) => {
+                let mut mods = Vec::new();
+                if m.primary && !(m.ctrl && cfg!(target_os = "macos")) {
+                    mods.push(Value::s("Mod"));
+                }
+                if m.ctrl && m.primary && cfg!(target_os = "macos") {
+                    mods.push(Value::s("Ctrl"));
+                }
+                if m.alt {
+                    mods.push(Value::s("Alt"));
+                }
+                if m.shift {
+                    mods.push(Value::s("Shift"));
+                }
+                let k = if key.chars().count() == 1 {
+                    key.to_uppercase()
+                } else {
+                    String::from(key)
+                };
+                let mut h = Value::obj();
+                h.set("modifiers", Value::Arr(mods));
+                h.set("key", Value::Str(k));
+                Value::Arr(alloc::vec![h])
+            }
+        };
+        self.settings.hotkeys.set(c.id, list);
+        self.save_settings();
+    }
+
+    /// Put a command's hotkey back to the default.
+    pub fn reset_hotkey(&mut self, ci: usize) {
+        if let Some(c) = COMMANDS.get(ci) {
+            if self.settings.hotkeys.data.get(c.id).is_some() {
+                self.settings.hotkeys.data.remove(c.id);
+                self.settings.hotkeys.dirty = true;
+                self.save_settings();
+            }
+        }
+    }
+
+    /// The other commands bound to the same keys as command `ci`.
+    pub fn conflicts(&self, ci: usize) -> Vec<String> {
+        let Some(me) = COMMANDS.get(ci) else {
+            return Vec::new();
+        };
+        let mine = lower(&self.keys_for(me.cmd));
+        if mine.is_empty() {
+            return Vec::new();
+        }
+        COMMANDS
+            .iter()
+            .enumerate()
+            .filter(|(i, c)| {
+                *i != ci
+                    && (c.plugin.is_empty() || self.settings.plugin_on(c.plugin))
+                    && lower(&self.keys_for(c.cmd)) == mine
+            })
+            .map(|(_, c)| String::from(c.title))
+            .collect()
     }
 
     // ---- a line of text asked for -----------------------------------------------
@@ -565,7 +709,7 @@ impl App {
             return;
         };
         let text = String::from(a.input.text.trim());
-        if text.is_empty() && a.purpose != AskFor::GraphSearch {
+        if text.is_empty() && !matches!(a.purpose, AskFor::GraphSearch | AskFor::BaseCell(..)) {
             return;
         }
         match a.purpose {
@@ -579,6 +723,9 @@ impl App {
             }
             AskFor::CanvasLink => self.canvas_add(CardKind::Link, &text),
             AskFor::CanvasGroup => self.canvas_add(CardKind::Group, &text),
+            AskFor::BaseCell(path, prop) => {
+                self.set_property(&path, &prop, &text);
+            }
             AskFor::GraphSearch | AskFor::GraphGroup => {
                 if let Some(View::Graph(g)) = self.view_mut() {
                     if a.purpose == AskFor::GraphSearch {
@@ -642,35 +789,10 @@ impl App {
             controls: local.is_none(),
             hover: None,
             stale: true,
+            animate: None,
         }));
         if local.is_some() {
-            // Beside the note, and following it.
-            let i = self.active;
-            self.link_tab(i);
-            let group = self.tabs.get(i).and_then(|t| t.group);
-            let me = self.pane;
-            let other = self.pane_order().into_iter().find(|p| *p != me);
-            match other {
-                Some(p) => self.focus_pane(p),
-                None => {
-                    let new = self.panes.len();
-                    self.panes.push(crate::app::Pane {
-                        tabs: Vec::new(),
-                        active: 0,
-                    });
-                    self.layout.split(me, new, false);
-                    self.focus_pane(new);
-                }
-            }
-            let mut t = Tab::empty();
-            t.view = Some(view);
-            t.group = group;
-            if self.tabs.len() == 1 && self.tabs[0].path().is_none() && self.tabs[0].view.is_none()
-            {
-                self.tabs.clear();
-            }
-            self.tabs.push(t);
-            self.active = self.tabs.len() - 1;
+            self.open_linked_beside(view);
             return;
         }
         let reuse = self
@@ -681,6 +803,282 @@ impl App {
         }
         if let Some(t) = self.tab_mut() {
             t.view = Some(view);
+        }
+    }
+
+    /// Open a view to the right of the active tab, linked to it so it
+    /// follows the active tab's note.
+    pub fn open_linked_beside(&mut self, view: View) {
+        let i = self.active;
+        self.link_tab(i);
+        let group = self.tabs.get(i).and_then(|t| t.group);
+        let me = self.pane;
+        let other = self.pane_order().into_iter().find(|p| *p != me);
+        match other {
+            Some(p) => self.focus_pane(p),
+            None => {
+                let new = self.panes.len();
+                self.panes.push(crate::app::Pane {
+                    tabs: Vec::new(),
+                    active: 0,
+                    stacked: false,
+                });
+                self.layout.split(me, new, false);
+                self.focus_pane(new);
+            }
+        }
+        let mut t = Tab::empty();
+        t.view = Some(view);
+        t.group = group;
+        if self.tabs.len() == 1 && self.tabs[0].path().is_none() && self.tabs[0].view.is_none() {
+            self.tabs.clear();
+        }
+        self.tabs.push(t);
+        self.active = self.tabs.len() - 1;
+    }
+
+    /// "Open backlinks / outline / outgoing links for the current note": a
+    /// tab beside the note, linked to it.
+    pub fn open_side_view(&mut self, pane: RightPane) {
+        let Some(path) = self.doc().map(|d| d.path.clone()) else {
+            self.say("Open a note first");
+            return;
+        };
+        let title = side_title(pane, &path);
+        self.open_linked_beside(View::Side(Box::new(SideTab {
+            pane,
+            note: Some(path),
+            title,
+        })));
+    }
+
+    /// Link the active tab with tab `ti` of group `pi`.
+    pub fn link_with(&mut self, pi: usize, ti: usize) {
+        let i = self.active;
+        let group = match self.tabs.get(i).and_then(|t| t.group).or_else(|| {
+            self.panes
+                .get(pi)
+                .and_then(|p| p.tabs.get(ti))
+                .and_then(|t| t.group)
+        }) {
+            Some(g) => g,
+            None => {
+                let g = self.next_group;
+                self.next_group += 1;
+                g
+            }
+        };
+        if let Some(t) = self.tabs.get_mut(i) {
+            t.group = Some(group);
+        }
+        if let Some(t) = self.panes.get_mut(pi).and_then(|p| p.tabs.get_mut(ti)) {
+            t.group = Some(group);
+        }
+        if let Some(p) = self.active_path() {
+            self.follow_linked_pub(&p);
+        }
+    }
+
+    /// The note the side panes describe: a linked side tab's note, or the
+    /// open note.
+    pub fn subject_path(&self) -> Option<String> {
+        if let Some(o) = &self.side_override {
+            return o.clone();
+        }
+        match self.view() {
+            Some(View::Side(sd)) => sd.note.clone(),
+            _ => self.doc().map(|d| d.path.clone()),
+        }
+    }
+
+    /// The subject's path and a version that changes when its text does.
+    pub fn subject_version(&self) -> (String, u64) {
+        let p = self.subject_path().unwrap_or_default();
+        match self.doc().filter(|d| d.path == p) {
+            Some(d) => (p, d.buf.version),
+            None => (p, self.vault.as_ref().map_or(0, |v| v.generation)),
+        }
+    }
+
+    /// Run `f` on the subject note, open or read from the vault.
+    pub fn with_subject<T>(&mut self, f: impl Fn(&crate::editor::Doc) -> T) -> Option<T> {
+        let p = self.subject_path()?;
+        if let Some(d) = self.doc().filter(|d| d.path == p) {
+            return Some(f(d));
+        }
+        let text = self.text_of(&p)?;
+        let title = String::from(crate::app::strip_ext(file_name(&p)));
+        Some(f(&crate::editor::Doc::new(&p, &title, &text)))
+    }
+
+    /// Move the heading under the cursor, with everything under it, out
+    /// into a new note named after it, leaving a link.
+    pub fn extract_heading(&mut self) {
+        let Some((path, start, end, title)) = self.doc().and_then(|d| {
+            let hs = d.headings();
+            let at = hs.iter().rposition(|h| h.line <= d.cur.line)?;
+            let h = hs.get(at)?;
+            let end = hs
+                .iter()
+                .skip(at + 1)
+                .find(|x| x.level <= h.level)
+                .map_or(d.buf.line_count(), |x| x.line);
+            Some((d.path.clone(), h.line, end, h.text.clone()))
+        }) else {
+            self.say("Put the cursor in a section with a heading first");
+            return;
+        };
+        let body: String = {
+            let Some(d) = self.doc() else {
+                return;
+            };
+            let lines: Vec<&str> = (start + 1..end).map(|n| d.line(n)).collect();
+            let mut b = lines.join("\n");
+            while b.starts_with('\n') {
+                b.remove(0);
+            }
+            String::from(b.trim_end())
+        };
+        let folder = self.target_folder();
+        let name: String = title
+            .chars()
+            .filter(|c| !"\\/:*?\"<>|#^[]".contains(*c))
+            .collect();
+        let made = self
+            .vault
+            .as_mut()
+            .map(|v| v.create_file(&folder, name.trim(), ".md", &body));
+        let made = match made {
+            Some(Ok(p)) => p,
+            Some(Err(why)) => {
+                self.say(&why);
+                return;
+            }
+            None => return,
+        };
+        let new_name = String::from(crate::app::strip_ext(file_name(&made)));
+        let now = self.now;
+        if let Some(d) = self.doc_mut().filter(|d| d.path == path) {
+            let a = Pos::new(start, 0);
+            let b = if end >= d.buf.line_count() {
+                d.buf.end()
+            } else {
+                Pos::new(end, 0)
+            };
+            let mut link = String::from("![[");
+            link.push_str(&new_name);
+            link.push_str("]]");
+            if end < d.buf.line_count() {
+                link.push('\n');
+            }
+            d.cur = d.replace(a, b, &link, now);
+            d.anchor = None;
+        }
+        self.explorer_dirty();
+        let mut msg = String::from("Extracted to ");
+        msg.push_str(&new_name);
+        self.say(&msg);
+    }
+
+    /// Copy a file the person picked into the vault, where the attachment
+    /// setting says, and link it at the cursor.
+    pub fn attach(&mut self, name: &str, bytes: &[u8]) {
+        let Some(note) = self.doc().map(|d| d.path.clone()) else {
+            return;
+        };
+        let setting = String::from(self.settings.app.str_or("attachmentFolderPath", "/"));
+        let folder = attachment_folder(&setting, &note);
+        let made = self.vault.as_mut().map(|v| -> Result<String, String> {
+            if !folder.is_empty() && !v.fs.exists(&folder) {
+                v.fs.mkdir(&folder)?;
+            }
+            let (base, ext) = match name.rfind('.') {
+                Some(i) if i > 0 => (&name[..i], &name[i..]),
+                _ => (name, ""),
+            };
+            let path = v.free_name(&folder, base, ext);
+            v.fs.write_bytes(&path, bytes)?;
+            v.scan();
+            Ok(path)
+        });
+        match made {
+            Some(Ok(path)) => {
+                let mut link = String::from("![[");
+                link.push_str(file_name(&path));
+                link.push_str("]]");
+                let now = self.now;
+                if let Some(d) = self.doc_mut() {
+                    d.insert(&link, now);
+                }
+                self.explorer_dirty();
+            }
+            Some(Err(why)) => {
+                let mut m = String::from("Could not add the attachment: ");
+                m.push_str(&why);
+                self.say(&m);
+            }
+            None => {}
+        }
+    }
+
+    /// A base cell pressed: ask for its new value (the name column opens
+    /// the note instead, formulas and file fields are not edited).
+    pub fn edit_base_cell(&mut self, row: usize, col: usize) {
+        let Some(View::Base(b)) = self.view() else {
+            return;
+        };
+        let Some(path) = b.rows.get(row).cloned() else {
+            return;
+        };
+        let Some(prop) = b
+            .base
+            .views
+            .get(b.view)
+            .and_then(|w| w.order.get(col))
+            .cloned()
+        else {
+            return;
+        };
+        if prop.starts_with("file.") || prop.starts_with("formula.") {
+            if prop == "file.name" {
+                self.open_file(&path, false);
+            }
+            return;
+        }
+        let key = String::from(prop.strip_prefix("note.").unwrap_or(&prop));
+        let current = self
+            .vault
+            .as_ref()
+            .and_then(|v| v.meta.get(&path))
+            .and_then(|m| m.props.as_ref())
+            .and_then(|p| p.get(&key))
+            .map(crate::bases::show)
+            .unwrap_or_default();
+        let mut input = Input::with(&current);
+        input.select_all();
+        let mut title = String::from(b.base.column_name(&prop).as_str());
+        title.push_str(" of ");
+        title.push_str(crate::app::strip_ext(file_name(&path)));
+        self.overlay = Some(Overlay::Ask(crate::app::Ask {
+            title,
+            input,
+            purpose: AskFor::BaseCell(path, key),
+        }));
+    }
+
+    /// Set a note's property, in its `---` block (made if missing), as YAML.
+    pub fn set_property(&mut self, path: &str, key: &str, value: &str) {
+        let Some(text) = self.text_of(path) else {
+            return;
+        };
+        let out = set_property_text(&text, key, value);
+        self.set_text(path, &out);
+        self.save_all();
+        if let Some(v) = self.vault.as_mut() {
+            v.index_text(path, &out);
+        }
+        if let Some(View::Base(b)) = self.view_mut() {
+            b.generation = 0;
         }
     }
 
@@ -710,7 +1108,9 @@ impl App {
         let Some(v) = self.vault.as_ref() else {
             return false;
         };
+        let today = self.local.format("YYYY-MM-DD");
         let mut save_canvas = false;
+        let mut fetch: Vec<String> = Vec::new();
         for (i, t) in self
             .tabs
             .iter_mut()
@@ -774,18 +1174,36 @@ impl App {
                     }
                 }
                 Some(View::Base(b)) if showing && b.generation != gen => {
-                    b.rows = b.base.rows(v, b.view);
+                    b.base.today = today.clone();
+                    b.groups = b.base.groups(v, b.view);
+                    b.rows = b.groups.iter().flat_map(|g| g.1.iter().cloned()).collect();
                     b.generation = gen;
                     changed = true;
                 }
-                Some(View::Canvas(c))
+                Some(View::Canvas(c)) => {
                     if c.dirty_since
                         .is_some_and(|s| now >= s + crate::app::SAVE_AFTER_MS)
-                        && i.is_some() =>
-                {
-                    save_canvas = true;
+                        && i.is_some()
+                    {
+                        save_canvas = true;
+                    }
+                    if showing {
+                        for n in &c.canvas.nodes {
+                            if let Some(u) = n.url.as_ref() {
+                                if !self.previews.contains_key(u) {
+                                    fetch.push(u.clone());
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => {}
+            }
+        }
+        for u in fetch {
+            if !self.previews.contains_key(&u) {
+                self.previews.insert(u.clone(), None);
+                self.host.push(crate::app::HostRequest::Fetch(u));
             }
         }
         if save_canvas {
@@ -1480,7 +1898,9 @@ impl App {
                 .notes
                 .iter()
                 .rev()
-                .filter(|n| n.path != path && n.path.ends_with(".md"))
+                .filter(|n| {
+                    n.path != path && (n.path.ends_with(".md") || n.path.ends_with(".canvas"))
+                })
                 .map(|n| n.path.clone())
                 .collect();
             self.unlinked = Some(Unlinked {
@@ -1638,6 +2058,100 @@ impl App {
 }
 
 /// Whether a line names `key` (lower-cased) as a word, outside a link.
+/// A note's text with property `key` set to `value` (empty: removed).
+pub fn set_property_text(text: &str, key: &str, value: &str) -> String {
+    let v = value.trim();
+    let needs_quotes = v.contains(": ")
+        || v.starts_with(['#', '[', '{', '"', '\'', '-', '*', '&'])
+        || v.ends_with(':');
+    let mut line = String::from(key);
+    line.push(':');
+    if !v.is_empty() {
+        line.push(' ');
+        if needs_quotes {
+            line.push('"');
+            line.push_str(&v.replace('"', "\\\""));
+            line.push('"');
+        } else {
+            line.push_str(v);
+        }
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let close = if lines.first().map(|l| l.trim_end()) == Some("---") {
+        lines
+            .iter()
+            .skip(1)
+            .position(|l| l.trim_end() == "---")
+            .map(|i| i + 1)
+    } else {
+        None
+    };
+    let mut out: Vec<String> = Vec::new();
+    match close {
+        Some(end) => {
+            let mut done = false;
+            let mut i = 0;
+            while i < lines.len() {
+                let l = lines[i];
+                if i > 0 && i < end && !done {
+                    let k = l.split(':').next().unwrap_or("").trim();
+                    if k == key && !l.starts_with(' ') && !l.starts_with('-') {
+                        // The key's line and any list lines under it go.
+                        i += 1;
+                        while i < end && (lines[i].starts_with(' ') || lines[i].starts_with('-')) {
+                            i += 1;
+                        }
+                        out.push(line.clone());
+                        done = true;
+                        continue;
+                    }
+                }
+                if i == end && !done {
+                    out.push(line.clone());
+                    done = true;
+                }
+                out.push(String::from(l));
+                i += 1;
+            }
+        }
+        None => {
+            out.push(String::from("---"));
+            out.push(line);
+            out.push(String::from("---"));
+            out.extend(lines.iter().map(|l| String::from(*l)));
+        }
+    }
+    out.join("\n")
+}
+
+/// A linked side tab's title, as the notes app names it.
+pub fn side_title(pane: RightPane, path: &str) -> String {
+    let mut s = String::from(match pane {
+        RightPane::Outline => "Outline of ",
+        RightPane::Outgoing => "Outgoing links from ",
+        _ => "Backlinks for ",
+    });
+    s.push_str(crate::app::strip_ext(file_name(path)));
+    s
+}
+
+/// Where a new attachment for `note` goes, by the "Default location for new
+/// attachments" setting: `/` the vault, `./` beside the note, `./sub` a
+/// folder beside the note, anything else that folder.
+pub fn attachment_folder(setting: &str, note: &str) -> String {
+    let s = setting.trim();
+    let here = parent(note);
+    if s.is_empty() || s == "/" {
+        String::new()
+    } else if s == "./" || s == "." {
+        String::from(here)
+    } else if let Some(sub) = s.strip_prefix("./") {
+        join(here, sub.trim_matches('/'))
+    } else {
+        String::from(s.trim_matches('/'))
+    }
+}
+
 fn mentions(line: &str, key: &str) -> bool {
     let l = lower(line);
     let mut from = 0;
@@ -1857,6 +2371,136 @@ mod tests {
         assert!(a.doc().unwrap().text().contains("[[Shipping]] The home"));
         let made = a.vault.as_mut().unwrap().fs.read("Shipping.md").unwrap();
         assert_eq!(made, "Ship.");
+    }
+
+    #[test]
+    fn hotkeys_are_recorded_reset_and_clash() {
+        let mut a = app();
+        a.run(Cmd::Settings);
+        a.click(crate::app::Hit::SettingsNav(SettingsPage::Hotkeys), NONE);
+        let rows = a.settings_rows();
+        let graph = rows
+            .iter()
+            .position(|r| r.name == "Graph view: Open graph view")
+            .unwrap();
+        a.click(crate::app::Hit::SettingsRow(graph), NONE);
+        assert!(a.recording.is_some());
+        a.key("j", Mods { shift: true, ..CMD });
+        let saved = a
+            .vault
+            .as_mut()
+            .unwrap()
+            .fs
+            .read(".obsidian/hotkeys.json")
+            .unwrap();
+        assert!(saved.contains("\"graph:open\": [\n    {\n      \"modifiers\": [\n        \"Mod\",\n        \"Shift\"\n      ],\n      \"key\": \"J\""), "{saved}");
+        a.key("Escape", NONE);
+        assert_eq!(a.hotkey("j", Mods { shift: true, ..CMD }), Some(Cmd::Graph));
+        // Bound to the switcher's keys: both say so.
+        a.run(Cmd::Settings);
+        a.click(crate::app::Hit::SettingsNav(SettingsPage::Hotkeys), NONE);
+        a.click(crate::app::Hit::SettingsRow(graph), NONE);
+        a.key("o", CMD);
+        let ci = COMMANDS.iter().position(|c| c.cmd == Cmd::Graph).unwrap();
+        assert_eq!(a.conflicts(ci), ["Quick switcher: Open quick switcher"]);
+        a.click(crate::app::Hit::SettingsReset(graph), NONE);
+        assert_eq!(a.hotkey("g", CMD), Some(Cmd::Graph));
+    }
+
+    #[test]
+    fn stacked_tabs_side_views_and_linking() {
+        let mut a = app();
+        a.open("Home.md", false);
+        a.open("Plan.md", true);
+        a.run(Cmd::StackTabs);
+        assert!(a.pane_stacked(a.pane));
+        a.select_tab(0);
+        a.run(Cmd::OpenOutlineHere);
+        assert!(matches!(a.view(), Some(View::Side(sd)) if sd.note.as_deref() == Some("Home.md")));
+        assert_eq!(a.tab().unwrap().title(), "Outline of Home");
+        let other = a.pane;
+        // The note's group keeps its stacking; the side view follows it.
+        a.focus_pane(0);
+        assert!(a.stacked);
+        a.open("Plan.md", false);
+        let (tabs, act) = a.pane_tabs(other);
+        match &tabs[act].view {
+            Some(View::Side(sd)) => assert_eq!(sd.note.as_deref(), Some("Plan.md")),
+            _ => panic!("side view"),
+        }
+        a.focus_pane(other);
+        assert_eq!(a.outline().first().map(|h| h.text.as_str()), Some("Plan"));
+        // Link with a chosen tab.
+        a.focus_pane(0);
+        a.run(Cmd::LinkWith);
+        a.key("Enter", NONE);
+        assert!(a.tab().unwrap().group.is_some());
+    }
+
+    #[test]
+    fn extract_heading_attachments_and_deleting() {
+        let mut a = app();
+        a.open("Plan.md", false);
+        a.doc_mut().unwrap().place(Pos::new(6, 0), false);
+        a.run(Cmd::ExtractHeading);
+        let made = a.vault.as_mut().unwrap().fs.read("Goals.md").unwrap();
+        assert_eq!(made, "Ship. The home page matters.\n#work");
+        assert!(a.doc().unwrap().text().contains("![[Goals]]"));
+        assert_eq!(attachment_folder("/", "A/B/n.md"), "");
+        assert_eq!(attachment_folder("./", "A/B/n.md"), "A/B");
+        assert_eq!(attachment_folder("./files", "A/n.md"), "A/files");
+        assert_eq!(attachment_folder("Attachments", "A/n.md"), "Attachments");
+        a.settings
+            .app
+            .set("attachmentFolderPath", Value::s("./files"));
+        a.attach("notes.txt", b"hello");
+        assert_eq!(
+            a.vault
+                .as_mut()
+                .unwrap()
+                .fs
+                .read("files/notes.txt")
+                .unwrap(),
+            "hello"
+        );
+        assert!(a.doc().unwrap().text().contains("![[notes.txt]]"));
+        // "Permanently delete" asks, then deletes for good.
+        a.settings.app.set("trashOption", Value::s("none"));
+        a.run(Cmd::Delete);
+        match &a.overlay {
+            Some(Overlay::Confirm(c)) => assert!(c.body.contains("permanently")),
+            _ => panic!("confirm"),
+        }
+        a.click(crate::app::Hit::ConfirmYes, NONE);
+        assert!(!a.vault.as_mut().unwrap().fs.exists("Plan.md"));
+        assert!(!a.vault.as_mut().unwrap().fs.exists(".trash/Plan.md"));
+    }
+
+    #[test]
+    fn base_cells_set_properties() {
+        assert_eq!(
+            set_property_text(
+                "---\nstatus: open\ntags:\n  - a\n---\nBody",
+                "status",
+                "done"
+            ),
+            "---\nstatus: done\ntags:\n  - a\n---\nBody"
+        );
+        assert_eq!(
+            set_property_text("---\nstatus: open\n---\nBody", "due", "2026-12-01"),
+            "---\nstatus: open\ndue: 2026-12-01\n---\nBody"
+        );
+        assert_eq!(
+            set_property_text("Body", "k", "a: b"),
+            "---\nk: \"a: b\"\n---\nBody"
+        );
+        let mut a = app();
+        a.set_property("Plan.md", "status", "done");
+        let t = a.vault.as_mut().unwrap().fs.read("Plan.md").unwrap();
+        assert!(
+            t.starts_with("---\nstatus: done\ntags: [work/deep]\n---"),
+            "{t}"
+        );
     }
 
     #[test]

@@ -75,6 +75,9 @@ pub struct Vault {
     pub generation: u64,
     /// Folders that could not be read, and why.
     pub problems: Vec<String>,
+    /// List every file, not only notes and attachments ("Detect all file
+    /// extensions").
+    pub show_all: bool,
 }
 
 /// File names a vault never shows: its own settings and the trash.
@@ -93,12 +96,39 @@ pub fn is_note(name: &str) -> bool {
     is_md(name) || (l.len() > 7 && l.ends_with(".canvas")) || (l.len() > 5 && l.ends_with(".base"))
 }
 
+/// The other files the notes app lists by default: pictures, sound,
+/// video and PDF.
+pub const ATTACHMENTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "avif", "mp3", "wav", "m4a", "ogg", "3gp",
+    "flac", "webm", "mp4", "ogv", "mov", "mkv", "pdf",
+];
+
+/// A file's extension, lower-cased (`""` when it has none).
+pub fn ext_of(name: &str) -> String {
+    let n = file_name(name);
+    match n.rfind('.') {
+        Some(i) if i > 0 => n[i + 1..].to_ascii_lowercase(),
+        _ => String::new(),
+    }
+}
+
+/// An attachment the notes app lists without "Detect all file extensions".
+pub fn is_attachment(name: &str) -> bool {
+    let e = ext_of(name);
+    ATTACHMENTS.contains(&e.as_str())
+}
+
 /// What kind of file a path is, by its extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
     Note,
     Canvas,
     Base,
+    Image,
+    Pdf,
+    Media,
+    /// Any other file (listed when "Detect all file extensions" is on).
+    Other,
 }
 
 pub fn kind_of(path: &str) -> FileKind {
@@ -107,14 +137,28 @@ pub fn kind_of(path: &str) -> FileKind {
         FileKind::Canvas
     } else if l.ends_with(".base") {
         FileKind::Base
-    } else {
+    } else if l.ends_with(".md") {
         FileKind::Note
+    } else {
+        match ext_of(&l).as_str() {
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "svg" | "webp" | "avif" => FileKind::Image,
+            "pdf" => FileKind::Pdf,
+            "mp3" | "wav" | "m4a" | "ogg" | "3gp" | "flac" | "webm" | "mp4" | "ogv" | "mov"
+            | "mkv" => FileKind::Media,
+            _ => FileKind::Other,
+        }
     }
 }
 
-/// The name shown for a file: without `.md`, `.canvas` or `.base`.
+/// Whether the indexer reads this file (notes and canvases).
+fn indexed_kind(path: &str) -> bool {
+    matches!(kind_of(path), FileKind::Note | FileKind::Canvas)
+}
+
+/// The name shown for a file: without its extension (the tree shows the
+/// extension as a tag).
 fn strip_md(name: &str) -> &str {
-    if is_note(name) {
+    if is_note(name) || name.rfind('.').is_some_and(|i| i > 0) {
         let dot = name.rfind('.').unwrap_or(name.len());
         name.get(..dot).unwrap_or(name)
     } else {
@@ -152,9 +196,16 @@ impl Vault {
             queue: Vec::new(),
             generation: 1,
             problems: Vec::new(),
+            show_all: false,
         };
         v.scan();
-        v.queue = v.notes.iter().rev().map(|n| n.path.clone()).collect();
+        v.queue = v
+            .notes
+            .iter()
+            .rev()
+            .filter(|n| indexed_kind(&n.path))
+            .map(|n| n.path.clone())
+            .collect();
         v
     }
 
@@ -175,7 +226,7 @@ impl Vault {
                         if e.is_dir {
                             folder_paths.push(p.clone());
                             pending.push(p);
-                        } else if is_note(&e.name) {
+                        } else if is_note(&e.name) || is_attachment(&e.name) || self.show_all {
                             note_paths.push(p);
                         }
                     }
@@ -370,7 +421,13 @@ impl Vault {
 
     /// Put every note back in the queue (after the folder changed on disk).
     pub fn reindex_all(&mut self) {
-        self.queue = self.notes.iter().rev().map(|n| n.path.clone()).collect();
+        self.queue = self
+            .notes
+            .iter()
+            .rev()
+            .filter(|n| indexed_kind(&n.path))
+            .map(|n| n.path.clone())
+            .collect();
     }
 
     /// The notes that link to `path`, with the lines they do it on, in
@@ -636,6 +693,77 @@ impl Vault {
         Ok(to)
     }
 
+    /// Delete as the vault's "Deleted files" setting says: `system` (the
+    /// computer's trash, falling back to `.trash` where there is none),
+    /// `local` (the vault's `.trash`) or `none` (gone for good). Says where
+    /// it went: the trash path, `"system"`, or `""` when it is gone.
+    pub fn delete_file(&mut self, path: &str, how: &str) -> Result<String, String> {
+        match how {
+            "none" => {
+                self.remove_all(path)?;
+                self.forget(path);
+                Ok(String::new())
+            }
+            "local" => self.trash(path),
+            _ => match self.fs.trash(path) {
+                Ok(()) => {
+                    self.forget(path);
+                    Ok(String::from("system"))
+                }
+                Err(_) => self.trash(path),
+            },
+        }
+    }
+
+    /// Remove a file, or a folder and everything in it.
+    fn remove_all(&mut self, path: &str) -> Result<(), String> {
+        if self.folder_by_path.contains_key(path) {
+            for e in self.fs.list(path)? {
+                let p = join(path, &e.name);
+                if e.is_dir {
+                    self.fs_remove_dir_all(&p)?;
+                } else {
+                    self.fs.remove_file(&p)?;
+                }
+            }
+            self.fs.remove_dir(path)
+        } else {
+            self.fs.remove_file(path)
+        }
+    }
+
+    fn fs_remove_dir_all(&mut self, dir: &str) -> Result<(), String> {
+        for e in self.fs.list(dir)? {
+            let p = join(dir, &e.name);
+            if e.is_dir {
+                self.fs_remove_dir_all(&p)?;
+            } else {
+                self.fs.remove_file(&p)?;
+            }
+        }
+        self.fs.remove_dir(dir)
+    }
+
+    /// Take a path (and what is under it) out of the tree.
+    fn forget(&mut self, path: &str) {
+        let mut prefix = String::from(path);
+        prefix.push('/');
+        let folders: Vec<String> = self
+            .folders
+            .iter()
+            .skip(1)
+            .filter(|f| f.path != path && !f.path.starts_with(&prefix))
+            .map(|f| f.path.clone())
+            .collect();
+        let notes: Vec<String> = self
+            .notes
+            .iter()
+            .filter(|n| n.path != path && !n.path.starts_with(&prefix))
+            .map(|n| n.path.clone())
+            .collect();
+        self.build(folders, notes);
+    }
+
     /// Every folder path, root first, for the "move to" chooser.
     pub fn folder_paths(&self) -> Vec<String> {
         self.folders.iter().map(|f| f.path.clone()).collect()
@@ -685,7 +813,7 @@ pub fn scan_file(path: &str, text: &str) -> Meta {
             }
             meta
         }
-        FileKind::Base => Meta::default(),
+        _ => Meta::default(),
     }
 }
 
@@ -784,8 +912,11 @@ mod tests {
 
     #[test]
     fn opening_lists_notes_and_folders_but_not_hidden_ones() {
-        let v = sample();
-        assert_eq!(v.note_count(), 4);
+        let mut v = sample();
+        // Four notes and a picture (an attachment is listed, not indexed).
+        assert_eq!(v.note_count(), 5);
+        assert_eq!(v.note("image.png").map(|n| n.name.as_str()), Some("image"));
+        assert_eq!(kind_of("image.png"), FileKind::Image);
         assert_eq!(v.folder_count(), 3);
         assert!(v.note("Projects/Plan.md").is_some());
         assert!(v.note(".settings/app.json").is_none());
@@ -797,8 +928,18 @@ mod tests {
             .map(|i| v.folders[*i].name.as_str())
             .collect();
         assert_eq!(names, ["Archive", "Projects"]);
-        assert_eq!(root.notes.len(), 1);
+        assert_eq!(root.notes.len(), 2);
         assert_eq!(v.index_pending(), 4);
+        // Deleting: the vault's trash, or for good; "system" falls back to
+        // the vault's trash where the computer has none.
+        assert_eq!(
+            v.delete_file("image.png", "system").unwrap(),
+            ".trash/image.png"
+        );
+        assert!(v.note("image.png").is_none());
+        assert_eq!(v.delete_file("Welcome.md", "none").unwrap(), "");
+        assert!(!v.fs.exists("Welcome.md"));
+        assert!(v.note("Welcome.md").is_none());
     }
 
     #[test]

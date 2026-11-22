@@ -157,6 +157,8 @@ struct Ui {
     unseen: bool,
     /// Where the pointer is, as last reported.
     hover_point: Option<(f32, f32)>,
+    /// Web pages being read for link cards: address and handle.
+    fetches: Vec<(String, u64)>,
 }
 
 fn ms() -> u64 {
@@ -192,6 +194,19 @@ fn mods(m: types::Modifiers) -> Mods {
         primary: m.meta || m.control,
         alt: m.alt,
         ctrl: m.control,
+    }
+}
+
+/// What a tab shows, as a number the drawing code switches on.
+fn view_kind(tb: &crate::app::Tab) -> u8 {
+    match &tb.view {
+        Some(View::Graph(_)) => 1,
+        Some(View::Canvas(_)) => 2,
+        Some(View::Base(_)) => 3,
+        Some(View::Recovery(_)) => 4,
+        Some(View::File(_)) => 5,
+        Some(View::Side(_)) => 6,
+        None => 0,
     }
 }
 
@@ -1326,15 +1341,7 @@ impl Ui {
                 act,
                 tabs.iter().map(|tb| tb.pinned).collect(),
                 tabs.iter().map(|tb| tb.group.is_some()).collect(),
-                tabs.iter()
-                    .map(|tb| match &tb.view {
-                        Some(View::Graph(_)) => 1,
-                        Some(View::Canvas(_)) => 2,
-                        Some(View::Base(_)) => 3,
-                        Some(View::Recovery(_)) => 4,
-                        None => 0,
-                    })
-                    .collect(),
+                tabs.iter().map(view_kind).collect(),
             )
         };
         let n = titles.len().max(1);
@@ -1353,7 +1360,11 @@ impl Ui {
             } if dp == pane => Some(tab),
             _ => None,
         };
-        for (i, title) in titles.iter().enumerate() {
+        // Stacked tabs show no chips: each tab is a column with its title
+        // down a spine, drawn below.
+        let stacked = self.app.pane_stacked(pane);
+        let chips: &[String] = if stacked { &[] } else { &titles };
+        for (i, title) in chips.iter().enumerate() {
             let tr = r(x, ty, tab_w, th);
             let is_active = i == active;
             let z = Zone::Tab(pane, i);
@@ -1395,6 +1406,8 @@ impl Ui {
                 2 => Some(Icon::Canvas),
                 3 => Some(Icon::Table),
                 4 => Some(Icon::History),
+                5 => Some(Icon::Image),
+                6 => Some(Icon::Backlinks),
                 _ => None,
             };
             let tcol = if is_active && focused {
@@ -1488,14 +1501,85 @@ impl Ui {
             t.muted,
         );
         // The view.
-        let body = r(a.x, strip.bottom(), a.w, a.bottom() - strip.bottom());
+        let mut body = r(a.x, strip.bottom(), a.w, a.bottom() - strip.bottom());
         fill(self.c, body, t.bg);
+        if stacked {
+            body = self.draw_spines(pane, body, &titles, active, focused);
+        }
         if !focused {
             // Drawn from the group's own tab, read-only until it is pressed.
             self.draw_pane_body(pane, body, false);
             return;
         }
         self.draw_pane_body(pane, body, true);
+    }
+
+    /// Stacked tabs: a spine for each tab not showing (those before it on
+    /// the left, after it on the right), its title running down it. The
+    /// room left is the showing tab's.
+    fn draw_spines(
+        &mut self,
+        pane: usize,
+        body: Rect,
+        titles: &[String],
+        active: usize,
+        focused: bool,
+    ) -> Rect {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let sw = 40.0 * k;
+        let n = titles.len();
+        let before = active.min(n);
+        let after = n.saturating_sub(active + 1);
+        let spine = |me: &mut Ui, i: usize, x: f32| {
+            let rc = r(x, body.y, sw, body.h);
+            let z = Zone::Tab(pane, i);
+            fill(
+                me.c,
+                rc,
+                if me.hovered(&z) {
+                    look::over(t.hover, t.side)
+                } else {
+                    t.side
+                },
+            );
+            fill(me.c, r(x + sw - 1.0, body.y, 1.0, body.h), t.border);
+            // The title, a letter under the other (Krate draws no turned
+            // text: K-1341).
+            let mut y = body.y + 16.0 * k;
+            for ch in titles.get(i).map_or("", String::as_str).chars().take(60) {
+                if y > body.bottom() - 8.0 {
+                    break;
+                }
+                let mut cs = String::new();
+                cs.push(ch);
+                let cw = width(me.c, &cs, sz.ui, 400);
+                text(
+                    me.c,
+                    &cs,
+                    x + (sw - cw) * 0.5,
+                    y + sz.ui * 0.8,
+                    sz.ui,
+                    400,
+                    if focused { t.muted } else { t.faint },
+                );
+                y += sz.ui * 1.15;
+            }
+            me.tab_rects.push((pane, i, rc));
+            me.said.button(rc, titles.get(i).map_or("", String::as_str));
+            me.hit(rc, z);
+        };
+        for i in 0..before {
+            spine(self, i, body.x + i as f32 * sw);
+        }
+        for j in 0..after {
+            let i = active + 1 + j;
+            spine(self, i, body.right() - (after - j) as f32 * sw);
+        }
+        let left = body.x + before as f32 * sw;
+        let right = body.right() - after as f32 * sw;
+        r(left, body.y, (right - left).max(80.0), body.h)
     }
 
     fn draw_pane_body(&mut self, pane: usize, body: Rect, focused: bool) {
@@ -1508,13 +1592,7 @@ impl Ui {
             (
                 tb.map(|x| String::from(x.title())).unwrap_or_default(),
                 tb.and_then(|x| x.path()).map(String::from),
-                tb.map_or(0u8, |x| match &x.view {
-                    Some(View::Graph(_)) => 1,
-                    Some(View::Canvas(_)) => 2,
-                    Some(View::Base(_)) => 3,
-                    Some(View::Recovery(_)) => 4,
-                    None => 0,
-                }),
+                tb.map_or(0u8, view_kind),
                 tb.is_some_and(|x| x.doc.is_some()),
                 tb.and_then(|x| x.doc.as_ref())
                     .map_or(Mode::Live, |d| d.mode),
@@ -1628,6 +1706,8 @@ impl Ui {
             2 => self.draw_canvas(pane, content, focused),
             3 => self.draw_base(pane, content, focused),
             4 => self.draw_recovery(pane, content, focused),
+            5 => self.draw_file(pane, content, focused),
+            6 => self.draw_side(pane, content, focused),
             _ if has_doc => self.draw_note(pane, content, focused),
             _ => {
                 if focused {
@@ -2075,7 +2155,7 @@ impl Ui {
         let sz = self.sz;
         let k = sz.scale;
         let mut y = list.y - self.app.right_scroll;
-        if self.app.doc().is_none() {
+        if self.app.subject_path().is_none() {
             text(
                 self.c,
                 "No backlinks found.",
@@ -2090,8 +2170,8 @@ impl Ui {
         let pending = self.app.vault.as_ref().map_or(0, |v| v.index_pending());
         let key = self
             .app
-            .doc()
-            .map(|d| crate::text::lower(&d.title))
+            .subject_path()
+            .map(|p| crate::text::lower(crate::app::strip_ext(crate::vfs::file_name(&p))))
             .unwrap_or_default();
         let data: Vec<(String, Vec<String>)> = self
             .app
@@ -2723,6 +2803,7 @@ impl Ui {
                     ListKind::MergeInto(_) => "Find a note to merge into...",
                     ListKind::ExtractTo(_) => "Find a note, or type the new note's name...",
                     ListKind::CanvasNote => "Find a note to add...",
+                    ListKind::LinkWith => "Choose a tab to link with...",
                 };
                 let footer = match &p.kind {
                     ListKind::Switcher => "\u{2191}\u{2193} to navigate    \u{21b5} to open    \u{2318} \u{21b5} to open in new tab    shift \u{21b5} to create    esc to dismiss",
@@ -3387,6 +3468,17 @@ impl Ui {
                 self.view_press(z, px, py, m);
             }
             Zone::App(h) => {
+                // A press in a group not in focus focuses it first.
+                if let Some((p, _, _)) = self
+                    .pane_areas
+                    .iter()
+                    .find(|(_, a, _)| a.contains(px, py))
+                    .copied()
+                {
+                    if p != self.app.pane && self.app.overlay.is_none() {
+                        self.app.focus_pane(p);
+                    }
+                }
                 let phone = self.w < 600.0;
                 if phone && matches!(h, Hit::Ribbon(Cmd::ToggleLeft)) {
                     self.sheet = !self.sheet;
@@ -3527,6 +3619,33 @@ impl Ui {
         true
     }
 
+    /// Take in the web pages that have arrived for link cards.
+    fn poll_fetches(&mut self) -> bool {
+        if self.fetches.is_empty() {
+            return false;
+        }
+        let mut done = false;
+        let list = core::mem::take(&mut self.fetches);
+        for (url, h) in list {
+            match krate::net::poll(h) {
+                krate::net::FetchStatus::Pending => self.fetches.push((url, h)),
+                krate::net::FetchStatus::Ready(res) => {
+                    let html = String::from_utf8_lossy(&res.body);
+                    let p = crate::canvas::preview(&html, &url);
+                    self.app.previews.insert(url, Some(Ok(p)));
+                    done = true;
+                }
+                _ => {
+                    self.app
+                        .previews
+                        .insert(url, Some(Err(String::from("The page could not be read"))));
+                    done = true;
+                }
+            }
+        }
+        done
+    }
+
     fn host_requests(&mut self) -> bool {
         let reqs = core::mem::take(&mut self.app.host);
         let any = !reqs.is_empty();
@@ -3569,6 +3688,36 @@ impl Ui {
                 }
                 HostRequest::Copy(s) => {
                     let _ = krate::ui::clipboard::write_text(&s);
+                }
+                HostRequest::Attach => {
+                    match krate::ui::dialog::open_file(self.win, "Insert attachment", "") {
+                        Ok(Some(chosen)) => match krate::fs::read_chosen(&chosen.token) {
+                            Ok(bytes) => self.app.attach(&chosen.name, &bytes),
+                            Err(_) => self.app.say("That file could not be read"),
+                        },
+                        Ok(None) => {}
+                        Err(_) => self.app.say("Krate did not let this app open a file here"),
+                    }
+                }
+                HostRequest::Fetch(url) => {
+                    let req = krate::net::Request {
+                        method: krate::net::HttpMethod::Get,
+                        url: url.clone(),
+                        headers: Vec::new(),
+                        body: Vec::new(),
+                        timeout_millis: Some(10_000),
+                    };
+                    match krate::net::begin(req) {
+                        Ok(h) => self.fetches.push((url, h)),
+                        Err(_) => {
+                            self.app.previews.insert(
+                                url,
+                                Some(Err(String::from(
+                                    "Krate did not let this app read web pages",
+                                ))),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -3768,6 +3917,7 @@ impl krate::Guest for Component {
             graph_img: views::GraphImage::default(),
             unseen: false,
             hover_point: None,
+            fetches: Vec::new(),
         };
         ui.app.now = krate::time::now_millis();
         ui.app.local = local_now();
@@ -3901,6 +4051,9 @@ impl krate::Guest for Component {
             let mut due = |t: u64| timeout = Some(timeout.map_or(t, |x: u64| x.min(t)));
             if ui.drag != Drag::None {
                 due(16);
+            }
+            if !ui.fetches.is_empty() {
+                due(50);
             }
             if ui.app.busy() || ui.views_busy() {
                 due(0);
@@ -4062,6 +4215,9 @@ impl krate::Guest for Component {
                 changed = true;
             }
             if ui.host_requests() {
+                changed = true;
+            }
+            if ui.poll_fetches() {
                 changed = true;
             }
             // Background work, for at most 8 ms a frame.

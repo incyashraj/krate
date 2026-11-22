@@ -533,6 +533,92 @@ pub fn curve(a: End, b: End, steps: usize) -> Vec<(f32, f32)> {
         .collect()
 }
 
+/// What a link card shows of a web page: its title, its description and
+/// its site, read from the page's HTML (`og:` tags first, as previews do).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Preview {
+    pub title: String,
+    pub description: String,
+    pub site: String,
+}
+
+fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find(name).map(|i| i + from) {
+        let rest = &tag[i + name.len()..];
+        let rest_t = rest.trim_start();
+        if let Some(r) = rest_t.strip_prefix('=') {
+            let r = r.trim_start();
+            let q = r.chars().next()?;
+            if q == '"' || q == '\'' {
+                let body = &r[1..];
+                return body.find(q).map(|e| &body[..e]);
+            }
+            let end = r.find([' ', '>', '/']).unwrap_or(r.len());
+            return Some(&r[..end]);
+        }
+        from = i + name.len();
+    }
+    None
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ")
+}
+
+/// Read a page's preview from its HTML.
+pub fn preview(html: &str, url: &str) -> Preview {
+    let mut p = Preview::default();
+    let lower = html.to_ascii_lowercase();
+    let mut at = 0;
+    let mut og_title = None;
+    let mut og_desc = None;
+    let mut desc = None;
+    let mut site = None;
+    while let Some(i) = lower[at..].find("<meta").map(|i| i + at) {
+        let end = lower[i..].find('>').map_or(lower.len(), |e| i + e);
+        let tag = &html[i..end];
+        let key = attr(tag, "property")
+            .or_else(|| attr(tag, "name"))
+            .map(str::to_ascii_lowercase);
+        let content = attr(tag, "content").map(unescape);
+        match (key.as_deref(), content) {
+            (Some("og:title"), Some(c)) => og_title = Some(c),
+            (Some("og:description"), Some(c)) => og_desc = Some(c),
+            (Some("description"), Some(c)) => desc = Some(c),
+            (Some("og:site_name"), Some(c)) => site = Some(c),
+            _ => {}
+        }
+        at = end;
+    }
+    let title_tag = lower.find("<title").and_then(|i| {
+        let open = lower[i..].find('>')? + i + 1;
+        let close = lower[open..].find("</title")? + open;
+        Some(unescape(html[open..close].trim()))
+    });
+    p.title = og_title.or(title_tag).unwrap_or_default();
+    p.description = og_desc.or(desc).unwrap_or_default();
+    let host = url
+        .split("://")
+        .nth(1)
+        .unwrap_or(url)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("");
+    p.site = site.unwrap_or_else(|| String::from(host.trim_start_matches("www.")));
+    if p.title.is_empty() {
+        p.title = String::from(url);
+    }
+    p
+}
+
 /// The preset colours `"1"`..`"6"` (red, orange, yellow, green, cyan,
 /// purple), or a `#rrggbb`, as `0xRRGGBB` for the theme (dark or light).
 pub fn color_of(c: &str, dark: bool) -> Option<u32> {
@@ -564,6 +650,21 @@ mod tests {
             Canvas::parse("").unwrap().to_text(),
             "{\n\t\"nodes\":[],\n\t\"edges\":[]\n}"
         );
+    }
+
+    #[test]
+    fn a_link_card_reads_the_pages_title() {
+        let html = "<html><head><title>Krate &amp; friends</title><meta name=\"description\" content=\"Apps that run anywhere\"><meta property='og:site_name' content='Krate'></head></html>";
+        let p = preview(html, "https://www.krate.tech/x");
+        assert_eq!(p.title, "Krate & friends");
+        assert_eq!(p.description, "Apps that run anywhere");
+        assert_eq!(p.site, "Krate");
+        let p = preview(
+            "<meta property=\"og:title\" content=\"OG\">",
+            "https://example.com/a",
+        );
+        assert_eq!((p.title.as_str(), p.site.as_str()), ("OG", "example.com"));
+        assert_eq!(preview("", "https://e.org").title, "https://e.org");
     }
 
     #[test]

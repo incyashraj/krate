@@ -73,6 +73,11 @@ pub struct Options {
     pub open_groups: bool,
     pub open_display: bool,
     pub open_forces: bool,
+    /// A local graph's filters: notes that link to it, that it links to,
+    /// and the links among those notes.
+    pub incoming: bool,
+    pub outgoing: bool,
+    pub neighbors: bool,
 }
 
 impl Default for Options {
@@ -96,6 +101,9 @@ impl Default for Options {
             open_groups: false,
             open_display: false,
             open_forces: false,
+            incoming: true,
+            outgoing: true,
+            neighbors: true,
         }
     }
 }
@@ -137,6 +145,9 @@ impl Options {
             open_groups: !b("collapse-color-groups", true),
             open_display: !b("collapse-display", true),
             open_forces: !b("collapse-forces", true),
+            incoming: true,
+            outgoing: true,
+            neighbors: true,
         }
     }
 
@@ -240,6 +251,8 @@ impl Graph {
         let mut ids: BTreeMap<String, u32> = BTreeMap::new();
         let mut nodes: Vec<Node> = Vec::new();
         let mut edges: Vec<(u32, u32)> = Vec::new();
+        // Which way each link goes, for a local graph's in and out filters.
+        let mut dir: Vec<(u32, u32)> = Vec::new();
         let empty = Vec::new();
         let add = |nodes: &mut Vec<Node>,
                    ids: &mut BTreeMap<String, u32>,
@@ -314,6 +327,7 @@ impl Graph {
                 };
                 if to != from {
                     edges.push((from.min(to), from.max(to)));
+                    dir.push((from, to));
                 }
             }
             if opt.show_tags {
@@ -324,14 +338,17 @@ impl Graph {
                     label.push_str(t);
                     let to = add(&mut nodes, &mut ids, key, Kind::Tag, label, None);
                     edges.push((from.min(to), from.max(to)));
+                    dir.push((from, to));
                 }
             }
         }
         edges.sort_unstable();
         edges.dedup();
+        dir.sort_unstable();
+        dir.dedup();
         let mut g = Graph::from_parts(nodes, edges);
         if let Some((path, depth)) = local {
-            g.keep_near(path, depth);
+            g.keep_near(path, depth, &dir, opt);
         }
         if !opt.show_orphans {
             g.keep(|_, n, deg| deg > 0 || n.kind != Kind::Note);
@@ -410,8 +427,10 @@ impl Graph {
         self.generation = gen;
     }
 
-    /// Keep the note at `path` and what is within `depth` links of it.
-    fn keep_near(&mut self, path: &str, depth: u32) {
+    /// Keep the note at `path` and what is within `depth` links of it,
+    /// following links in (to it) and out (from it) as the filters say;
+    /// without neighbour links, only links between notes one step apart.
+    fn keep_near(&mut self, path: &str, depth: u32, dir: &[(u32, u32)], opt: &Options) {
         let Some(start) = self
             .nodes
             .iter()
@@ -430,11 +449,24 @@ impl Graph {
             }
             for &j in &self.adj[i] {
                 let j = j as usize;
-                if dist[j] == u32::MAX {
+                if dist[j] != u32::MAX {
+                    continue;
+                }
+                let (a, b) = (i as u32, j as u32);
+                let out = dir.binary_search(&(a, b)).is_ok();
+                let inc = dir.binary_search(&(b, a)).is_ok();
+                if (out && opt.outgoing) || (inc && opt.incoming) {
                     dist[j] = dist[i] + 1;
                     queue.push_back(j);
                 }
             }
+        }
+        if !opt.neighbors {
+            let d = dist.clone();
+            self.edges.retain(|&(a, b)| {
+                let (da, db) = (d[a as usize], d[b as usize]);
+                da != u32::MAX && db != u32::MAX && da.abs_diff(db) == 1
+            });
         }
         self.keep(|i, _, _| dist.get(i).is_some_and(|d| *d != u32::MAX));
     }

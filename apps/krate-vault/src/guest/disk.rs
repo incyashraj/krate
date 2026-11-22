@@ -244,7 +244,45 @@ impl Vfs for DiskFs {
         fs::remove_file(&self.at_path(path)).map_err(why)
     }
 
+    fn remove_dir(&mut self, path: &str) -> Result<(), String> {
+        self.mine(path);
+        fs::remove_dir(&self.at_path(path)).map_err(why)
+    }
+
+    fn trash(&mut self, path: &str) -> Result<(), String> {
+        self.mine(path);
+        trash_file(&self.at_path(path))
+    }
+
+    fn write_bytes(&mut self, path: &str, bytes: &[u8]) -> Result<(), String> {
+        self.mine(path);
+        let file = files::open(&self.at_path(path), OpenMode::Write).map_err(why)?;
+        let mut done = 0usize;
+        while done < bytes.len() {
+            let end = (done + CHUNK).min(bytes.len());
+            let n = file
+                .write(bytes.get(done..end).unwrap_or(&[]))
+                .map_err(why)? as usize;
+            if n == 0 {
+                return Err(String::from("the disk took none of the file"));
+            }
+            done += n;
+        }
+        Ok(())
+    }
+
     fn exists(&mut self, path: &str) -> bool {
         fs::stat(&self.at_path(path)).is_ok()
     }
+}
+
+/// Move a file or folder (a Krate path) to the computer's trash. Krate has
+/// no call for it yet (K-1337), so this answers an error and the vault puts
+/// the file in its own `.trash` folder instead, as the notes app's "Move to
+/// Obsidian trash" setting does. The one place to switch to the new call.
+pub fn trash_file(path: &str) -> Result<(), String> {
+    let _ = path;
+    Err(String::from(
+        "Krate cannot move files to the system trash yet",
+    ))
 }

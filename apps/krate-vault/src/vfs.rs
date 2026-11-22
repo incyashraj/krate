@@ -31,6 +31,23 @@ pub trait Vfs {
     fn read_bytes(&mut self, path: &str) -> Result<Vec<u8>, String> {
         self.read(path).map(String::into_bytes)
     }
+    /// Move a file or folder to the computer's trash. A folder in memory
+    /// has none, so the vault uses its own `.trash` instead.
+    fn trash(&mut self, _path: &str) -> Result<(), String> {
+        Err(String::from("there is no system trash here"))
+    }
+    /// Remove an empty folder.
+    fn remove_dir(&mut self, path: &str) -> Result<(), String> {
+        let _ = path;
+        Err(String::from("folders cannot be removed here"))
+    }
+    /// Write bytes (an attachment). A folder in memory holds text only.
+    fn write_bytes(&mut self, path: &str, bytes: &[u8]) -> Result<(), String> {
+        match core::str::from_utf8(bytes) {
+            Ok(t) => self.write(path, t),
+            Err(_) => Err(String::from("only text can be kept here")),
+        }
+    }
     /// What changed on disk since the last ask, outside the app, as paths
     /// in the vault. A folder in memory never changes behind the app's back.
     fn outside_changes(&mut self) -> Vec<String> {
@@ -206,6 +223,14 @@ impl Vfs for MemFs {
 
     fn exists(&mut self, path: &str) -> bool {
         path.is_empty() || self.files.contains_key(path) || self.dirs.contains(path)
+    }
+
+    fn remove_dir(&mut self, path: &str) -> Result<(), String> {
+        if self.dirs.remove(path) {
+            Ok(())
+        } else {
+            Err(String::from("not found"))
+        }
     }
 }
 

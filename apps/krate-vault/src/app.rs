@@ -18,6 +18,7 @@ use crate::settings::Settings;
 use crate::text::{fuzzy, lower};
 use crate::vault::{kind_of, Backlink, FileKind, Vault};
 use crate::vfs::{file_name, join, parent};
+use crate::workspace::side_title;
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -269,6 +270,24 @@ pub enum View {
     Canvas(Box<CanvasTab>),
     Base(Box<BaseTab>),
     Recovery(Box<RecoveryTab>),
+    /// A picture, a PDF, sound or video, or another file.
+    File(Box<FileTab>),
+    /// Backlinks, outline or outgoing links of a note, as a tab linked to
+    /// the note's tab.
+    Side(Box<SideTab>),
+}
+
+pub struct SideTab {
+    pub pane: RightPane,
+    pub note: Option<String>,
+    pub title: String,
+}
+
+/// An attachment open in a tab.
+pub struct FileTab {
+    pub path: String,
+    pub title: String,
+    pub kind: FileKind,
 }
 
 impl View {
@@ -284,6 +303,8 @@ impl View {
             View::Canvas(c) => &c.title,
             View::Base(b) => &b.title,
             View::Recovery(_) => "File recovery",
+            View::File(f) => &f.title,
+            View::Side(s) => &s.title,
         }
     }
 
@@ -291,7 +312,8 @@ impl View {
         match self {
             View::Canvas(c) => Some(&c.path),
             View::Base(b) => Some(&b.path),
-            View::Graph(_) | View::Recovery(_) => None,
+            View::File(f) => Some(&f.path),
+            View::Graph(_) | View::Recovery(_) | View::Side(_) => None,
         }
     }
 
@@ -305,6 +327,10 @@ impl View {
             View::Base(b) => {
                 b.path = String::from(p);
                 b.title = name;
+            }
+            View::File(f) => {
+                f.path = String::from(p);
+                f.title = String::from(file_name(p));
             }
             _ => {}
         }
@@ -327,6 +353,8 @@ pub struct GraphTab {
     pub hover: Option<usize>,
     /// Ask for a rebuild (filters changed).
     pub stale: bool,
+    /// When "Animate" was pressed: the notes appear one after another.
+    pub animate: Option<u64>,
 }
 
 /// A canvas board being looked at and edited.
@@ -352,6 +380,8 @@ pub struct BaseTab {
     pub base: Base,
     pub view: usize,
     pub rows: Vec<String>,
+    /// The rows in their groups (one unnamed group when not grouped).
+    pub groups: Vec<(String, Vec<String>)>,
     pub generation: u64,
     pub scroll: f32,
     pub choosing_view: bool,
@@ -367,6 +397,8 @@ pub struct RecoveryTab {
 pub struct Pane {
     pub tabs: Vec<Tab>,
     pub active: usize,
+    /// Tabs shown stacked: each a column with its title down the side.
+    pub stacked: bool,
 }
 
 /// Everything the command palette can do.
@@ -442,6 +474,13 @@ pub enum Cmd {
     BookmarkSearch,
     BookmarkHeading,
     BookmarkGroup,
+    ExtractHeading,
+    StackTabs,
+    InsertAttachment,
+    LinkWith,
+    OpenBacklinksHere,
+    OpenOutlineHere,
+    OpenOutgoingHere,
 }
 
 pub struct Command {
@@ -797,6 +836,55 @@ pub const COMMANDS: &[Command] = &[
         "file-recovery",
     ),
     c(
+        Cmd::ExtractHeading,
+        "note-composer:extract-heading",
+        "Note composer: Extract this heading...",
+        "",
+        "note-composer",
+    ),
+    c(
+        Cmd::StackTabs,
+        "workspace:toggle-stacked-tabs",
+        "Toggle stacked tabs",
+        "",
+        "",
+    ),
+    c(
+        Cmd::InsertAttachment,
+        "editor:attach-file",
+        "Insert attachment",
+        "",
+        "",
+    ),
+    c(
+        Cmd::LinkWith,
+        "workspace:link-tab",
+        "Link with tab...",
+        "",
+        "",
+    ),
+    c(
+        Cmd::OpenBacklinksHere,
+        "backlink:open-backlinks",
+        "Backlinks: Open backlinks for the current note",
+        "",
+        "backlink",
+    ),
+    c(
+        Cmd::OpenOutlineHere,
+        "outline:open-for-current",
+        "Outline: Open outline of the current file",
+        "",
+        "outline",
+    ),
+    c(
+        Cmd::OpenOutgoingHere,
+        "outgoing-links:open-for-current",
+        "Outgoing links: Open outgoing links for the current file",
+        "",
+        "outgoing-link",
+    ),
+    c(
         Cmd::Rename,
         "workspace:edit-file-title",
         "Rename file",
@@ -916,6 +1004,8 @@ pub enum Pick {
     MoveInto(String),
     Template(String),
     Note(String),
+    /// A tab: its group and place.
+    Tab(usize, usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -940,6 +1030,8 @@ pub enum ListKind {
     ExtractTo(String),
     /// A note to open in a canvas card.
     CanvasNote,
+    /// A tab in another group to link the active tab with.
+    LinkWith,
 }
 
 pub struct ListPrompt {
@@ -1016,6 +1108,8 @@ pub enum AskFor {
     GraphSearch,
     /// A new colour group's search.
     GraphGroup,
+    /// A base cell: the note and the property it sets.
+    BaseCell(String, String),
 }
 
 pub enum Overlay {
@@ -1057,6 +1151,11 @@ pub enum HostRequest {
     /// Open the sample vault (held in memory).
     Sample,
     Copy(String),
+    /// Ask for a file to copy into the vault as an attachment of the open
+    /// note, and link it there.
+    Attach,
+    /// Read a web page's title and description for a canvas link card.
+    Fetch(String),
 }
 
 /// What a press landed on, as the guest drew it.
@@ -1111,7 +1210,10 @@ pub enum Hit {
     BaseView(usize),
     BaseRow(usize),
     BaseSort(usize),
+    /// A cell of a base's table: row and column.
+    BaseCell(usize, usize),
     AskOk,
+    SettingsReset(usize),
 }
 
 /// A pane's answer computed from the open note, recomputed only when the
@@ -1130,6 +1232,19 @@ pub struct App {
     /// groups are in `panes`, where this one's place holds nothing.
     pub tabs: Vec<Tab>,
     pub active: usize,
+    /// Whether the group in focus shows its tabs stacked.
+    pub stacked: bool,
+    /// Which note the side panes describe while drawing a linked side tab
+    /// that is not in focus.
+    pub side_override: Option<Option<String>>,
+    /// A hotkey being recorded in settings: the command's row.
+    pub recording: Option<usize>,
+    /// The locale's order for dates: `DMY`, `MDY` or `YMD`.
+    pub date_order: &'static str,
+    /// Web pages read for canvas link cards, by address (`None` while
+    /// being read, `Err` when it could not be).
+    pub previews:
+        alloc::collections::BTreeMap<String, Option<Result<crate::canvas::Preview, String>>>,
     pub panes: Vec<Pane>,
     pub pane: usize,
     pub layout: Layout,
@@ -1213,9 +1328,15 @@ impl App {
             vault: None,
             tabs: alloc::vec![Tab::empty()],
             active: 0,
+            stacked: false,
+            side_override: None,
+            recording: None,
+            date_order: "DMY",
+            previews: alloc::collections::BTreeMap::new(),
             panes: alloc::vec![Pane {
                 tabs: Vec::new(),
-                active: 0
+                active: 0,
+                stacked: false
             }],
             pane: 0,
             layout: Layout::Pane(0),
@@ -1280,13 +1401,20 @@ impl App {
         let _ = self.settings.save(&mut *vault.fs);
         self.bookmarks = crate::bookmarks::read(&self.settings.bookmarks.data);
         self.dark = self.settings.dark(self.system_dark);
+        if self.settings.app.bool_or("showUnsupportedFiles", false) {
+            vault.show_all = true;
+            vault.scan();
+            vault.reindex_all();
+        }
         self.vault = Some(vault);
         self.tabs = alloc::vec![Tab::empty()];
         self.active = 0;
         self.panes = alloc::vec![Pane {
             tabs: Vec::new(),
-            active: 0
+            active: 0,
+            stacked: false
         }];
+        self.stacked = false;
         self.pane = 0;
         self.layout = Layout::Pane(0);
         self.closed.clear();
@@ -1388,6 +1516,15 @@ impl App {
         }
     }
 
+    /// Whether a group shows its tabs stacked.
+    pub fn pane_stacked(&self, pane: usize) -> bool {
+        if pane == self.pane {
+            self.stacked
+        } else {
+            self.panes.get(pane).is_some_and(|p| p.stacked)
+        }
+    }
+
     /// The groups in the order they are laid out.
     pub fn pane_order(&self) -> Vec<usize> {
         let mut v = Vec::new();
@@ -1404,10 +1541,12 @@ impl App {
         if let Some(slot) = self.panes.get_mut(self.pane) {
             slot.tabs = core::mem::take(&mut self.tabs);
             slot.active = self.active;
+            slot.stacked = self.stacked;
         }
         if let Some(slot) = self.panes.get_mut(pane) {
             self.tabs = core::mem::take(&mut slot.tabs);
             self.active = slot.active;
+            self.stacked = slot.stacked;
         }
         self.pane = pane;
         if self.tabs.is_empty() {
@@ -1428,6 +1567,7 @@ impl App {
         self.panes.push(Pane {
             tabs: Vec::new(),
             active: 0,
+            stacked: false,
         });
         let at = self.pane;
         self.layout.split(at, new, down);
@@ -1501,7 +1641,11 @@ impl App {
             return None;
         }
         let v = self.vault.as_mut()?;
-        let text = read_note(v, path).unwrap_or_default();
+        let text = if matches!(kind, FileKind::Canvas | FileKind::Base) {
+            read_note(v, path).unwrap_or_default()
+        } else {
+            String::new()
+        };
         let title = String::from(strip_ext(file_name(path)));
         match kind {
             FileKind::Canvas => {
@@ -1529,10 +1673,18 @@ impl App {
                 base: Base::parse(&text),
                 view: 0,
                 rows: Vec::new(),
+                groups: Vec::new(),
                 generation: 0,
                 scroll: 0.0,
                 choosing_view: false,
             }))),
+            FileKind::Image | FileKind::Pdf | FileKind::Media | FileKind::Other => {
+                Some(View::File(Box::new(FileTab {
+                    path: String::from(path),
+                    title: String::from(file_name(path)),
+                    kind,
+                })))
+            }
             FileKind::Note => None,
         }
     }
@@ -1583,6 +1735,10 @@ impl App {
         self.follow_linked(path);
     }
 
+    pub(crate) fn follow_linked_pub(&mut self, path: &str) {
+        self.follow_linked(path);
+    }
+
     /// Tabs linked to the active one show its note too.
     fn follow_linked(&mut self, path: &str) {
         let Some(group) = self.tab().and_then(|t| t.group) else {
@@ -1606,6 +1762,14 @@ impl App {
             let idx = self.tabs.iter().position(|t| t.group == Some(group));
             if let Some(i) = idx {
                 self.active = i;
+                let is_side = matches!(self.view(), Some(View::Side(_)));
+                if is_side {
+                    if let Some(View::Side(sd)) = self.view_mut() {
+                        sd.note = Some(String::from(path));
+                        sd.title = side_title(sd.pane, path);
+                    }
+                    continue;
+                }
                 let is_local = matches!(self.view(), Some(View::Graph(g)) if g.local.is_some());
                 if is_local {
                     if let Some(View::Graph(g)) = self.view_mut() {
@@ -1798,6 +1962,7 @@ impl App {
         self.panes.push(Pane {
             tabs: alloc::vec![t],
             active: 0,
+            stacked: false,
         });
         self.layout.split(at_pane, new, down);
         if self.tabs.is_empty() {
@@ -2251,7 +2416,11 @@ impl App {
         if folder {
             body.push_str(" and everything in it");
         }
-        body.push_str("?\n\nIt will be moved to your trash, which is located in the \u{201c}.trash\u{201d} hidden folder in your vault.");
+        body.push_str(match self.settings.app.str_or("trashOption", "system") {
+            "local" => "?\n\nIt will be moved to your Obsidian trash, which is located in the \u{201c}.trash\u{201d} hidden folder in your vault.",
+            "none" => "?\n\nThe file will be permanently deleted.",
+            _ => "?\n\nIt will be moved to your system trash.",
+        });
         if !self.settings.prompt_delete() {
             self.delete(path);
             return;
@@ -2273,8 +2442,9 @@ impl App {
         let Some(v) = self.vault.as_mut() else {
             return;
         };
-        match v.trash(path) {
-            Ok(_) => {
+        let how = String::from(self.settings.app.str_or("trashOption", "system"));
+        match v.delete_file(path, &how) {
+            Ok(went) => {
                 let mut prefix = String::from(path);
                 prefix.push('/');
                 let gone = |p: &str| p == path || p.starts_with(prefix.as_str());
@@ -2297,9 +2467,17 @@ impl App {
                     self.explorer.selected = None;
                 }
                 self.explorer.rows_dirty = true;
-                let mut msg = String::from("Moved ");
+                let mut msg = String::from(if went.is_empty() {
+                    "Deleted "
+                } else {
+                    "Moved "
+                });
                 msg.push_str(strip_md(file_name(path)));
-                msg.push_str(" to .trash");
+                msg.push_str(match went.as_str() {
+                    "" => "",
+                    "system" => " to the trash",
+                    _ => " to .trash",
+                });
                 self.say(&msg);
             }
             Err(why) => self.say(&why),
@@ -2455,7 +2633,7 @@ impl App {
     // ---- the side panes --------------------------------------------------------
 
     pub fn backlinks(&mut self) -> &[Backlink] {
-        let path = self.doc().map(|d| d.path.clone()).unwrap_or_default();
+        let path = self.subject_path().unwrap_or_default();
         let gen = self.vault.as_ref().map_or(0, |v| v.generation);
         let stale = self.backlinks.as_ref().is_none_or(|c| {
             c.path != path || (c.generation != gen && self.now >= c.at + PANE_SETTLE_MS)
@@ -2497,16 +2675,13 @@ impl App {
     }
 
     pub fn outline(&mut self) -> &[crate::md::Heading] {
-        let (path, version) = self
-            .doc()
-            .map(|d| (d.path.clone(), d.buf.version))
-            .unwrap_or_default();
+        let (path, version) = self.subject_version();
         let now = self.now;
         let stale = self.outline.as_ref().is_none_or(|c| {
             c.path != path || (c.version != version && now >= c.at + PANE_SETTLE_MS)
         });
         if stale {
-            let data = self.doc().map(Doc::headings).unwrap_or_default();
+            let data = self.with_subject(Doc::headings).unwrap_or_default();
             self.outline = Some(Cached {
                 path,
                 version,
@@ -2519,10 +2694,7 @@ impl App {
     }
 
     pub fn outgoing(&mut self) -> &[(String, bool)] {
-        let (path, version) = self
-            .doc()
-            .map(|d| (d.path.clone(), d.buf.version))
-            .unwrap_or_default();
+        let (path, version) = self.subject_version();
         let gen = self.vault.as_ref().map_or(0, |v| v.generation);
         let now = self.now;
         let stale = self.outgoing.as_ref().is_none_or(|c| {
@@ -2530,7 +2702,7 @@ impl App {
                 || ((c.version != version || c.generation != gen) && now >= c.at + PANE_SETTLE_MS)
         });
         if stale {
-            let links = self.doc().map(Doc::outgoing).unwrap_or_default();
+            let links = self.with_subject(Doc::outgoing).unwrap_or_default();
             let data: Vec<(String, bool)> = links
                 .into_iter()
                 .map(|l| {
@@ -2727,6 +2899,33 @@ impl App {
                     }
                 }
             }
+            ListKind::LinkWith => {
+                for (pi, pane) in self.panes.iter().enumerate() {
+                    if pi == self.pane {
+                        continue;
+                    }
+                    for (ti, t) in pane.tabs.iter().enumerate() {
+                        let title = String::from(t.title());
+                        if fuzzy(q, &title).is_none() {
+                            continue;
+                        }
+                        p.items.push(Item {
+                            title,
+                            detail: String::from(if t.group.is_some() { "Linked" } else { "" }),
+                            hint: String::new(),
+                            pick: Pick::Tab(pi, ti),
+                        });
+                    }
+                }
+                if p.items.is_empty() {
+                    p.items.push(Item {
+                        title: String::from("No other tab group: split first"),
+                        detail: String::new(),
+                        hint: String::new(),
+                        pick: Pick::Run(Cmd::SplitRight),
+                    });
+                }
+            }
             ListKind::CanvasNote => {
                 let Some(v) = self.vault.as_ref() else {
                     return;
@@ -2825,6 +3024,7 @@ impl App {
                 _ => self.create_named(&name),
             },
             Pick::Template(path) => self.insert_template(&path),
+            Pick::Tab(pi, ti) => self.link_with(pi, ti),
             Pick::Note(path) => match kind {
                 ListKind::MergeInto(from) => self.merge_into(&from, &path),
                 ListKind::ExtractTo(from) => self.extract_to(&from, &path, false),
@@ -2969,6 +3169,17 @@ impl App {
                 }
             }
             Cmd::Recovery => self.open_recovery(),
+            Cmd::ExtractHeading => self.extract_heading(),
+            Cmd::StackTabs => self.stacked = !self.stacked,
+            Cmd::InsertAttachment => {
+                if self.doc().is_some() {
+                    self.host.push(HostRequest::Attach);
+                }
+            }
+            Cmd::LinkWith => self.open_list(ListKind::LinkWith),
+            Cmd::OpenBacklinksHere => self.open_side_view(RightPane::Backlinks),
+            Cmd::OpenOutlineHere => self.open_side_view(RightPane::Outline),
+            Cmd::OpenOutgoingHere => self.open_side_view(RightPane::Outgoing),
             Cmd::BookmarkFile => self.bookmark_active(),
             Cmd::BookmarkHeading => self.bookmark_heading(),
             Cmd::BookmarkSearch => self.bookmark_search(),
@@ -3796,7 +4007,9 @@ impl App {
                 }
             }
             Hit::BaseSort(col) => self.base_sort(col),
+            Hit::BaseCell(r, c) => self.edit_base_cell(r, c),
             Hit::AskOk => self.ask_ok(),
+            Hit::SettingsReset(i) => self.setting_reset(i),
         }
     }
 
@@ -3862,12 +4075,23 @@ impl App {
             ),
             (String::from("Split right"), MenuAction::SplitRight(i)),
             (String::from("Split down"), MenuAction::SplitDown(i)),
+            (
+                String::from(if self.stacked {
+                    "Unstack tab group"
+                } else {
+                    "Stack tab group"
+                }),
+                MenuAction::Run(Cmd::StackTabs)
+            ),
         ];
         if self.pane_order().len() > 1 {
             if t.group.is_some() {
                 items.push((String::from("Unlink tab"), MenuAction::UnlinkTab(i)));
             } else {
-                items.push((String::from("Link with tab beside"), MenuAction::LinkTab(i)));
+                items.push((
+                    String::from("Link with tab..."),
+                    MenuAction::Run(Cmd::LinkWith),
+                ));
             }
         }
         if let Some(p) = t.path() {

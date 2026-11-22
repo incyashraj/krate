@@ -28,6 +28,9 @@ pub enum CanvasDrag {
 /// plugin) for each.
 type NavGroup<'a> = (&'a str, &'a [(SettingsPage, &'a str, &'a str)]);
 
+/// A kept picture's handle and size, or why it could not be kept.
+type Kept = Result<(u64, u32, u32), String>;
+
 /// A control in the graph's settings panel.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Ctl {
@@ -40,6 +43,7 @@ enum Ctl {
     Reset,
     Close,
     Open,
+    Animate,
 }
 
 /// The graph's picture, kept by the host while nothing changes, and the
@@ -62,6 +66,9 @@ pub struct GraphImage {
     /// generation it was read at.
     notes: BTreeMap<String, (u64, Vec<String>)>,
     last_click: (u64, f32, f32),
+    /// The picture an image tab shows: its path, handle and size, or why
+    /// it cannot be shown.
+    file_img: Option<(String, Kept)>,
 }
 
 fn fnv(h: &mut u64, bytes: &[u8]) {
@@ -69,6 +76,10 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
         *h ^= u64::from(*b);
         *h = h.wrapping_mul(0x0100_0000_01b3);
     }
+}
+
+fn grouped_n(n: usize) -> String {
+    crate::text::grouped(n)
 }
 
 fn col(c: u32) -> Rgba {
@@ -113,6 +124,7 @@ fn slider_set(o: &mut crate::graph::Options, i: u8, v: f32) {
 impl Ui {
     pub(super) fn views_busy(&self) -> bool {
         self.graph_img.pending
+            || matches!(self.app.view(), Some(View::Graph(g)) if g.animate.is_some())
             || matches!(self.app.view(), Some(View::Graph(g)) if g.graph.as_ref().is_none_or(|x| x.running()) || g.stale)
     }
 
@@ -148,6 +160,16 @@ impl Ui {
         let (cx, cy, zoom) = (g.cam.0, g.cam.1, g.zoom);
         let opt = g.opt.clone();
         let hover = g.hover;
+        // "Animate": the notes appear one after another over four seconds.
+        let total_n = gr.nodes.len();
+        let shown_n = match g.animate {
+            Some(t0) => {
+                (((super::ms().saturating_sub(t0)) as f32 / 4000.0) * total_n as f32) as usize
+            }
+            None => total_n,
+        }
+        .min(total_n);
+        let animating = g.animate.is_some();
         // The picture: lines and dots, drawn here.
         let dense = a.w * a.h < 700_000.0;
         let px = if dense { 2.0 } else { 1.0 };
@@ -157,6 +179,7 @@ impl Ui {
             fnv(&mut lkey, &v.to_bits().to_le_bytes());
         }
         fnv(&mut lkey, &(gr.nodes.len() as u64).to_le_bytes());
+        fnv(&mut lkey, &(shown_n as u64).to_le_bytes());
         fnv(&mut lkey, &gr.alpha.to_bits().to_le_bytes());
         fnv(&mut lkey, &[u8::from(t.dark), u8::from(opt.show_arrow)]);
         fnv(
@@ -211,6 +234,9 @@ impl Ui {
             };
             let lw = opt.line_size.clamp(0.1, 5.0);
             for &(e0, e1) in &gr.edges {
+                if e0 as usize >= shown_n || e1 as usize >= shown_n {
+                    continue;
+                }
                 let (Some(na), Some(nb)) = (gr.nodes.get(e0 as usize), gr.nodes.get(e1 as usize))
                 else {
                     continue;
@@ -251,7 +277,7 @@ impl Ui {
                     }
                 }
             }
-            for (i, n) in gr.nodes.iter().enumerate() {
+            for (i, n) in gr.nodes.iter().enumerate().take(shown_n) {
                 let (x, y) = to_screen(n.x, n.y);
                 let rad = (n.radius(opt.node_size) * zoom).max(1.2);
                 let base = match (n.kind, n.color) {
@@ -302,7 +328,7 @@ impl Ui {
         let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
         let mut shown = 0;
         let size = (12.0 * zoom.clamp(0.75, 1.4)) * k;
-        for (i, n) in gr.nodes.iter().enumerate() {
+        for (i, n) in gr.nodes.iter().enumerate().take(shown_n) {
             let near_hover = hover
                 .is_some_and(|h| h == i || gr.adj.get(h).is_some_and(|x| x.contains(&(i as u32))));
             if !show_all && !near_hover {
@@ -343,7 +369,12 @@ impl Ui {
                 }
             }
         }
-        if g.local.is_none() && focused {
+        if animating && shown_n >= total_n && focused {
+            if let Some(View::Graph(g)) = self.app.view_mut() {
+                g.animate = None;
+            }
+        }
+        if focused {
             self.draw_graph_panel(a);
         }
     }
@@ -354,8 +385,8 @@ impl Ui {
         let k = sz.scale;
         self.graph_img.controls.clear();
         self.graph_img.sliders.clear();
-        let (opt, open) = match self.app.view() {
-            Some(View::Graph(g)) => (g.opt.clone(), g.controls),
+        let (opt, open, local, depth) = match self.app.view() {
+            Some(View::Graph(g)) => (g.opt.clone(), g.controls, g.local.is_some(), g.depth),
             _ => return,
         };
         let pw = 240.0 * k;
@@ -382,9 +413,10 @@ impl Ui {
         let row_h = 32.0 * k;
         let rows_of = |s: u8| -> usize {
             match s {
+                0 if local => 9,
                 0 => 5,
                 1 => opt.groups.len() + 1,
-                2 => 4,
+                2 => 5,
                 _ => 4,
             }
         };
@@ -528,6 +560,9 @@ impl Ui {
                         self.said.button(rr, name);
                         y += row_h;
                     }
+                    if local {
+                        y = self.panel_rows(&[7, 250, 251, 252], &opt, depth, x, y, pw, row_h);
+                    }
                 }
                 1 => {
                     for (i, (q, c)) in opt.groups.iter().enumerate() {
@@ -581,82 +616,137 @@ impl Ui {
                 }
                 _ => {
                     let list: &[u8] = if s == 2 {
-                        &[255, 0, 1, 2]
+                        &[255, 0, 1, 2, 249]
                     } else {
                         &[3, 4, 5, 6]
                     };
-                    for &i in list {
-                        if i == 255 {
-                            let rr = r(x, y, pw, row_h);
-                            text(
-                                self.c,
-                                "Arrows",
-                                x + 16.0 * k,
-                                y + row_h * 0.5 + sz.ui * 0.36,
-                                sz.ui,
-                                400,
-                                t.text,
-                            );
-                            self.toggle(
-                                r(
-                                    x + pw - 52.0 * k,
-                                    y + (row_h - 20.0 * k) * 0.5,
-                                    36.0 * k,
-                                    20.0 * k,
-                                ),
-                                opt.show_arrow,
-                            );
-                            self.graph_img.controls.push((rr, Ctl::Toggle(4)));
-                            self.said.button(rr, "Arrows");
-                            y += row_h;
-                            continue;
-                        }
-                        let (name, lo, hi) = SLIDERS[i as usize];
-                        text(
-                            self.c,
-                            name,
-                            x + 16.0 * k,
-                            y + 13.0 * k,
-                            sz.small,
-                            400,
-                            t.muted,
-                        );
-                        let tx = x + 16.0 * k;
-                        let tw = pw - 32.0 * k;
-                        let ty = y + 22.0 * k;
-                        let f = ((slider_get(&opt, i) - lo) / (hi - lo)).clamp(0.0, 1.0);
-                        round(self.c, r(tx, ty - 2.0, tw, 4.0), 2.0, t.border_hover);
-                        round(self.c, r(tx, ty - 2.0, tw * f, 4.0), 2.0, t.accent);
-                        let _ = canvas2d::fill_circle(
-                            self.c,
-                            gfx::Point {
-                                x: tx + tw * f,
-                                y: ty,
-                            },
-                            7.0 * k,
-                            look::hex(0xFFFFFF),
-                        );
-                        let _ = canvas2d::stroke_circle(
-                            self.c,
-                            gfx::Point {
-                                x: tx + tw * f,
-                                y: ty,
-                            },
-                            7.0 * k,
-                            1.0,
-                            t.border_focus,
-                        );
-                        let sr = r(tx - 6.0, y + 12.0 * k, tw + 12.0, 20.0 * k);
-                        self.graph_img.controls.push((sr, Ctl::Slider(i)));
-                        self.graph_img.sliders.push((i, tx, tw));
-                        self.hit(sr, Zone::GraphSlider(i));
-                        self.said.button(sr, name);
-                        y += row_h;
-                    }
+                    y = self.panel_rows(list, &opt, depth, x, y, pw, row_h);
                 }
             }
             y += 8.0 * k;
         }
+    }
+
+    /// Rows of the graph panel: 255 the arrows switch, 250-252 a local
+    /// graph's in, out and neighbour switches, 249 Animate, 7 a local
+    /// graph's depth, others the sliders.
+    #[allow(clippy::too_many_arguments)]
+    fn panel_rows(
+        &mut self,
+        list: &[u8],
+        opt: &crate::graph::Options,
+        depth: u32,
+        x: f32,
+        mut y: f32,
+        pw: f32,
+        row_h: f32,
+    ) -> f32 {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        for &i in list {
+            if (250..=252).contains(&i) || i == 255 {
+                let (name, on, ctl) = match i {
+                    250 => ("Incoming links", opt.incoming, 5),
+                    251 => ("Outgoing links", opt.outgoing, 6),
+                    252 => ("Neighbor links", opt.neighbors, 7),
+                    _ => ("Arrows", opt.show_arrow, 4),
+                };
+                let rr = r(x, y, pw, row_h);
+                text(
+                    self.c,
+                    name,
+                    x + 16.0 * k,
+                    y + row_h * 0.5 + sz.ui * 0.36,
+                    sz.ui,
+                    400,
+                    t.text,
+                );
+                self.toggle(
+                    r(
+                        x + pw - 52.0 * k,
+                        y + (row_h - 20.0 * k) * 0.5,
+                        36.0 * k,
+                        20.0 * k,
+                    ),
+                    on,
+                );
+                self.graph_img.controls.push((rr, Ctl::Toggle(ctl)));
+                self.said.button(rr, name);
+                y += row_h;
+                continue;
+            }
+            if i == 249 {
+                let b = r(x + (pw - 110.0 * k) * 0.5, y + 3.0 * k, 110.0 * k, 26.0 * k);
+                round(self.c, b, 5.0, t.accent);
+                let lw = width(self.c, "Animate", sz.ui, 500);
+                text(
+                    self.c,
+                    "Animate",
+                    b.x + (b.w - lw) * 0.5,
+                    b.y + b.h * 0.5 + sz.ui * 0.36,
+                    sz.ui,
+                    500,
+                    t.on_accent,
+                );
+                self.graph_img.controls.push((b, Ctl::Animate));
+                self.said.button(b, "Animate");
+                y += row_h;
+                continue;
+            }
+            let (name, lo, hi) = if i == 7 {
+                ("Depth", 1.0, 5.0)
+            } else {
+                SLIDERS[i as usize]
+            };
+            text(
+                self.c,
+                name,
+                x + 16.0 * k,
+                y + 13.0 * k,
+                sz.small,
+                400,
+                t.muted,
+            );
+            let tx = x + 16.0 * k;
+            let tw = pw - 32.0 * k;
+            let ty = y + 22.0 * k;
+            let f = ((if i == 7 {
+                depth as f32
+            } else {
+                slider_get(opt, i)
+            } - lo)
+                / (hi - lo))
+                .clamp(0.0, 1.0);
+            round(self.c, r(tx, ty - 2.0, tw, 4.0), 2.0, t.border_hover);
+            round(self.c, r(tx, ty - 2.0, tw * f, 4.0), 2.0, t.accent);
+            let _ = canvas2d::fill_circle(
+                self.c,
+                gfx::Point {
+                    x: tx + tw * f,
+                    y: ty,
+                },
+                7.0 * k,
+                look::hex(0xFFFFFF),
+            );
+            let _ = canvas2d::stroke_circle(
+                self.c,
+                gfx::Point {
+                    x: tx + tw * f,
+                    y: ty,
+                },
+                7.0 * k,
+                1.0,
+                t.border_focus,
+            );
+            let sr = r(tx - 6.0, y + 12.0 * k, tw + 12.0, 20.0 * k);
+            self.graph_img.controls.push((sr, Ctl::Slider(i)));
+            self.graph_img.sliders.push((i, tx, tw));
+            self.hit(sr, Zone::GraphSlider(i));
+            self.said.button(sr, name);
+            y += row_h;
+        }
+        y
     }
 
     /// A switch, as the settings draw them.
@@ -914,10 +1004,31 @@ impl Ui {
                         v
                     }
                     CardKind::Link => {
+                        // The page's title above the card, as the notes app
+                        // labels it, and its title, description and site in it.
                         let u = n.url.clone().unwrap_or_default();
                         let ls = 14.0 * z * k;
-                        fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
-                        alloc::vec![String::from("Web page"), u]
+                        match self.app.previews.get(&u) {
+                            Some(Some(Ok(p))) => {
+                                fit(self.c, &p.title, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                let mut head = String::from("## ");
+                                head.push_str(&p.title);
+                                alloc::vec![
+                                    head,
+                                    p.description.clone(),
+                                    String::new(),
+                                    p.site.clone()
+                                ]
+                            }
+                            Some(Some(Err(why))) => {
+                                fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                alloc::vec![u.clone(), why.clone()]
+                            }
+                            _ => {
+                                fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                alloc::vec![u.clone(), String::from("Loading\u{2026}")]
+                            }
+                        }
                     }
                     CardKind::Group => Vec::new(),
                 };
@@ -1194,6 +1305,7 @@ impl Ui {
         };
         let view = b.view;
         let rows = b.rows.clone();
+        let groups = b.groups.clone();
         let base = b.base.clone();
         let choosing = b.choosing_view;
         let scroll = b.scroll;
@@ -1290,6 +1402,8 @@ impl Ui {
                 tags: m.map_or(&none, |m| &m.tags),
                 links: m.map_or(&nolinks, |m| &m.links),
                 props: m.and_then(|m| m.props.as_ref()),
+                formulas: &base.formulas,
+                today: &base.today,
             };
             crate::bases::show(&crate::bases::value(c, &row))
         };
@@ -1314,6 +1428,60 @@ impl Ui {
         let rh = 30.0 * k;
         let top = bar.bottom();
         let tbl = r(a.x, top, a.w, a.bottom() - top);
+        if w.kind == "cards" {
+            // Cards: a grid, each card the note's name and its properties.
+            let cw = 220.0 * k;
+            let gap = 16.0 * k;
+            let per = (((tbl.w - gap) / (cw + gap)) as usize).max(1);
+            let line = sz.ui * 1.6;
+            let ch = line * (cols.len() as f32) + 28.0 * k;
+            let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
+            for (ri, rv) in rows_vals.iter().enumerate() {
+                let cx = tbl.x + gap + (ri % per) as f32 * (cw + gap);
+                let cy = tbl.y + gap + (ri / per) as f32 * (ch + gap) - scroll;
+                if cy > tbl.bottom() {
+                    break;
+                }
+                let card = r(cx, cy, cw, ch);
+                round(self.c, card, 8.0, t.bg);
+                look::outline(self.c, card, 8.0, 1.0, t.border);
+                let mut ly = cy + 14.0 * k + sz.ui;
+                for (i, v) in rv.iter().enumerate() {
+                    let is_name = cols.get(i).is_some_and(|c| c == "file.name");
+                    let shown = crate::props::format_date(v);
+                    if is_name {
+                        fit(
+                            self.c,
+                            &shown,
+                            cx + 14.0 * k,
+                            ly,
+                            sz.ui,
+                            600,
+                            t.text,
+                            cw - 28.0 * k,
+                        );
+                    } else {
+                        fit(
+                            self.c,
+                            &shown,
+                            cx + 14.0 * k,
+                            ly,
+                            sz.ui,
+                            400,
+                            if v.is_empty() { t.faint } else { t.muted },
+                            cw - 28.0 * k,
+                        );
+                    }
+                    ly += line;
+                }
+                if focused {
+                    let name = rv.first().cloned().unwrap_or_default();
+                    self.button(card, &name, Hit::BaseRow(ri));
+                }
+            }
+            let _ = canvas2d::clear_clip(self.c);
+            return;
+        }
         let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
         fill(self.c, r(tbl.x, top, tbl.w, 1.0), t.border);
         let mut x = tbl.x;
@@ -1347,6 +1515,7 @@ impl Ui {
                 t.muted,
             );
             if let Some((_, desc)) = w.sort.iter().find(|(p, _)| p == c) {
+                let _ = desc;
                 let nwid = width(self.c, &name, fsz, 400);
                 icon(
                     self.c,
@@ -1373,8 +1542,54 @@ impl Ui {
             );
         }
         fill(self.c, r(tbl.x, ys + rh, tbl.w, 1.0), t.border);
+        // Group headings go before their rows: where each group starts.
+        let mut starts: Vec<(usize, String, usize)> = Vec::new();
+        let mut at = 0;
+        for (label, list) in &groups {
+            if !label.is_empty() || groups.len() > 1 {
+                starts.push((at, label.clone(), list.len()));
+            }
+            at += list.len();
+        }
+        let mut extra = 0.0f32;
         for (ri, rv) in rows_vals.iter().enumerate() {
-            let y = ys + rh * (ri + 1) as f32;
+            if let Some((_, label, n)) = starts.iter().find(|(s0, _, _)| *s0 == ri) {
+                let gy = ys + rh * (ri + 1) as f32 + extra;
+                fill(
+                    self.c,
+                    r(tbl.x, gy, tbl.w, rh * 1.2),
+                    look::over(t.hover, t.bg),
+                );
+                let shown = if label.is_empty() {
+                    String::from("(none)")
+                } else {
+                    crate::props::format_date(label)
+                };
+                text(
+                    self.c,
+                    &shown,
+                    tbl.x + 16.0 * k,
+                    gy + rh * 0.6 + fsz * 0.36,
+                    fsz,
+                    600,
+                    t.text,
+                );
+                let cnt = grouped_n(*n);
+                let lw = width(self.c, &shown, fsz, 600);
+                text(
+                    self.c,
+                    &cnt,
+                    tbl.x + 26.0 * k + lw,
+                    gy + rh * 0.6 + fsz * 0.36,
+                    fsz,
+                    400,
+                    t.faint,
+                );
+                self.said.text(r(tbl.x, gy, tbl.w, rh), &shown);
+                fill(self.c, r(tbl.x, gy + rh * 1.2, tbl.w, 1.0), t.border);
+                extra += rh * 1.2;
+            }
+            let y = ys + rh * (ri + 1) as f32 + extra;
             if y > tbl.bottom() {
                 break;
             }
@@ -1404,17 +1619,42 @@ impl Ui {
                     text(self.c, v, x + cw - vw - 14.0 * k, base_y, fsz, 400, t.text);
                     self.said.text(r(x, y, cw, rh), v);
                 } else {
+                    // A date as the locale writes it, with a calendar mark.
+                    let date = v.len() >= 10
+                        && v.as_bytes().get(4) == Some(&b'-')
+                        && v.as_bytes().get(7) == Some(&b'-');
+                    let shown = if date {
+                        crate::props::format_date(v)
+                    } else {
+                        v.clone()
+                    };
+                    let tx = if date {
+                        icon(
+                            self.c,
+                            Icon::Calendar,
+                            x + 16.0 * k,
+                            y + rh * 0.5,
+                            k * 0.8,
+                            t.faint,
+                        );
+                        x + 30.0 * k
+                    } else {
+                        x + 16.0 * k
+                    };
                     fit(
                         self.c,
-                        v,
-                        x + 16.0 * k,
+                        &shown,
+                        tx,
                         base_y,
                         fsz,
                         400,
                         t.text,
-                        cw - 24.0 * k,
+                        cw - (tx - x) - 8.0 * k,
                     );
-                    self.said.text(r(x, y, cw, rh), v);
+                    self.said.text(r(x, y, cw, rh), &shown);
+                }
+                if focused && !is_name {
+                    self.hit(r(x, y, cw, rh), Zone::App(Hit::BaseCell(ri, i)));
                 }
                 x += cw;
             }
@@ -1456,6 +1696,129 @@ impl Ui {
                 self.button(ir, &v.name, Hit::BaseView(i));
             }
         }
+    }
+
+    // ---- an attachment -----------------------------------------------------------------
+
+    pub(super) fn draw_file(&mut self, pane: usize, a: Rect, focused: bool) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let _ = focused;
+        let (tabs, act) = self.app.pane_tabs(pane);
+        let Some(View::File(f)) = tabs.get(act).and_then(|tb| tb.view.as_ref()) else {
+            return;
+        };
+        let (path, kind) = (f.path.clone(), f.kind);
+        let say = |me: &mut Ui, lines: &[&str]| {
+            let mut y = a.y + a.h * 0.4;
+            for (i, l) in lines.iter().enumerate() {
+                let size = if i == 0 { sz.medium } else { sz.ui };
+                let w = width(me.c, l, size, if i == 0 { 600 } else { 400 });
+                text(
+                    me.c,
+                    l,
+                    a.x + (a.w - w) * 0.5,
+                    y,
+                    size,
+                    if i == 0 { 600 } else { 400 },
+                    if i == 0 { t.text } else { t.muted },
+                );
+                me.said.text(r(a.x, y - size, a.w, size * 1.4), l);
+                y += size * 1.8;
+            }
+        };
+        match kind {
+            crate::vault::FileKind::Image => {
+                let fresh = self.graph_img.file_img.as_ref().is_some_and(|(p, _)| *p == path);
+                if !fresh {
+                    if let Some((_, Ok((h, _, _)))) = self.graph_img.file_img.take() {
+                        canvas_images::forget(self.c, h);
+                    }
+                    let got = self
+                        .app
+                        .vault
+                        .as_mut()
+                        .ok_or_else(|| String::from("no vault"))
+                        .and_then(|v| v.fs.read_bytes(&path))
+                        .and_then(|b| crate::image::decode(&b))
+                        .and_then(|pic| {
+                            canvas_images::keep(self.c, pic.width, pic.height, &pic.rgba)
+                                .map(|h| (h, pic.width, pic.height))
+                                .map_err(|_| String::from("Krate would not keep the picture"))
+                        });
+                    self.graph_img.file_img = Some((path.clone(), got));
+                }
+                match self.graph_img.file_img.clone() {
+                    Some((_, Ok((h, w, hh)))) => {
+                        // As the notes app shows a picture: whole, centred,
+                        // never larger than it is.
+                        let room_w = a.w - 64.0 * k;
+                        let room_h = a.h - 64.0 * k;
+                        let f = (room_w / w as f32).min(room_h / hh as f32).min(1.0);
+                        let (dw, dh) = (w as f32 * f, hh as f32 * f);
+                        let _ = canvas_images::draw(
+                            self.c,
+                            h,
+                            canvas_images::Rect {
+                                x: a.x + (a.w - dw) * 0.5,
+                                y: a.y + (a.h - dh) * 0.5,
+                                width: dw,
+                                height: dh,
+                            },
+                        );
+                        self.said.text(r(a.x, a.y, a.w, a.h), &path);
+                    }
+                    Some((_, Err(why))) => say(self, &["This picture cannot be shown", &why]),
+                    None => {}
+                }
+            }
+            crate::vault::FileKind::Pdf => say(
+                self,
+                &[
+                    crate::vfs::file_name(&path),
+                    "PDFs cannot be shown in Vault yet: Krate has no PDF renderer (K-1342).",
+                ],
+            ),
+            crate::vault::FileKind::Media => say(
+                self,
+                &[
+                    crate::vfs::file_name(&path),
+                    "Sound and video in a vault cannot be played yet: Krate plays only the app's own media (K-1343).",
+                ],
+            ),
+            _ => say(
+                self,
+                &[crate::vfs::file_name(&path), "Vault has no view for this kind of file."],
+            ),
+        }
+    }
+
+    // ---- backlinks, outline or outgoing links as a tab -------------------------------------
+
+    pub(super) fn draw_side(&mut self, pane: usize, a: Rect, focused: bool) {
+        let (tabs, act) = self.app.pane_tabs(pane);
+        let Some(View::Side(sd)) = tabs.get(act).and_then(|tb| tb.view.as_ref()) else {
+            return;
+        };
+        let (which, note) = (sd.pane, sd.note.clone());
+        if !focused {
+            self.app.side_override = Some(note);
+        }
+        let list = r(
+            a.x + (a.w - 300.0f32.max(a.w * 0.5).min(a.w)) * 0.5,
+            a.y + 8.0,
+            300.0f32.max(a.w * 0.5).min(a.w),
+            a.h - 8.0,
+        );
+        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        match which {
+            crate::app::RightPane::Outline => self.draw_outline(list),
+            crate::app::RightPane::Outgoing => self.draw_outgoing(list),
+            _ => self.draw_backlinks(list),
+        }
+        let _ = canvas2d::clear_clip(self.c);
+        self.app.side_override = None;
     }
 
     // ---- a note's saved copies ------------------------------------------------------------
@@ -1726,7 +2089,7 @@ impl Ui {
             let ctl_w = match &row.control {
                 Control::Text(_) => 200.0 * k,
                 Control::Choice(_) => 220.0 * k,
-                Control::Keys(_) => 140.0 * k,
+                Control::Keys(..) => 200.0 * k,
                 Control::Button(_) => 90.0 * k,
                 Control::Toggle(_) => 40.0 * k,
                 _ => 0.0,
@@ -1835,10 +2198,30 @@ impl Ui {
                         t.text,
                     );
                 }
-                Control::Keys(keys) => {
+                Control::Keys(keys, own, clash) => {
+                    // The hotkey as a chip; the restore button when the
+                    // person changed it; the plus that records a new one.
+                    let plus = r(body.right() - 26.0 * k, cy - 13.0 * k, 26.0 * k, 26.0 * k);
+                    icon(self.c, Icon::Plus, plus.x + 13.0 * k, cy, k * 0.9, t.muted);
+                    let mut right = plus.x - 6.0 * k;
+                    if *own {
+                        let rb = r(right - 26.0 * k, cy - 13.0 * k, 26.0 * k, 26.0 * k);
+                        icon(self.c, Icon::Undo, rb.x + 13.0 * k, cy, k * 0.85, t.muted);
+                        self.button(rb, "Restore default", Hit::SettingsReset(i));
+                        right = rb.x - 6.0 * k;
+                    }
                     let kw = width(self.c, keys, sz.small, 400) + 16.0 * k;
-                    let kb = r(body.right() - kw, cy - 11.0 * k, kw, 22.0 * k);
-                    round(self.c, kb, 11.0 * k, t.hover);
+                    let kb = r(right - kw, cy - 11.0 * k, kw, 22.0 * k);
+                    round(
+                        self.c,
+                        kb,
+                        11.0 * k,
+                        if *clash {
+                            look::alpha(t.danger, 0.25)
+                        } else {
+                            t.hover
+                        },
+                    );
                     text(
                         self.c,
                         keys,
@@ -1846,7 +2229,13 @@ impl Ui {
                         cy + sz.small * 0.36,
                         sz.small,
                         400,
-                        if keys == "Blank" { t.faint } else { t.text },
+                        if keys == "Blank" {
+                            t.faint
+                        } else if *clash {
+                            t.danger
+                        } else {
+                            t.text
+                        },
                     );
                 }
                 Control::None | Control::Heading => {}
@@ -1925,7 +2314,16 @@ impl Ui {
                 Ctl::Toggle(1) => o.show_attachments = !o.show_attachments,
                 Ctl::Toggle(2) => o.hide_unresolved = !o.hide_unresolved,
                 Ctl::Toggle(3) => o.show_orphans = !o.show_orphans,
-                Ctl::Toggle(_) => o.show_arrow = !o.show_arrow,
+                Ctl::Toggle(4) => o.show_arrow = !o.show_arrow,
+                Ctl::Toggle(5) => o.incoming = !o.incoming,
+                Ctl::Toggle(6) => o.outgoing = !o.outgoing,
+                Ctl::Toggle(_) => o.neighbors = !o.neighbors,
+                Ctl::Animate => {
+                    g.animate = Some(super::ms());
+                    if let Some(gr) = g.graph.as_mut() {
+                        gr.reheat(1.0);
+                    }
+                }
                 Ctl::Slider(i) => {
                     self.drag = Drag::Slider(i);
                     let _ = px;
@@ -1948,7 +2346,10 @@ impl Ui {
                 Ctl::Close => g.controls = false,
                 Ctl::Open => g.controls = true,
             }
-            if matches!(ctl, Ctl::Toggle(0..=3) | Ctl::RemoveGroup(_) | Ctl::Reset) {
+            if matches!(
+                ctl,
+                Ctl::Toggle(0..=3) | Ctl::Toggle(5..=7) | Ctl::RemoveGroup(_) | Ctl::Reset
+            ) {
                 g.stale = true;
             }
             if matches!(ctl, Ctl::Slider(3..=6) | Ctl::Reset) {
@@ -2142,8 +2543,19 @@ impl Ui {
                 else {
                     return;
                 };
-                let (_, lo, hi) = SLIDERS[i as usize];
                 let f = ((px - tx) / tw.max(1.0)).clamp(0.0, 1.0);
+                if i == 7 {
+                    // A local graph's depth: whole steps, 1 to 5.
+                    if let Some(View::Graph(g)) = self.app.view_mut() {
+                        let d = (1.0 + 4.0 * f).round() as u32;
+                        if d != g.depth {
+                            g.depth = d;
+                            g.stale = true;
+                        }
+                    }
+                    return;
+                }
+                let (_, lo, hi) = SLIDERS[i as usize];
                 if let Some(View::Graph(g)) = self.app.view_mut() {
                     slider_set(&mut g.opt, i, lo + (hi - lo) * f);
                     if i >= 3 {

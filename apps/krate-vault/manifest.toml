@@ -69,6 +69,16 @@ rationale = "Read the quick-run flag and the vault to open, for automated runs"
 required = false
 
 [[capabilities]]
+cap = "ui.dialog:file-open"
+rationale = "Add a file you pick to the vault as an attachment of the note"
+required = false
+
+[[capabilities]]
+cap = "net.connect:*:443"
+rationale = "Show the title and description of a web page a canvas card links to"
+required = false
+
+[[capabilities]]
 cap = "ui.open-url"
 rationale = "Open a web link in a note in your browser"
 required = false
