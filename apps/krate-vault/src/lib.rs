@@ -34,14 +34,24 @@ extern crate alloc;
 extern crate std;
 
 pub mod app;
+pub mod bases;
+pub mod bookmarks;
 pub mod buffer;
+pub mod canvas;
+pub mod dates;
 pub mod editor;
+pub mod graph;
+pub mod json;
 pub mod md;
+pub mod panes;
+pub mod recovery;
 pub mod sample;
 pub mod search;
+pub mod settings;
 pub mod text;
 pub mod vault;
 pub mod vfs;
+pub mod yaml;
 
 #[cfg(target_arch = "wasm32")]
 mod guest;

@@ -44,8 +44,11 @@ pub struct Meta {
     /// Each `[[link]]`: the target lower-cased (a name, or a path without
     /// `.md`), and the line it is on.
     pub links: Vec<(String, u32)>,
-    /// Each `#tag`, as written (without the `#`).
+    /// Each `#tag`, as written (without the `#`), with the note's `tags`
+    /// property.
     pub tags: Vec<String>,
+    /// The note's properties (its `---` block), as a JSON object.
+    pub props: Option<crate::json::Value>,
 }
 
 /// A note that links to another, and the lines it does it on.
@@ -79,15 +82,53 @@ fn hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
-fn is_note(name: &str) -> bool {
+/// A Markdown note.
+fn is_md(name: &str) -> bool {
     name.len() > 3 && name.to_ascii_lowercase().ends_with(".md")
 }
 
+/// A file the vault shows and opens: notes, canvases and bases.
+pub fn is_note(name: &str) -> bool {
+    let l = name.to_ascii_lowercase();
+    is_md(name) || (l.len() > 7 && l.ends_with(".canvas")) || (l.len() > 5 && l.ends_with(".base"))
+}
+
+/// What kind of file a path is, by its extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    Note,
+    Canvas,
+    Base,
+}
+
+pub fn kind_of(path: &str) -> FileKind {
+    let l = path.to_ascii_lowercase();
+    if l.ends_with(".canvas") {
+        FileKind::Canvas
+    } else if l.ends_with(".base") {
+        FileKind::Base
+    } else {
+        FileKind::Note
+    }
+}
+
+/// The name shown for a file: without `.md`, `.canvas` or `.base`.
 fn strip_md(name: &str) -> &str {
     if is_note(name) {
-        name.get(..name.len() - 3).unwrap_or(name)
+        let dot = name.rfind('.').unwrap_or(name.len());
+        name.get(..dot).unwrap_or(name)
     } else {
         name
+    }
+}
+
+/// The key a link names a file by: a note's name, or another file's name
+/// with its extension (`[[Board.canvas]]`).
+fn link_key(file: &str) -> String {
+    if is_md(file) {
+        lower(strip_md(file))
+    } else {
+        lower(file)
     }
 }
 
@@ -188,7 +229,7 @@ impl Vault {
         for p in note_paths {
             let folder = self.folder_by_path.get(parent(&p)).copied().unwrap_or(0);
             let name = String::from(strip_md(file_name(&p)));
-            let key = lower(&name);
+            let key = link_key(file_name(&p));
             let id = self.notes.len();
             self.by_key.entry(key.clone()).or_default().push(id);
             self.by_path.insert(p.clone(), id);
@@ -300,7 +341,8 @@ impl Vault {
             };
             if self.by_path.contains_key(&path) {
                 if let Ok(text) = self.fs.read(&path) {
-                    self.meta.insert(path, scan_text(&text));
+                    let m = scan_file(&path, &text);
+                    self.meta.insert(path, m);
                     any = true;
                 }
             }
@@ -314,7 +356,7 @@ impl Vault {
     /// Index one note from text the app already holds (a note just saved).
     pub fn index_text(&mut self, path: &str, text: &str) {
         if self.by_path.contains_key(path) {
-            self.meta.insert(String::from(path), scan_text(text));
+            self.meta.insert(String::from(path), scan_file(path, text));
             self.generation += 1;
         }
     }
@@ -417,7 +459,7 @@ impl Vault {
         let mut notes: Vec<String> = self.notes.iter().map(|n| n.path.clone()).collect();
         notes.push(path.clone());
         self.build(folders, notes);
-        self.meta.insert(path.clone(), scan_text(text));
+        self.meta.insert(path.clone(), scan_file(&path, text));
         Ok(path)
     }
 
@@ -598,11 +640,76 @@ impl Vault {
     }
 }
 
+/// Read what a file says: a note's links, tags and properties, a canvas's
+/// cards that show notes and the links in its text cards.
+pub fn scan_file(path: &str, text: &str) -> Meta {
+    match kind_of(path) {
+        FileKind::Note => scan_text(text),
+        FileKind::Canvas => {
+            let mut meta = Meta::default();
+            if let Some(c) = crate::canvas::Canvas::parse(text) {
+                for (i, n) in c.nodes.iter().enumerate() {
+                    if let Some(f) = n.file.as_deref() {
+                        let f = f.strip_suffix(".md").unwrap_or(f);
+                        meta.links.push((lower(f), i as u32));
+                    }
+                    if let Some(t) = n.text.as_deref() {
+                        let inner = scan_text(t);
+                        meta.links
+                            .extend(inner.links.into_iter().map(|(l, _)| (l, i as u32)));
+                        meta.tags.extend(inner.tags);
+                    }
+                }
+            }
+            meta
+        }
+        FileKind::Base => Meta::default(),
+    }
+}
+
 /// Read a note's links and tags, skipping fenced code.
 pub fn scan_text(text: &str) -> Meta {
     let mut meta = Meta::default();
     let mut in_code = false;
+    let body = match crate::yaml::front_matter(text) {
+        Some((props, body)) => {
+            for key in ["tags", "tag"] {
+                match props.get(key) {
+                    Some(crate::json::Value::Arr(a)) => meta.tags.extend(
+                        a.iter()
+                            .filter_map(crate::json::Value::str)
+                            .map(|t| String::from(t.trim_start_matches('#'))),
+                    ),
+                    Some(crate::json::Value::Str(s)) => meta.tags.extend(
+                        s.split([',', ' '])
+                            .filter(|t| !t.is_empty())
+                            .map(|t| String::from(t.trim_start_matches('#'))),
+                    ),
+                    _ => {}
+                }
+            }
+            meta.props = Some(props);
+            body
+        }
+        None => 0,
+    };
     for (n, line) in text.split('\n').enumerate() {
+        if n < body {
+            // Links written in properties count, the rest of the block not.
+            if let Some(i) = line.find("[[") {
+                md::refs(
+                    line.get(i..).unwrap_or(""),
+                    |l| {
+                        let l = l.strip_suffix(".md").unwrap_or(l);
+                        if !l.is_empty() {
+                            meta.links.push((lower(l), n as u32));
+                        }
+                    },
+                    |_| {},
+                );
+            }
+            continue;
+        }
         if md::is_fence(line) {
             in_code = !in_code;
             continue;
