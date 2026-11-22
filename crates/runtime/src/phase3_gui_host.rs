@@ -96,9 +96,10 @@ pub struct Phase3GuiHost {
     /// Files the person chose in a dialog this run.
     ///
     /// The picker writes here and `fs.open-chosen` reads, so the two halves of
-    /// one grant share a store that lives and dies with the run. An app cannot
-    /// carry a token across runs because this is gone when the run ends.
-    chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    /// one grant share a store that lives with the run. A FILE token dies
+    /// with the run; a picked FOLDER is kept for the app when the run has a
+    /// folder memory (K-1336, chosen_files.rs), and nothing else is.
+    pub(crate) chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
     /// The requests the Phase 2 host sent for the app this run, shared:
     /// what an `expect_requested` step reads (IC-743, test 1504).
     net_log: std::rc::Rc<std::cell::RefCell<Vec<String>>>,

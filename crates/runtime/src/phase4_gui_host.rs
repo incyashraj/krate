@@ -376,6 +376,39 @@ impl crate::phase4_gui_bindings::krate::gfx::canvas_images::Host for Phase3GuiHo
     }
 }
 
+/// The file behind `<token>/<path>` in a folder the person picked, for the
+/// player: inside that folder after every link is followed, and a file.
+fn picked_media_file(
+    chosen: &crate::chosen_files::ChosenFiles,
+    rest: &str,
+) -> Result<std::path::PathBuf, String> {
+    let (token, tail) = rest
+        .split_once('/')
+        .ok_or_else(|| "name a file inside the picked folder".to_string())?;
+    if tail.is_empty()
+        || tail
+            .split('/')
+            .any(|p| p.is_empty() || p == "." || p == "..")
+    {
+        return Err(format!(
+            "picked/{rest} is not a path inside the picked folder"
+        ));
+    }
+    let folder = chosen
+        .resolve_folder(token)
+        .ok_or_else(|| "that folder is not one the person picked".to_string())?;
+    let folder =
+        std::fs::canonicalize(folder).map_err(|_| "the picked folder is gone".to_string())?;
+    let file = std::fs::canonicalize(folder.join(tail))
+        .map_err(|_| format!("there is no {tail} in the picked folder"))?;
+    if !file.starts_with(&folder) || !file.is_file() {
+        return Err(format!(
+            "picked/{rest} is not a file inside the picked folder"
+        ));
+    }
+    Ok(file)
+}
+
 /// Videos played in the app's own layout (IC-922). Phase 4 only. A bundled
 /// clip needs no capability, as a bundled picture needs none; a stream needs
 /// `net.connect` to its host, judged as a fetch is.
@@ -387,6 +420,14 @@ impl crate::phase4_gui_bindings::krate::gfx::video::Host for Phase3GuiHost {
                 return Ok(Err(GfxError::PermissionDenied));
             }
             crate::video::Source::Url(source)
+        } else if let Some(rest) = source.strip_prefix("picked/") {
+            // A file in a folder the person picked (K-1343): their pick is
+            // the grant, as it is for every fs call under picked/<token>/,
+            // and the file must stay inside that folder.
+            match picked_media_file(&self.chosen_files.borrow(), rest) {
+                Ok(path) => crate::video::Source::File(path),
+                Err(why) => return Ok(Err(GfxError::Unsupported(why))),
+            }
         } else {
             let Some(root) = self.asset_root.as_deref() else {
                 return Ok(Err(GfxError::Unsupported(
@@ -1219,6 +1260,41 @@ fn modifiers_to_phase4(m: ui3::types::Modifiers) -> ui4::types::Modifiers {
 
 #[cfg(test)]
 mod tests {
+    /// K-1343: a sound or video file in a folder the person picked plays;
+    /// nothing outside that folder does, by `..`, by a link, or by token.
+    #[test]
+    fn a_picked_folders_media_file_resolves_and_nothing_outside_it_does() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(vault.join("media")).unwrap();
+        std::fs::write(vault.join("media/clip.mp4"), b"x").unwrap();
+        std::fs::write(dir.path().join("secret.mp3"), b"x").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.path().join("secret.mp3"), vault.join("link.mp3")).unwrap();
+        let mut chosen = crate::chosen_files::ChosenFiles::new();
+        let token = chosen.remember_folder(vault.clone()).expect("token");
+        let ok =
+            super::picked_media_file(&chosen, &format!("{token}/media/clip.mp4")).expect("plays");
+        assert!(ok.ends_with("media/clip.mp4"));
+        for bad in [
+            format!("{token}/../secret.mp3"),
+            format!("{token}/media"),
+            format!("{token}/none.mp4"),
+            token.clone(),
+            "folder-999/media/clip.mp4".to_string(),
+        ] {
+            assert!(
+                super::picked_media_file(&chosen, &bad).is_err(),
+                "{bad} must not play"
+            );
+        }
+        #[cfg(unix)]
+        assert!(
+            super::picked_media_file(&chosen, &format!("{token}/link.mp3")).is_err(),
+            "a link out stays out"
+        );
+    }
+
     use super::*;
 
     #[test]

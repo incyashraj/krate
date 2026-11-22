@@ -676,7 +676,8 @@ by handle with `draw`/`draw_round` each frame: `draw_pixels` sends \
 every byte every frame, which makes a scrolling list of pictures lag \
 on a phone. A video (a tutorial clip, a trailer, a recorded \
 workout): put the .mp4 in the app's `assets/` directory, then \
-`let v = krate::gfx::video::open(\"clips/intro.mp4\")?` -- or an \
+`let v = krate::gfx::video::open(\"clips/intro.mp4\")?` -- or a file \
+in a folder the person picked (`\"picked/<token>/talk.mp4\"`), or an \
 `https://` address with `net.connect` to its host -- and each frame \
 `video::draw(canvas, v, rect)`; the platform decodes it and plays its \
 sound, so never decode frames yourself. Build the controls as ordinary \
@@ -685,7 +686,8 @@ buttons calling `play`, `pause`, `seek(v, ms)`, `set_looping`, \
 `duration_millis`, `ready` (draw \"Loading\" until true), `ended` and \
 the picture's `width`/`height` -- fit the rect to that shape. A \
 non-empty `problem` says why it cannot play: show it. A computer other \
-than a Mac answers `Err(Platform)` for now: say so.\n\n\
+than a Mac answers `Err(Platform)` for now: say so. A sound file (mp3, \
+m4a, wav) opens and plays through the same calls with no picture.\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \
 `draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \

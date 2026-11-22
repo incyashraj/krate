@@ -9884,9 +9884,12 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Open a video, paused at the start. `source` is a path inside the app's
-            /// bundled assets ("clips/intro.mp4") or an `https://` address the app
-            /// was granted `net.connect` to. Loading continues after this returns:
-            /// read `state` for `ready`.
+            /// bundled assets ("clips/intro.mp4"), a file in a folder the person
+            /// picked ("picked/<token>/talks/day1.mp4" -- their pick is the grant), or
+            /// an `https://` address the app was granted `net.connect` to. A sound
+            /// file (mp3, m4a, wav) plays the same way, with no picture: its width
+            /// and height stay 0. Loading continues after this returns: read `state`
+            /// for `ready`.
             pub fn open(source: &str) -> Result<u64, GfxError> {
                 unsafe {
                     #[repr(align(8))]
