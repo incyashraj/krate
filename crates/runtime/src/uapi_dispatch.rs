@@ -334,6 +334,11 @@ pub trait FsAdapter {
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn rename(&self, from: &str, to: &str) -> std::result::Result<(), AdapterError>;
+    /// Move a path to the computer's Trash (krate:ui/trash, K-1337). A host
+    /// with no Trash -- a browser tab, a phone -- says so.
+    fn trash(&self, _path: &str) -> std::result::Result<(), AdapterError> {
+        Err(AdapterError::Unsupported)
+    }
     fn close_file(&self, handle: &FileHandle) -> std::result::Result<(), AdapterError>;
 }
 
@@ -573,6 +578,14 @@ impl<'a> UapiDispatcher<'a> {
             path: path.to_string(),
         }))?;
         self.adapter.fs().mkdir(path).map_err(Into::into)
+    }
+
+    /// Move a path to the Trash: allowed exactly where removing it is.
+    pub fn fs_trash(&self, path: &str) -> std::result::Result<(), FsDispatchError> {
+        self.check_fs(UapiCall::Fs(FsCall::Remove {
+            path: path.to_string(),
+        }))?;
+        self.adapter.fs().trash(path).map_err(Into::into)
     }
 
     pub fn fs_rename(&self, from: &str, to: &str) -> std::result::Result<(), FsDispatchError> {

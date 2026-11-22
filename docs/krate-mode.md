@@ -1083,6 +1083,7 @@ takes this path, so any of them is a model for the wiring.
 - `print::window: func(window: u64, title: string) -> result<print-outcome, ui-error>`
 - `print::add-page: func(window: u64) -> result<u32, ui-error>`
 - `print::finish: func(window: u64, title: string) -> result<print-outcome, ui-error>`
+- `trash::move-to-trash: func(path: string) -> result<_, trash-error>`
 
 ## `audio`
 

@@ -1828,6 +1828,9 @@ impl Runtime {
         link_gui!(ui4::photos);
         // Phase 4 only: reminders delivered with the app closed (IC-921).
         link_gui!(ui4::reminders);
+        // Phase 4 only: the computer's Trash (K-1337), served beside the
+        // fs calls so the same path rules and fs.remove check decide it.
+        link_phase2!(ui4::trash);
         // Phase 4 only: notifications replaced and taken back by id (IC-271).
         link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).
@@ -3174,6 +3177,16 @@ impl FsAdapter for LocalPhase2Adapter {
         rename_path_on_host(from.as_path(), to.as_path()).map_err(map_io_error)
     }
 
+    fn trash(&self, path: &str) -> std::result::Result<(), AdapterError> {
+        // The same resolution as a remove: inside the sandbox or a picked
+        // folder, never a symlink out of it, never the root itself.
+        let path = self.resolve_fs_path(path, FsOperation::RemoveLeaf)?;
+        if symlink_metadata_on_host(path.as_path()).is_err() {
+            return Err(AdapterError::NotFound);
+        }
+        trash_on_host(path.as_path())
+    }
+
     fn close_file(&self, handle: &FileHandle) -> std::result::Result<(), AdapterError> {
         self.close_resource(handle)
     }
@@ -3270,6 +3283,36 @@ fn create_dir_on_host(path: &Path) -> std::io::Result<()> {
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         std::fs::create_dir(path)
+    }
+}
+
+/// Move `path` to the computer's Trash (K-1337).
+///
+/// `KRATE_TRASH_TO=<dir>` moves it into that folder instead, so tests and
+/// check runs prove the call without filling the person's own Trash (the
+/// same seam as `KRATE_PRINT_TO`).
+#[cfg(feature = "phase2-bindings")]
+fn trash_on_host(path: &Path) -> std::result::Result<(), AdapterError> {
+    if let Some(dir) = std::env::var_os("KRATE_TRASH_TO") {
+        let dir = PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).map_err(map_io_error)?;
+        let name = path.file_name().map(PathBuf::from).unwrap_or_default();
+        let mut to = dir.join(&name);
+        let mut n = 1;
+        while to.exists() {
+            n += 1;
+            to = dir.join(format!("{} {n}", name.display()));
+        }
+        return std::fs::rename(path, to).map_err(map_io_error);
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        trash::delete(path).map_err(|err| AdapterError::Io(format!("the Trash refused it: {err}")))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        let _ = path;
+        Err(AdapterError::Unsupported)
     }
 }
 
@@ -5135,6 +5178,44 @@ mod tests {
         drop(adapter);
         std::fs::remove_file(file).expect("remove fixture file");
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    /// K-1337: a delete the person can undo. KRATE_TRASH_TO stands in for
+    /// the computer's Trash, so the test never fills the real one.
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_fs_adapter_sends_a_file_to_the_trash_inside_the_sandbox_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sandbox = dir.path().join("app");
+        let bin = dir.path().join("Trash");
+        std::fs::create_dir_all(sandbox.join("notes")).expect("sandbox");
+        std::fs::write(sandbox.join("notes/old.md"), b"old").expect("note");
+        std::fs::write(dir.path().join("outside.md"), b"keep").expect("outside");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.clone(),
+            Default::default(),
+        );
+        std::env::set_var("KRATE_TRASH_TO", &bin);
+        let moved = FsAdapter::trash(&adapter, "notes/old.md");
+        let missing = FsAdapter::trash(&adapter, "notes/never.md");
+        let escape = FsAdapter::trash(&adapter, "../outside.md");
+        std::env::remove_var("KRATE_TRASH_TO");
+        assert_eq!(moved, Ok(()));
+        assert!(!sandbox.join("notes/old.md").exists(), "it left the folder");
+        assert_eq!(
+            std::fs::read(bin.join("old.md")).expect("in the Trash"),
+            b"old"
+        );
+        assert_eq!(missing, Err(AdapterError::NotFound));
+        assert!(escape.is_err(), "a path out of the sandbox never goes");
+        assert!(dir.path().join("outside.md").exists());
     }
 
     #[cfg(feature = "phase2-bindings")]

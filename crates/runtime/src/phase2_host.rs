@@ -3497,6 +3497,30 @@ fn missing_stream_resource() -> io::types::IoError {
     io::types::IoError::Other("unknown stream resource".to_string())
 }
 
+/// The computer's Trash (krate:ui/trash, K-1337). A Phase 4 interface, but
+/// served here, beside `fs.files.remove-file`: the same path rules and the
+/// same `fs.remove` check decide it, through the same dispatcher.
+impl crate::phase4_gui_bindings::krate::ui::trash::Host for Phase2Host<'_> {
+    fn move_to_trash(
+        &mut self,
+        path: String,
+    ) -> wasmtime::Result<Result<(), crate::phase4_gui_bindings::krate::ui::trash::TrashError>>
+    {
+        use crate::phase4_gui_bindings::krate::ui::trash::TrashError;
+        use crate::uapi_dispatch::{AdapterError, FsDispatchError};
+        Ok(self.dispatcher().fs_trash(&path).map_err(|err| match err {
+            FsDispatchError::PermissionDenied | FsDispatchError::Policy(_) => TrashError::Denied,
+            FsDispatchError::Adapter(AdapterError::NotFound) => TrashError::NotFound,
+            FsDispatchError::Adapter(AdapterError::InvalidPath) => TrashError::InvalidPath,
+            FsDispatchError::Adapter(AdapterError::PermissionDenied) => TrashError::Denied,
+            FsDispatchError::Adapter(AdapterError::Unsupported) => {
+                TrashError::Unavailable("there is no Trash here".to_string())
+            }
+            FsDispatchError::Adapter(other) => TrashError::Unavailable(other.to_string()),
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};

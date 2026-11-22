@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 82 boundaries reviewed, 73 of them WIT interfaces (73 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 45 optional.
+- 83 boundaries reviewed, 74 of them WIT interfaces (74 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 46 optional.
 - 8 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -90,6 +90,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:ui@0.1.0/sign-in` | wit | an OAuth 2 PKCE pair and the system sign-in sheet that returns the address a service sends the person back to | which service, its client id, scopes and redirect, when to ask, how to trade the code and where to keep the token | open-url to the browser and a code the person pastes back | no | -- |
 | `krate:ui@0.1.0/text-entry` | wit | showing and hiding the system's on-screen keyboard for a window; typing arrives as ordinary text and key events | when a field wants text, and drawing the field and its caret | the raw text and key events, the same as a physical keyboard's | yes | platform |
 | `krate:ui@0.1.0/touch` | wit | every finger on a touch screen, by a stable id, in logical pixels, cleared when the window loses focus | what each finger does: a stick, a look, a button, a gesture | the raw finger positions, unfiltered | yes | platform |
+| `krate:ui@0.1.0/trash` | wit | that a deleted file can be put back from the computer's own Trash, and that only a path the app could already delete can go there | which files to delete, when to ask first, and whether to keep its own bin where there is no Trash | remove the file with fs.files.remove-file, or move it to a folder of the app's own | no | -- |
 | `krate:ui@0.1.0/tree` | wit | nothing: an optional portable widget tree the hosts lower to native controls or paint | any UI approach; a canvas of the app's own pixels is equal to a tree | image and canvas widgets with the app's own rendering | no | -- |
 | `krate:ui@0.1.0/types` | wit | widget kinds, event shapes and errors every host lowers to | what the app builds from them | none needed: a type carries no authority | yes | portability |
 | `krate:ui@0.1.0/unlock` | wit | asking the system to check it is the device owner (Face ID, Touch ID, the passcode) with the app's reason, answered yes, no or unavailable | what to guard, when to ask and lock again, the reason shown, and what to do when the device cannot check | the app's own passphrase | no | -- |

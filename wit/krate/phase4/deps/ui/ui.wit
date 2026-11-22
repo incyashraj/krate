@@ -1478,3 +1478,29 @@ interface print {
   /// Print the pages added so far, wait for the person, and start over.
   finish: func(window: u64, title: string) -> result<print-outcome, ui-error>;
 }
+
+/// The computer's own Trash (the Recycle Bin on Windows), so a deleted file
+/// can be brought back the way a person expects (K-1337).
+///
+/// Allowed wherever deleting the path is: the same `fs.remove` scope, or a
+/// folder the person picked (`picked/<token>/...`). No new permission, and
+/// nothing outside what the app could already delete. Where there is no
+/// Trash to use -- a browser tab, a phone -- the answer is `unavailable`, and
+/// the app decides whether to delete for good or keep its own bin.
+interface trash {
+  /// Why a path did not go to the Trash.
+  variant trash-error {
+    /// The app may not delete this path.
+    denied,
+    /// Nothing is at this path.
+    not-found,
+    /// The path is not one the app can name (outside its folders).
+    invalid-path,
+    /// There is no Trash here, or the system refused; the words say which.
+    unavailable(string),
+  }
+
+  /// Move the file or folder at `path` to the Trash. A folder goes with
+  /// everything in it, as one item the person can put back.
+  move-to-trash: func(path: string) -> result<_, trash-error>;
+}

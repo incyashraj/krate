@@ -309,7 +309,11 @@ subfolders. No fs capability at all. On a computer the token stays good \
 on this app's later runs until the folder is gone or the person takes it back, so an app \
 that reopens its folder (a notes vault, a photo library) saves the token in \
 `store.kv` and tries `fs::list(\"picked/<token>\")` at start; only when that \
-fails does it ask again. `apps/krate-tidy` is the worked \
+fails does it ask again. To delete a file the way a person expects, \
+`krate::ui::trash::move_to_trash(path)` sends it to the computer's Trash \
+(Recycle Bin on Windows) wherever the app may delete that path, no new \
+permission; in a browser tab or on a phone it answers `Unavailable`, and \
+the app then deletes for good or keeps its own bin. `apps/krate-tidy` is the worked \
 example: a folder tidier whose manifest has zero fs lines. For output the \
 app keeps between runs, use its own folder with a narrow scope like \
 `fs.write:./exports/**`.\n\n\

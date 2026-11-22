@@ -58,6 +58,7 @@ world gui {
   import krate:ui/appearance@0.1.0;
   import krate:ui/accessibility@0.1.0;
   import krate:ui/web-page@0.1.0;
+  import krate:ui/trash@0.1.0;
 
   import krate:gfx/canvas2d@0.1.0;
   import krate:gfx/scene3d@0.1.0;

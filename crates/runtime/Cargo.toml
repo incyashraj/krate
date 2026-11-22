@@ -139,6 +139,10 @@ whisper-rs = { version = "0.16.0", optional = true }
 # no programs.
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
 portable-pty = "0.9.0"
+# krate:ui/trash (K-1337): the computer's own Trash -- Finder's on a Mac,
+# the Recycle Bin on Windows, the freedesktop Trash on Linux -- so a file an
+# app deletes can be put back. MIT; one call per system.
+trash = "5"
 # krate:serial (IC-985): a serial device the person picks. serialport
 # (MPL-2.0) opens, configures and lists ports on all three systems; the
 # libudev feature is off so a Linux build needs no system library (the list

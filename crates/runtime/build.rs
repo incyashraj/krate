@@ -148,6 +148,10 @@ fn home(iface: &str) -> (&'static str, &'static str) {
     );
     if phase2 {
         ("crate::phase2_bindings", "phase2")
+    } else if iface == "ui/trash" {
+        // The computer's Trash (K-1337): a Phase 4 interface served by the
+        // Phase 2 host, beside fs remove, so the same path rules decide it.
+        ("crate::phase4_gui_bindings", "phase2")
     } else if PHASE4.contains(&iface)
         || PHASE3_INTERFACES
             .get()
@@ -170,7 +174,7 @@ fn home(iface: &str) -> (&'static str, &'static str) {
 /// window by the main thread on its next turn (`WorkerScreen`).
 fn main_thread_only(iface: &str, _func: &str) -> bool {
     let pkg = iface.split('/').next().unwrap_or("");
-    matches!(pkg, "ui" | "gfx" | "camera" | "speech")
+    matches!(pkg, "ui" | "gfx" | "camera" | "speech") && iface != "ui/trash"
 }
 
 fn fam_tag(fam: &str) -> &'static str {

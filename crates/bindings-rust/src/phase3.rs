@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, text_entry, touch, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, text_entry, touch, trash, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -583,6 +583,16 @@ pub mod ui {
         /// screen, and after the window loses focus, so a finger never sticks.
         pub fn touches(window: u64) -> alloc::vec::Vec<TouchPoint> {
             crate::bindings::krate::ui::touch::touches(window)
+        }
+    }
+    /// `krate:ui/trash`.
+    pub mod trash {
+        pub use crate::bindings::krate::ui::trash::TrashError;
+
+        /// Move the file or folder at `path` to the Trash. A folder goes with
+        /// everything in it, as one item the person can put back.
+        pub fn move_to_trash(path: &str) -> Result<(), TrashError> {
+            crate::bindings::krate::ui::trash::move_to_trash(path)
         }
     }
     /// `krate:ui/tree`.
