@@ -426,7 +426,10 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
         },
         target: None,
     };
-    let indent_w = 24.0 * k;
+    // Obsidian's list geometry: each level 32 px in, an item's text 31 px
+    // from its level's edge, and --list-spacing (0.075em) above and below.
+    let indent_w = 32.0 * k;
+    let list_pad = 1.2 * k;
     if reading && ctx.block == Block::Blank {
         let mut l = Lay::hidden(size);
         if ctx.gap {
@@ -496,9 +499,10 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
         } if live => {
             level = indent;
             let task = matches!(ctx.block, Block::Task { .. });
-            let mark_w = if task { 26.0 * k } else { 20.0 * k };
-            marker = level as f32 * indent_w + mark_w * 0.45;
-            x0 = level as f32 * indent_w + mark_w;
+            x0 = level as f32 * indent_w + 31.0 * k;
+            marker = x0 - if task { 15.0 * k } else { 12.0 * k };
+            pad_top = list_pad;
+            pad_bottom = list_pad;
             deco = match ctx.block {
                 Block::Task {
                     checked, box_at, ..
@@ -533,7 +537,13 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
             content,
         } if live => {
             level = indent;
-            x0 = level as f32 * indent_w;
+            // The number sits in the marker gutter, right-aligned to just
+            // before the text, as Obsidian draws it.
+            let num = text.get(m..content).unwrap_or("");
+            let nw = look::width_styled(c, num, size, look::style(400, false, false));
+            x0 = level as f32 * indent_w + 31.0 * k - nw;
+            pad_top = list_pad;
+            pad_bottom = list_pad;
             segs.push(plain(0, m, true));
             segs.push(plain(m, content, false));
             // The number is drawn muted, as Obsidian's list markers are.
@@ -1818,7 +1828,7 @@ pub fn draw_line(
             for lv in 0..l.level {
                 fill(
                     c,
-                    r(ox + lv as f32 * 24.0 * k + 8.0 * k, oy, 1.0, l.h),
+                    r(ox + lv as f32 * 32.0 * k + 16.0 * k, oy, 1.0, l.h),
                     t.border,
                 );
             }
@@ -1891,12 +1901,22 @@ pub fn draw_line(
             for lv in 0..l.level {
                 fill(
                     c,
-                    r(ox + lv as f32 * 24.0 * k + 8.0 * k, oy, 1.0, l.h),
+                    r(ox + lv as f32 * 32.0 * k + 16.0 * k, oy, 1.0, l.h),
                     t.border,
                 );
             }
         }
         _ => {}
+    }
+    // A nested numbered item has its indent guides too.
+    if l.deco == Deco::None && l.level > 0 {
+        for lv in 0..l.level {
+            fill(
+                c,
+                r(ox + lv as f32 * 32.0 * k + 16.0 * k, oy, 1.0, l.h),
+                t.border,
+            );
+        }
     }
     // The fold chevron in the margin: always when folded, on hover when it
     // could fold.
