@@ -85,9 +85,15 @@
    * it; the current item is the accent's tint, and a hair stronger under
    * the pointer; the keyboard's focus is an accent ring. Redefined under
    * body.light, because a token that names another token is resolved
-   * where it is declared. */
+   * where it is declared.
+   *
+   * A row in a list that also holds the current item (the rail, Recents,
+   * the Settings menu) takes the quieter --row-hover: about half of a
+   * button's film. At the full film a hovered row was as bright as the
+   * current row's tint, and the two read as two selections. */
   --hover: rgba(255, 255, 255, 0.06);
   --pressed: rgba(255, 255, 255, 0.1);
+  --row-hover: color-mix(in srgb, var(--hover) 60%, transparent);
   --selected: color-mix(in srgb, var(--accent) 16%, transparent);
   --selected-hover: color-mix(in srgb, var(--accent) 22%, transparent);
   --selected-ink: var(--accent);
@@ -143,6 +149,7 @@ body.light {
 
   --hover: rgba(24, 24, 27, 0.05);
   --pressed: rgba(24, 24, 27, 0.09);
+  --row-hover: color-mix(in srgb, var(--hover) 60%, transparent);
   --selected: color-mix(in srgb, var(--accent) 10%, transparent);
   --selected-hover: color-mix(in srgb, var(--accent) 15%, transparent);
   --selected-ink: var(--accent);
@@ -196,12 +203,12 @@ body {
   color: var(--ink-3);
   transition: background 0.2s;
 }
-.side-search:hover, body.light .side-search:hover { background: var(--hover); }
+.side-search:hover, body.light .side-search:hover { background: var(--row-hover); }
 .side-search:focus-within { background: var(--surface); box-shadow: var(--sh-1); }
 body.light .side-search, body.light .side-search:focus-within { border: 0; }
 body.light .side-search { background: transparent; }
 body.light .side-search:focus-within { background: var(--surface); }
-.side-search input { font: 400 13.5px var(--sans); color: var(--ink); }
+.side-search input { font: 400 14px var(--sans); color: var(--ink); }
 .side-search input::placeholder { color: var(--ink-2); }
 .side-key, body.light .side-key {
   font: 500 11px/1 var(--sans); color: var(--ink-3);
@@ -211,11 +218,11 @@ body.light .side-search:focus-within { background: var(--surface); }
 .side-nav { gap: 1px; }
 .side-row {
   height: 34px; padding: 0 10px; gap: 10px; border-radius: 10px;
-  font-size: 13.5px; color: var(--ink-2);
+  font-size: 14px; color: var(--ink-2);
   transition: color 0.25s, background 0.2s;
 }
 .side-row svg { opacity: 1; color: var(--ink-3); transition: color 0.25s; }
-.side-row:hover { color: var(--ink); background: var(--hover); }
+.side-row:hover { color: var(--ink); background: var(--row-hover); }
 .side-row:hover svg { opacity: 1; }
 .side-row.on {
   padding: 0 10px; border: 0;
@@ -394,9 +401,9 @@ body:not(.light) .web-mode button[aria-pressed="true"] { background: var(--surfa
   background: transparent; box-shadow: none; color: var(--ink-2);
   transition: color 0.25s, background 0.2s;
 }
-.side-card:hover { background: var(--hover); color: var(--ink); border: 0; }
+.side-card:hover { background: var(--row-hover); color: var(--ink); border: 0; }
 .side-card .card-text small { display: none; }
-.side-card .card-text b { font: 400 13.5px var(--sans); color: inherit; }
+.side-card .card-text b { font: 400 14px var(--sans); color: inherit; }
 .side-card .card-icon { width: auto; height: auto; border: 0; background: none; color: var(--ink-3); }
 .side-me { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .side-avatar { border-radius: 50%; }
@@ -792,7 +799,7 @@ body:not(.light) .sheet-wrap { background: rgba(0, 0, 0, 0.55); }
 body:not(.light) .set-side { background: #141417; }
 .set-side-head { font-size: 15px; font-weight: 500; letter-spacing: -0.015em; color: var(--ink); }
 .set-nav button { height: 34px; padding: 0 10px; border-radius: 10px; font: 400 13.5px var(--sans); color: var(--ink-2); }
-.set-nav button:hover { background: var(--hover); color: var(--ink); }
+.set-nav button:hover { background: var(--row-hover); color: var(--ink); }
 .set-nav button.on { background: var(--selected); color: var(--ink); font-weight: 500; box-shadow: none; }
 .set-close { width: 30px; height: 30px; border-radius: 999px; color: var(--ink-3); }
 .set-close:hover { background: var(--hover); color: var(--ink); }
@@ -998,8 +1005,8 @@ body:not(.light) .kr-pop { background: #1c1c1f; }
 .side-mark span { font-size: 14.5px; font-weight: 500; letter-spacing: -.02em; color: var(--ink-2); }
 
 /* recents: plain rows, the open one raised, the one being made pulsing */
-.sess-row { height: 34px; min-height: 0; padding: 0 6px 0 12px; gap: 8px; border-radius: 10px; font: 400 13.5px var(--sans); color: var(--ink-2); }
-.sess-row:hover { background: var(--hover); color: var(--ink); }
+.sess-row { height: 34px; min-height: 0; padding: 0 6px 0 12px; gap: 8px; border-radius: 10px; font: 400 14px var(--sans); color: var(--ink-2); }
+.sess-row:hover { background: var(--row-hover); color: var(--ink); }
 .sess-row.on, body.light .sess-row.on { background: var(--selected); color: var(--ink); box-shadow: none; }
 .sess-row.on:hover, body.light .sess-row.on:hover { background: var(--selected-hover); }
 .sess-dot, .sess-dot.here, body.light .sess-dot.here { display: none; }
@@ -3296,7 +3303,7 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
  * Pressed: a control under the press swaps its own hover film for the
  * pressed one, so every hover rule above gets a pressed state with no
  * rule of its own. */
-:is(button, [role="button"], [role="menuitem"], [role="tab"], .side-row, .side-search, .sess-row, .f-row, .code-file, .kr-pi):active { --hover: var(--pressed); }
+:is(button, [role="button"], [role="menuitem"], [role="tab"], .side-row, .side-search, .sess-row, .f-row, .code-file, .kr-pi):active { --hover: var(--pressed); --row-hover: var(--pressed); }
 /* The keyboard's place: an accent ring inside the control, so a list or
    a scroller never clips it and nothing around it moves. */
 :is(button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], .sess-row, summary):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
