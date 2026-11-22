@@ -1,0 +1,17 @@
+# os	macos
+# arch	arm64
+# commit	3c72fb90806f480506bae8507f7aa93d00482323
+# tree	d70fecfbe9248234753f3a042a15ab35c9689bcc
+# ran_at	2026-11-22T15:12:52Z
+# krate	krate 0.6.1
+hexyl	pass	printed 48 65 6c 6c 6f	232	0
+savings	pass	printed slice:2275	792	0
+ddh	pass	printed Total files	97	0
+envelope	pass	printed quick	107	0
+grex	pass	printed ^a(?:bc?)?	988	0
+eo2	pass	printed eo2:ok	198	0
+mdview	pass	printed blocks:	175	0
+chart	pass	printed drawn:yes	138	0
+bounce	pass	printed playable:yes	46689	0
+cubes	pass	printed rendered3d:yes	2082	0
+rssfwd	skip	no replay check defined	0	0
