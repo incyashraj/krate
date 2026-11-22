@@ -223,6 +223,9 @@ pub struct Phase3GuiHost {
     >,
     /// Where the app's bundled assets are, for a video named by path.
     pub(crate) asset_root: Option<std::path::PathBuf>,
+    /// The app's own folder (the sandbox), for a video or sound file the app
+    /// may read there (K-1346).
+    pub(crate) sandbox_root: Option<std::path::PathBuf>,
     /// The web pages this run opened (IC-927): their windows, and headless,
     /// what each shows.
     pub(crate) web_pages: std::cell::RefCell<
@@ -673,6 +676,7 @@ impl Phase3GuiHost {
             video_frames: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             video_states: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             asset_root: None,
+            sandbox_root: None,
             appearance_cache: std::cell::Cell::new(None),
             described: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             web_pages: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -807,6 +811,22 @@ impl Phase3GuiHost {
     /// sender line per call, a to-do app could post as "1Password".
     fn attribution(&self) -> String {
         crate::desktop_host::attribution_for(self.app_name.as_deref())
+    }
+
+    /// The app's own folder, where `fs.read` grants reach (K-1346).
+    pub fn with_sandbox_root(mut self, root: Option<std::path::PathBuf>) -> Self {
+        self.sandbox_root = root;
+        self
+    }
+
+    /// Whether the app may read `path` in its own folder.
+    pub(crate) fn may_read(&self, path: &str) -> bool {
+        self.runtime
+            .guard()
+            .check(&UapiCall::Fs(crate::uapi::FsCall::Read {
+                path: path.to_string(),
+            }))
+            .is_ok()
     }
 
     pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {

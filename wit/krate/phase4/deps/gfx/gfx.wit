@@ -668,7 +668,9 @@ interface video {
 
   /// Open a video, paused at the start. `source` is a path inside the app's
   /// bundled assets ("clips/intro.mp4"), a file in a folder the person
-  /// picked ("picked/<token>/talks/day1.mp4" -- their pick is the grant), or
+  /// picked ("picked/<token>/talks/day1.mp4" -- their pick is the grant), a
+  /// file in the app's own folder it may read ("vault/clip.mp4" with
+  /// `fs.read:./vault/**`), or
   /// an `https://` address the app was granted `net.connect` to. A sound
   /// file (mp3, m4a, wav) plays the same way, with no picture: its width
   /// and height stay 0. Loading continues after this returns: read `state`

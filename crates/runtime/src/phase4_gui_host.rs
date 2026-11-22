@@ -397,16 +397,37 @@ fn picked_media_file(
     let folder = chosen
         .resolve_folder(token)
         .ok_or_else(|| "that folder is not one the person picked".to_string())?;
-    let folder =
-        std::fs::canonicalize(folder).map_err(|_| "the picked folder is gone".to_string())?;
+    file_inside(folder, tail, "the picked folder")
+}
+
+/// `tail` (already split into plain parts, no `..`) inside `folder`, after
+/// every link is followed, and a file.
+fn file_inside(
+    folder: &std::path::Path,
+    tail: &str,
+    called: &str,
+) -> Result<std::path::PathBuf, String> {
+    let folder = std::fs::canonicalize(folder).map_err(|_| format!("{called} is gone"))?;
     let file = std::fs::canonicalize(folder.join(tail))
-        .map_err(|_| format!("there is no {tail} in the picked folder"))?;
+        .map_err(|_| format!("there is no {tail} in {called}"))?;
     if !file.starts_with(&folder) || !file.is_file() {
-        return Err(format!(
-            "picked/{rest} is not a file inside the picked folder"
-        ));
+        return Err(format!("{tail} is not a file inside {called}"));
     }
     Ok(file)
+}
+
+/// A file in the app's own folder that it may read (K-1346): a vault opened
+/// with `vault=./vault` plays its clips as a picked one does.
+fn sandbox_media_file(root: &std::path::Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let tail = path.trim_start_matches("./").trim_start_matches('/');
+    if tail.is_empty()
+        || tail
+            .split('/')
+            .any(|p| p.is_empty() || p == "." || p == "..")
+    {
+        return Err(format!("{path} is not a path inside the app's folder"));
+    }
+    file_inside(root, tail, "the app's folder")
 }
 
 /// Videos played in the app's own layout (IC-922). Phase 4 only. A bundled
@@ -428,6 +449,14 @@ impl crate::phase4_gui_bindings::krate::gfx::video::Host for Phase3GuiHost {
                 Ok(path) => crate::video::Source::File(path),
                 Err(why) => return Ok(Err(GfxError::Unsupported(why))),
             }
+        } else if let Some(file) = self
+            .sandbox_root
+            .as_deref()
+            .filter(|_| self.may_read(&source))
+            .and_then(|root| sandbox_media_file(root, &source).ok())
+        {
+            // A file in the app's own folder it may read (K-1346).
+            crate::video::Source::File(file)
         } else {
             let Some(root) = self.asset_root.as_deref() else {
                 return Ok(Err(GfxError::Unsupported(
@@ -1374,6 +1403,31 @@ impl ui4::spelling::Host for Phase3GuiHost {
 
 #[cfg(test)]
 mod tests {
+    /// K-1346: a file in the app's own folder resolves inside it and nothing
+    /// outside it does.
+    #[test]
+    fn a_media_file_in_the_apps_own_folder_resolves_and_nothing_outside() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("app");
+        std::fs::create_dir_all(root.join("vault")).unwrap();
+        std::fs::write(root.join("vault/song.mp3"), b"x").unwrap();
+        std::fs::write(dir.path().join("secret.mp3"), b"x").unwrap();
+        assert!(super::sandbox_media_file(&root, "vault/song.mp3").is_ok());
+        assert!(super::sandbox_media_file(&root, "./vault/song.mp3").is_ok());
+        for bad in [
+            "../secret.mp3",
+            "vault/../../secret.mp3",
+            "vault",
+            "vault/none.mp3",
+            "",
+        ] {
+            assert!(
+                super::sandbox_media_file(&root, bad).is_err(),
+                "{bad} must not play"
+            );
+        }
+    }
+
     /// K-1343: a sound or video file in a folder the person picked plays;
     /// nothing outside that folder does, by `..`, by a link, or by token.
     #[test]

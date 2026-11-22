@@ -679,7 +679,8 @@ every byte every frame, which makes a scrolling list of pictures lag \
 on a phone. A video (a tutorial clip, a trailer, a recorded \
 workout): put the .mp4 in the app's `assets/` directory, then \
 `let v = krate::gfx::video::open(\"clips/intro.mp4\")?` -- or a file \
-in a folder the person picked (`\"picked/<token>/talk.mp4\"`), or an \
+in a folder the person picked (`\"picked/<token>/talk.mp4\"`), a file \
+in the app's own folder it may read, or an \
 `https://` address with `net.connect` to its host -- and each frame \
 `video::draw(canvas, v, rect)`; the platform decodes it and plays its \
 sound, so never decode frames yourself. Build the controls as ordinary \
