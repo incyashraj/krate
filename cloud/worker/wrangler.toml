@@ -85,6 +85,10 @@ zone_name = "krate.tech"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
+# Sign in with Apple (IC-996): the Services ID registered for this hub, its
+# return URL https://hub.krate.tech/login/apple/callback. Not a secret: the
+# hub checks Apple's signed ID token against Apple's published keys.
+APPLE_CLIENT_ID = "tech.krate.signin"
 # The gallery's "Start here" shelf, in order (id prefixes): Aurora, Krate
 # Nova, Calculator, Track Dash, Diff. Each looks good and works fully in a
 # browser tab, so a stranger's first tap shows the whole app. Calculator
