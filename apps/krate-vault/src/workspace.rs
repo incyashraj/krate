@@ -1474,12 +1474,13 @@ impl App {
                 return false;
             };
             let name = v.note(&path).map(|n| n.name.clone()).unwrap_or_default();
-            let linking: Vec<String> = v.backlinks(&path).into_iter().map(|b| b.path).collect();
+            // Every other note, last first so they come off the end in
+            // order; a note that also links still counts its plain mentions.
             let queue = v
                 .notes
                 .iter()
                 .rev()
-                .filter(|n| n.path != path && n.path.ends_with(".md") && !linking.contains(&n.path))
+                .filter(|n| n.path != path && n.path.ends_with(".md"))
                 .map(|n| n.path.clone())
                 .collect();
             self.unlinked = Some(Unlinked {
@@ -1512,7 +1513,13 @@ impl App {
                 }
             }
             if !lines.is_empty() {
-                u.found.push((next, lines));
+                let key_of = |p: &str| lower(file_name(p));
+                let at = u
+                    .found
+                    .iter()
+                    .position(|(q, _)| key_of(q) > key_of(&next))
+                    .unwrap_or(u.found.len());
+                u.found.insert(at, (next, lines));
                 changed = true;
             }
         }

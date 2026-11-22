@@ -155,6 +155,8 @@ struct Ui {
     graph_img: views::GraphImage,
     /// Laying a frame out without showing it (to fit a view first).
     unseen: bool,
+    /// Where the pointer is, as last reported.
+    hover_point: Option<(f32, f32)>,
 }
 
 fn ms() -> u64 {
@@ -1978,10 +1980,18 @@ impl Ui {
                 // The name, marked where it appears.
                 if !key.is_empty() {
                     let low = crate::text::lower(wl);
-                    if let Some(i) = low.find(key) {
-                        if wl.is_char_boundary(i) && wl.is_char_boundary(i + key.len()) {
+                    // A link is marked whole, brackets and all.
+                    let mut link = String::from("[[");
+                    link.push_str(key);
+                    let span = match low.find(&link) {
+                        Some(i) => low[i..].find("]]").map(|e| (i, i + e + 2)),
+                        None => None,
+                    }
+                    .or_else(|| low.find(key).map(|i| (i, i + key.len())));
+                    if let Some((i, j)) = span {
+                        if wl.is_char_boundary(i) && wl.is_char_boundary(j) {
                             let pre = width(self.c, &wl[..i], sz.ui, 400);
-                            let mw = width(self.c, &wl[i..i + key.len()], sz.ui, 400);
+                            let mw = width(self.c, &wl[i..j], sz.ui, 400);
                             fill(
                                 self.c,
                                 r(lr.x + 13.0 * k + pre, ly - sz.ui, mw, sz.ui * 1.3),
@@ -2043,11 +2053,16 @@ impl Ui {
             })
             .collect();
         let open = self.app.linked_open;
+        // The count is of notes whose lines link (a canvas has none).
+        let counted = data
+            .iter()
+            .filter(|(_, ctx)| ctx.iter().any(|l| !l.is_empty()))
+            .count();
         y = self.section(
             list,
             y,
             "Linked mentions",
-            Some(data.len()),
+            Some(counted),
             Hit::Section(0),
             open,
         );
@@ -2132,7 +2147,15 @@ impl Ui {
                 y = self.result_block(list, y, name, lines, &key, Hit::Unlinked(i, 0), &|l| {
                     Hit::Unlinked(i, l)
                 });
-                // "Link" turns these mentions into links.
+                // "Link" turns these mentions into links; it shows while
+                // the pointer is on the note's row, as in the notes app.
+                let row_hit = r(list.x, top, list.w, y - top);
+                let over = self
+                    .hover_point
+                    .is_some_and(|(hx, hy)| row_hit.contains(hx, hy));
+                if !over {
+                    continue;
+                }
                 let bw = 44.0 * k;
                 let b = r(
                     list.right() - 12.0 * k - bw - 34.0 * k,
@@ -3730,6 +3753,7 @@ impl krate::Guest for Component {
             index_done_said: false,
             graph_img: views::GraphImage::default(),
             unseen: false,
+            hover_point: None,
         };
         ui.app.now = krate::time::now_millis();
         ui.app.local = local_now();
@@ -3977,6 +4001,7 @@ impl krate::Guest for Component {
                                 changed = true;
                             }
                             (None, _) => {
+                                ui.hover_point = Some((p.x, p.y));
                                 let z = ui.zone_at(p.x, p.y);
                                 if ui.graph_hover(p.x, p.y) {
                                     changed = true;

@@ -4073,6 +4073,11 @@ impl App {
     pub fn busy(&self) -> bool {
         self.job.as_ref().is_some_and(|j| !j.done)
             || self.vault.as_ref().is_some_and(|v| v.index_pending() > 0)
+            || (self.unlinked_open
+                && self.right_open
+                && self.right == RightPane::Backlinks
+                && self.unlinked.as_ref().is_none_or(|u| !u.queue.is_empty())
+                && self.doc().is_some())
     }
 
     /// When the next timed thing is due (a save, a status message ending),
