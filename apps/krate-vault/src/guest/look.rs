@@ -479,6 +479,10 @@ pub enum Icon {
     Hash,
     Info,
     Text,
+    Check,
+    Headphones,
+    ZoomIn,
+    ZoomOut,
 }
 
 /// An icon centred on (x, y), 16 px at `k` = 1.
@@ -762,6 +766,22 @@ pub fn icon(c: u64, which: Icon, x: f32, y: f32, k: f32, col: Rgba) {
             seg((3.0, 9.0), (21.0, 9.0));
             seg((3.0, 15.0), (21.0, 15.0));
             seg((12.0, 3.0), (12.0, 21.0));
+        }
+        Icon::Headphones => {
+            arc(12.0, 12.0, 9.0, 180.0, 180.0);
+            seg((3.0, 12.0), (3.0, 19.0));
+            seg((21.0, 12.0), (21.0, 19.0));
+            rect(3.0, 14.0, 5.0, 7.0, 2.0);
+            rect(16.0, 14.0, 5.0, 7.0, 2.0);
+        }
+        Icon::Check => poly(&[(20.0, 6.0), (9.0, 17.0), (4.0, 12.0)]),
+        Icon::ZoomIn | Icon::ZoomOut => {
+            circle(11.0, 11.0, 8.0);
+            seg((21.0, 21.0), (16.65, 16.65));
+            seg((8.0, 11.0), (14.0, 11.0));
+            if which == Icon::ZoomIn {
+                seg((11.0, 8.0), (11.0, 14.0));
+            }
         }
         Icon::LayoutList => {
             rect(3.0, 3.0, 7.0, 7.0, 1.0);

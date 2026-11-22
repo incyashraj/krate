@@ -120,6 +120,7 @@ fn slider_set(o: &mut crate::graph::Options, i: u8, v: f32) {
 impl Ui {
     pub(super) fn views_busy(&self) -> bool {
         self.graph_img.pending
+            || self.files_pending()
             || matches!(self.app.view(), Some(View::Graph(g)) if g.animate.is_some())
             || matches!(self.app.view(), Some(View::Graph(g)) if g.graph.as_ref().is_none_or(|x| x.running()) || g.stale)
     }
@@ -1762,7 +1763,11 @@ impl Ui {
         };
         match kind {
             crate::vault::FileKind::Image => {
-                let fresh = self.graph_img.file_img.as_ref().is_some_and(|(p, _)| *p == path);
+                let fresh = self
+                    .graph_img
+                    .file_img
+                    .as_ref()
+                    .is_some_and(|(p, _)| *p == path);
                 if !fresh {
                     if let Some((_, Ok((h, _, _)))) = self.graph_img.file_img.take() {
                         canvas_images::forget(self.c, h);
@@ -1805,23 +1810,14 @@ impl Ui {
                     None => {}
                 }
             }
-            crate::vault::FileKind::Pdf => say(
-                self,
-                &[
-                    crate::vfs::file_name(&path),
-                    "PDFs cannot be shown in Vault yet: Krate has no PDF renderer (K-1342).",
-                ],
-            ),
-            crate::vault::FileKind::Media => say(
-                self,
-                &[
-                    crate::vfs::file_name(&path),
-                    "Sound and video in a vault cannot be played yet: Krate plays only the app's own media (K-1343).",
-                ],
-            ),
+            crate::vault::FileKind::Pdf => self.draw_pdf(pane, a, focused, &path),
+            crate::vault::FileKind::Media => self.draw_media(pane, a, focused, &path),
             _ => say(
                 self,
-                &[crate::vfs::file_name(&path), "Vault has no view for this kind of file."],
+                &[
+                    crate::vfs::file_name(&path),
+                    "Vault has no view for this kind of file.",
+                ],
             ),
         }
     }
@@ -2769,6 +2765,10 @@ impl Ui {
     ) {
         if pane != self.app.pane {
             self.app.focus_pane(pane);
+        }
+        if matches!(self.app.view(), Some(View::File(_))) {
+            self.file_wheel(pane, a, x, (dx, dy), m.primary || m.ctrl);
+            return;
         }
         match self.app.view_mut() {
             Some(View::Graph(g)) => {

@@ -36,6 +36,12 @@ pub trait Vfs {
     fn media_path(&self, _path: &str) -> Option<String> {
         None
     }
+
+    /// The path Krate knows a vault file by (for a player that opens it by
+    /// path). A folder in memory has none.
+    fn host_path(&self, _path: &str) -> Option<String> {
+        None
+    }
     /// Move a file or folder to the computer's trash. A folder in memory
     /// has none, so the vault uses its own `.trash` instead.
     fn trash(&mut self, _path: &str) -> Result<(), String> {

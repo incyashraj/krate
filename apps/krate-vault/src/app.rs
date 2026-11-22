@@ -288,6 +288,16 @@ pub struct FileTab {
     pub path: String,
     pub title: String,
     pub kind: FileKind,
+    /// A PDF: how far down its pages the view is (px), its zoom (0 is the
+    /// viewer's automatic zoom, -1 a whole page, -2 the page's width,
+    /// otherwise a scale where 1 is actual size), the thumbnails column,
+    /// a page to go to (from 1).
+    pub scroll: f32,
+    pub zoom: f32,
+    pub thumbs: bool,
+    pub goto: Option<u32>,
+    /// Sound or video: loop it.
+    pub looping: bool,
 }
 
 impl View {
@@ -1077,7 +1087,17 @@ pub enum MenuAction {
     /// remove it.
     PropKind(usize, crate::props::Kind),
     PropRemove(usize),
+    /// A PDF's zoom from its menu: 0 automatic, -1 a whole page, -2 the
+    /// page's width, otherwise a percentage.
+    PdfZoom(i32),
+    /// Show or hide a PDF's thumbnails.
+    PdfThumbs,
+    /// Play a sound or video over and over, or not.
+    MediaLoop,
 }
+
+/// A menu item's label ends with this when it is ticked.
+pub const TICKED: &str = "\u{1}";
 
 pub struct Menu {
     pub x: f32,
@@ -1524,6 +1544,17 @@ impl App {
         }
     }
 
+    /// The view a group shows, to change (a PDF's place, a player's loop).
+    pub fn pane_view_mut(&mut self, pane: usize) -> Option<&mut View> {
+        let (tabs, active) = if pane == self.pane {
+            (&mut self.tabs, self.active)
+        } else {
+            let p = self.panes.get_mut(pane)?;
+            (&mut p.tabs, p.active)
+        };
+        tabs.get_mut(active).and_then(|t| t.view.as_mut())
+    }
+
     /// Whether a group shows its tabs stacked.
     pub fn pane_stacked(&self, pane: usize) -> bool {
         if pane == self.pane {
@@ -1691,6 +1722,11 @@ impl App {
                     path: String::from(path),
                     title: String::from(strip_any_ext(file_name(path))),
                     kind,
+                    scroll: 0.0,
+                    zoom: 0.0,
+                    thumbs: false,
+                    goto: None,
+                    looping: false,
                 })))
             }
             FileKind::Note => None,
@@ -4115,7 +4151,7 @@ impl App {
         self.overlay = Some(Overlay::Menu(Menu { x, y, items }));
     }
 
-    fn menu_action(&mut self, a: MenuAction) {
+    pub fn menu_action(&mut self, a: MenuAction) {
         match a {
             MenuAction::Run(c) => self.run(c),
             MenuAction::NewNote(f) => self.new_note_in(&f),
@@ -4149,6 +4185,24 @@ impl App {
             MenuAction::RemoveBookmark(place) => {
                 crate::bookmarks::remove(&mut self.bookmarks, &place);
                 self.save_bookmarks();
+            }
+            MenuAction::PdfZoom(z) => {
+                if let Some(View::File(f)) = self.view_mut() {
+                    f.zoom = match z {
+                        -2..=0 => z as f32,
+                        pct => pct as f32 / 100.0,
+                    };
+                }
+            }
+            MenuAction::PdfThumbs => {
+                if let Some(View::File(f)) = self.view_mut() {
+                    f.thumbs = !f.thumbs;
+                }
+            }
+            MenuAction::MediaLoop => {
+                if let Some(View::File(f)) = self.view_mut() {
+                    f.looping = !f.looping;
+                }
             }
             MenuAction::CardColor(id, c) => self.canvas_color(&id, c),
             MenuAction::CardRemove(id) => self.canvas_remove(&id),

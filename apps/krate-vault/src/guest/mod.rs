@@ -11,6 +11,7 @@
 mod disk;
 mod editor;
 mod look;
+mod media;
 mod views;
 mod widgets;
 
@@ -67,6 +68,8 @@ enum Zone {
     GraphSlider(u8),
     Canvas(usize),
     Settings,
+    /// A PDF's or a player's control, by group.
+    File(usize, media::FileCtl),
 }
 
 #[derive(Clone, PartialEq)]
@@ -109,6 +112,8 @@ enum Drag {
         moved: bool,
         before: String,
     },
+    /// Dragging a player's scrubber, in a group.
+    Scrub(usize),
 }
 
 struct Ui {
@@ -153,6 +158,7 @@ struct Ui {
     first_frame_done: bool,
     index_done_said: bool,
     graph_img: views::GraphImage,
+    files: media::Files,
     /// Laying a frame out without showing it (to fit a view first).
     unseen: bool,
     /// Where the pointer is, as last reported.
@@ -209,6 +215,21 @@ fn view_kind(tb: &crate::app::Tab) -> u8 {
         Some(View::File(_)) => 5,
         Some(View::Side(_)) => 6,
         None => 0,
+    }
+}
+
+/// A tab's kind for its icon: as [`view_kind`], with a file told apart as
+/// a picture (5), a PDF (7), a video (8), a sound (9) or other (10).
+fn tab_kind(tb: &crate::app::Tab) -> u8 {
+    match &tb.view {
+        Some(View::File(f)) => match f.kind {
+            crate::vault::FileKind::Image => 5,
+            crate::vault::FileKind::Pdf => 7,
+            crate::vault::FileKind::Media if media::is_sound(&f.path) => 9,
+            crate::vault::FileKind::Media => 8,
+            _ => 10,
+        },
+        _ => view_kind(tb),
     }
 }
 
@@ -305,6 +326,7 @@ impl Ui {
     }
 
     fn draw_frame(&mut self, show: bool) {
+        self.files_sweep();
         let size = canvas2d::canvas_size(self.c).unwrap_or(krate::gfx::types::Size {
             width: START_W as f32,
             height: START_H as f32,
@@ -1343,7 +1365,7 @@ impl Ui {
                 act,
                 tabs.iter().map(|tb| tb.pinned).collect(),
                 tabs.iter().map(|tb| tb.group.is_some()).collect(),
-                tabs.iter().map(view_kind).collect(),
+                tabs.iter().map(tab_kind).collect(),
             )
         };
         let n = titles.len().max(1);
@@ -1410,6 +1432,9 @@ impl Ui {
                 4 => Some(Icon::History),
                 5 => Some(Icon::Image),
                 6 => Some(Icon::Backlinks),
+                7 => Some(Icon::FileText),
+                9 => Some(Icon::Headphones),
+                8 | 10 => Some(Icon::File),
                 _ => None,
             };
             let tcol = if is_active && focused {
@@ -3066,6 +3091,20 @@ impl Ui {
                         round(self.c, ir, 5.0, t.hover);
                     }
                     let danger = label == "Delete" || label == "Remove";
+                    let (label, ticked) = match label.strip_suffix(crate::app::TICKED) {
+                        Some(l) => (l, true),
+                        None => (label.as_str(), false),
+                    };
+                    if ticked {
+                        icon(
+                            self.c,
+                            Icon::Check,
+                            ir.right() - 16.0 * k,
+                            ir.y + rh * 0.5,
+                            k,
+                            t.text,
+                        );
+                    }
                     text(
                         self.c,
                         label,
@@ -3432,6 +3471,7 @@ impl Ui {
                 }
             }
             Drag::Graph { .. } | Drag::Slider(_) | Drag::Canvas { .. } => self.view_drag(px, py),
+            Drag::Scrub(p) => self.file_drag(p, px),
             Drag::None => {}
         }
     }
@@ -3528,8 +3568,12 @@ impl Ui {
     fn press(&mut self, px: f32, py: f32, m: Mods) {
         self.drag_mods = m;
         let Some(z) = self.zone_at(px, py) else {
+            self.files.page_edit = None;
             return;
         };
+        if !matches!(z, Zone::File(_, media::FileCtl::PageBox)) {
+            self.files.page_edit = None;
+        }
         match z {
             Zone::Editor => {
                 if self.app.explorer.rename.is_some() {
@@ -3582,6 +3626,7 @@ impl Ui {
             | Zone::Settings => {
                 self.view_press(z, px, py, m);
             }
+            Zone::File(p, ctl) => self.file_press(p, ctl, px, py),
             Zone::App(h) => {
                 // A press in a group not in focus focuses it first.
                 if let Some((p, _, _)) = self
@@ -4030,6 +4075,7 @@ impl krate::Guest for Component {
             first_frame_done: false,
             index_done_said: false,
             graph_img: views::GraphImage::default(),
+            files: media::Files::default(),
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4150,6 +4196,8 @@ impl krate::Guest for Component {
                     "newtab" => ui.app.run(Cmd::NewTab),
                     "pin" => ui.app.run(Cmd::TogglePin),
                     "stack" => ui.app.run(Cmd::StackTabs),
+                    "pdfthumbs" => ui.app.menu_action(crate::app::MenuAction::PdfThumbs),
+                    "loop" => ui.app.menu_action(crate::app::MenuAction::MediaLoop),
                     "outlinehere" => ui.app.run(Cmd::OpenOutlineHere),
                     "backlinkshere" => ui.app.run(Cmd::OpenBacklinksHere),
                     "hotkeys" => {
@@ -4169,6 +4217,15 @@ impl krate::Guest for Component {
                     _ => {}
                 }
             }
+        }
+        // `page=<n>`: a PDF tab goes to that page; `zoom=<percent>` zooms it.
+        if let Some(n) = arg(&raw, "page").and_then(|n| n.parse::<u32>().ok()) {
+            if let Some(View::File(f)) = ui.app.view_mut() {
+                f.goto = Some(n);
+            }
+        }
+        if let Some(z) = arg(&raw, "zoom").and_then(|n| n.parse::<i32>().ok()) {
+            ui.app.menu_action(crate::app::MenuAction::PdfZoom(z));
         }
         let _ = krate::ui::text_entry::start(win);
         // A headless picture of a graph waits for its layout to settle.
@@ -4205,6 +4262,10 @@ impl krate::Guest for Component {
             if ui.app.busy() || ui.views_busy() {
                 due(0);
             }
+            // A playing sound or video: its picture and clock, each frame.
+            if ui.files_busy() {
+                due(16);
+            }
             if ui.app.focus == Focus::Editor
                 && ui.app.doc().is_some_and(|d| d.mode != Mode::Reading)
                 && ui.app.overlay.is_none()
@@ -4231,6 +4292,21 @@ impl krate::Guest for Component {
                     types::Event::Resized(_)
                     | types::Event::RedrawRequested(_)
                     | types::Event::ThemeChanged(_) => changed = true,
+                    types::Event::Key(k)
+                        if k.pressed
+                            && ui.app.focus == Focus::Editor
+                            && ui.file_key(&k.key, mods(k.modifiers)) =>
+                    {
+                        if k.key == "Space" {
+                            ui.drop_text = Some(' ');
+                        }
+                        ui.after_input();
+                        changed = true;
+                    }
+                    types::Event::TextInput(s) if ui.files.page_edit.is_some() => {
+                        ui.file_text(&s);
+                        changed = true;
+                    }
                     types::Event::Key(k) => {
                         if k.pressed {
                             let m = mods(k.modifiers);
@@ -4331,6 +4407,7 @@ impl krate::Guest for Component {
                             }
                             (None, _) => {
                                 ui.hover_point = Some((p.x, p.y));
+                                ui.files.stirred = krate::time::now_millis();
                                 let z = ui.zone_at(p.x, p.y);
                                 if ui.graph_hover(p.x, p.y) {
                                     changed = true;
@@ -4399,6 +4476,9 @@ impl krate::Guest for Component {
             }
             // The caret blinks; the frame that flips it is a frame.
             if ui.app.focus == Focus::Editor && ui.app.doc().is_some() {
+                changed = true;
+            }
+            if ui.views_busy() || ui.files_busy() {
                 changed = true;
             }
             if changed {

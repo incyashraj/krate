@@ -248,6 +248,10 @@ impl Vfs for DiskFs {
         fs::remove_file(&self.at_path(path)).map_err(why)
     }
 
+    fn host_path(&self, path: &str) -> Option<String> {
+        Some(self.at_path(path))
+    }
+
     fn remove_dir(&mut self, path: &str) -> Result<(), String> {
         self.mine(path);
         fs::remove_dir(&self.at_path(path)).map_err(why)
