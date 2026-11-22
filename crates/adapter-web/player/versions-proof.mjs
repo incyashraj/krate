@@ -78,8 +78,10 @@ const open = async (link, n) => {
   await page.goto(local(link));
   const landing = await page.evaluate(() => document.body.innerText);
   await page.click('a.go');
-  await page.waitForFunction(() => window.__krate && window.__krate.state === 'consent', null, { timeout: 30000 }).catch(() => {});
-  await page.click('#consentAllow');
+  // The first open asks; a later one in the same browser goes straight in
+  // on the yes it remembered (K-1316).
+  await page.waitForFunction(() => window.__krate && (window.__krate.state === 'consent' || window.__krate.state === 'app'), null, { timeout: 30000 }).catch(() => {});
+  if (await page.evaluate(() => window.__krate.state === 'consent')) await page.click('#consentAllow');
   await page.waitForFunction(() => /done/.test(window.__krate.out) || window.__krate.trap, null, { timeout: 30000 }).catch(() => {});
   const r = await page.evaluate(() => ({ out: window.__krate.out, trap: window.__krate.trap, url: location.pathname }));
   if (shots) await page.screenshot({ path: join(shots, `versions-proof-${n}.png`) });

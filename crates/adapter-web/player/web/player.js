@@ -961,12 +961,19 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
   // data" on every open. Kept under the same key its data is (one publisher's
   // app, never another's that claims the id), and asked again the moment the
   // app wants anything the person has not said yes to, or cannot have here.
+  // A yes counts only when one was given, for at least what is asked now,
+  // with the same things greyed out here: an app whose asks this browser
+  // cannot give at all still shows the card that says so, and the first
+  // open always asks.
   const consentKey = `krate.consent.${storeKey}`;
+  const awayCaps = rows.filter((r) => !r.in_tab).map((r) => r.cap);
   const yesBefore = (() => {
-    try { return JSON.parse(localStorage.getItem(consentKey) || '[]'); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(consentKey) || 'null'); } catch { return null; }
   })();
-  const alreadyAllowed = !blocked.length && Array.isArray(yesBefore)
-    && granted.every((cap) => yesBefore.includes(cap));
+  const alreadyAllowed = !blocked.length && yesBefore !== null && typeof yesBefore === 'object'
+    && Array.isArray(yesBefore.granted) && Array.isArray(yesBefore.away)
+    && granted.every((cap) => yesBefore.granted.includes(cap))
+    && awayCaps.length === yesBefore.away.length && awayCaps.every((cap) => yesBefore.away.includes(cap));
   report.consentRemembered = rows.length > 0 && alreadyAllowed;
   if (rows.length && !alreadyAllowed) {
     $('consentTitle').textContent = `“${name}” wants to:`;
@@ -1011,7 +1018,7 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
     mark('consent');
     if (blocked.length) return;
     await new Promise((resolve) => { $('consentAllow').onclick = resolve; });
-    try { localStorage.setItem(consentKey, JSON.stringify(granted)); } catch {}
+    try { localStorage.setItem(consentKey, JSON.stringify({ granted, away: awayCaps })); } catch {}
     mark('allowed');
   } else {
     mark('allowed');

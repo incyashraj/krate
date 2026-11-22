@@ -149,7 +149,7 @@ async function openLink(context, arg) {
 
 /// /run/file in a new page, with every request it makes watched; `pick`
 /// hands it the file.
-async function filePage(context, arg, tag, extra = '') {
+async function filePage(context, arg, tag, extra = '', forget = true) {
   phase = `file:${tag}`;
   const page = await context.newPage();
   const requests = [];
@@ -161,6 +161,10 @@ async function filePage(context, arg, tag, extra = '') {
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/run/file?probe=1&arg=${arg}${extra}`);
   await page.waitForFunction(() => window.__krate && (window.__krate.state === 'file' || window.__krate.state === 'refused'), null, { timeout: 30000 }).catch(() => {});
+  // Each door is checked for the card it shows, so none starts with the yes
+  // an earlier door left (K-1316 remembers a yes per app in a browser; the
+  // remembering itself is storage-proof.mjs's to prove).
+  if (forget) await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('krate.consent.')) localStorage.removeItem(k); });
   return { page, requests, errors };
 }
 async function allowAndRun(page) {
