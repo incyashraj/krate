@@ -985,13 +985,101 @@ pub struct LayCache {
     pub hide_title: bool,
     /// Settings > Editor > Show line numbers.
     pub line_numbers: bool,
+    /// Settings > Editor > Spellcheck, on, and a checker here to ask.
+    pub spell_on: bool,
+    /// Whether the computer has a spell checker (asked once).
+    spell_here: Option<bool>,
+    /// The words each line marks, by the line's text: a line is checked
+    /// once, again only when it changes.
+    spell: BTreeMap<u64, Rc<Vec<(usize, usize)>>>,
+    /// Words the person chose to ignore this run.
+    pub spell_ignored: Vec<String>,
 }
 
 impl LayCache {
     /// The settings the note view follows, set each frame by the guest.
-    pub fn follow_settings(&mut self, show_inline_title: bool, show_line_numbers: bool) {
+    pub fn follow_settings(
+        &mut self,
+        show_inline_title: bool,
+        show_line_numbers: bool,
+        spellcheck: bool,
+    ) {
         self.hide_title = !show_inline_title;
         self.line_numbers = show_line_numbers;
+        let here = *self
+            .spell_here
+            .get_or_insert_with(krate::ui::spelling::available);
+        self.spell_on = spellcheck && here;
+    }
+
+    /// The misspelled words of line `n` (byte ranges), checked now if the
+    /// line has not been checked as it reads.
+    pub fn misspelled(&mut self, doc: &Doc, n: usize) -> Rc<Vec<(usize, usize)>> {
+        let text = doc.line(n);
+        let front = doc.front.is_some_and(|f| n <= f);
+        let math = doc.maths.span(n).is_some();
+        let mut k: u64 = 0x5bd1_e995;
+        fnv(&mut k, text.as_bytes());
+        fnv(
+            &mut k,
+            &[
+                u8::from(front),
+                u8::from(math),
+                u8::from(doc.fences.in_code(n)),
+            ],
+        );
+        if let Some(m) = self.spell.get(&k) {
+            return m.clone();
+        }
+        let marks = match crate::spell::checkable(text, doc.block(n), front, math) {
+            Some(s) => {
+                let found: Vec<(usize, usize)> = krate::ui::spelling::check(&s)
+                    .iter()
+                    .map(|m| (m.start as usize, m.len as usize))
+                    .collect();
+                crate::spell::keep_marks(text, &found, &self.spell_ignored)
+            }
+            None => Vec::new(),
+        };
+        if self.spell.len() > 20_000 {
+            self.spell.clear();
+        }
+        let m = Rc::new(marks);
+        self.spell.insert(k, m.clone());
+        m
+    }
+
+    /// Forget every line's marks (a word was learnt or ignored).
+    pub fn respell(&mut self) {
+        self.spell.clear();
+    }
+}
+
+/// A red wavy line under `from..to` of a laid-out line.
+#[allow(clippy::too_many_arguments)]
+fn squiggle(c: u64, l: &Lay, text: &str, ox: f32, oy: f32, from: usize, to: usize, col: Rgba) {
+    for rl in &l.rows {
+        let a = from.max(rl.start);
+        let b = to.min(rl.end);
+        if a >= b {
+            continue;
+        }
+        let (_, xa) = l.x_of(c, text, a);
+        let (_, xb) = l.x_of(c, text, b);
+        let y = oy + rl.base + 3.0;
+        let mut x = ox + xa;
+        let mut up = true;
+        while x < ox + xb {
+            let nx = (x + 2.0).min(ox + xb);
+            let (y0, y1) = if up {
+                (y + 1.2, y - 0.8)
+            } else {
+                (y - 0.8, y + 1.2)
+            };
+            look::line(c, x, y0, nx, y1, 1.0, col);
+            x = nx;
+            up = !up;
+        }
     }
 }
 
@@ -1561,6 +1649,14 @@ pub fn draw(
                         let to = if n == b.line { b.col } else { text.len() };
                         draw_selection(c, &l, text, v.x, y, from, to, n < b.line, t);
                     }
+                }
+            }
+            // Spell check: the line's unknown words, underlined. Like Obsidian,
+            // none until the note has been clicked or typed in.
+            if cache.spell_on && !doc.fresh && doc.mode != Mode::Reading && l.deco != Deco::Hidden {
+                let marks = cache.misspelled(doc, n);
+                for (a, len) in marks.iter() {
+                    squiggle(c, &l, text, v.x, y, *a, a + len, t.danger);
                 }
             }
             if cache.line_numbers && doc.mode != Mode::Reading {
@@ -2139,6 +2235,38 @@ pub fn press(c: u64, doc: &Doc, shown: &Shown, px: f32, py: f32, follow: bool) -
         }
     }
     None
+}
+
+/// The misspelled word under a point: its line, byte, length and text.
+pub fn misspelled_at(
+    cache: &mut LayCache,
+    c: u64,
+    doc: &Doc,
+    shown: &Shown,
+    px: f32,
+    py: f32,
+) -> Option<(usize, usize, usize, String)> {
+    if !cache.spell_on || doc.mode == Mode::Reading {
+        return None;
+    }
+    let (vi, y, l) = shown
+        .rows
+        .iter()
+        .rev()
+        .find(|(_, y, l)| py >= *y && l.h > 0.0)?;
+    if *vi == 0 || l.deco == Deco::Widget || *vi > doc.buf.line_count() {
+        return None;
+    }
+    let n = vi - 1;
+    let text = doc.line(n);
+    let row = l.row_at(py - y);
+    let col = l.col_at(c, text, row, px - shown.x);
+    let marks = cache.misspelled(doc, n);
+    let (a, len) = marks
+        .iter()
+        .copied()
+        .find(|(a, len)| col >= *a && col <= a + len)?;
+    Some((n, a, len, String::from(text.get(a..a + len).unwrap_or(""))))
 }
 
 /// The link under the pointer, for the page preview: its full target.

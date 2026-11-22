@@ -1756,6 +1756,7 @@ impl Ui {
         self.cache.follow_settings(
             self.app.settings.show_inline_title(),
             self.app.settings.show_line_number(),
+            self.app.settings.spellcheck(),
         );
         let caret_on = focused && self.caret_visible();
         let app = &self.app;
@@ -1852,6 +1853,49 @@ impl Ui {
     /// A right-click in the note: on a table cell, Obsidian's table menu
     /// (src/tables.rs).
     fn editor_context(&mut self, px: f32, py: f32) {
+        // On a misspelled word: its suggestions, then Add to dictionary and
+        // Ignore, as Obsidian's menu has them (src/spell.rs).
+        let word = self.app.doc().and_then(|doc| {
+            editor::misspelled_at(&mut self.cache, self.c, doc, &self.shown, px, py)
+        });
+        if let Some((line, start, len, w)) = word {
+            if let Some(d) = self.app.doc_mut() {
+                d.place(crate::buffer::Pos::new(line, start + len), false);
+            }
+            let mut items: Vec<(String, crate::app::MenuAction)> = krate::ui::spelling::suggest(&w)
+                .into_iter()
+                .take(5)
+                .map(|s| {
+                    let a = crate::spell::SpellAct::Replace {
+                        line,
+                        start,
+                        len,
+                        with: s.clone(),
+                    };
+                    (s, crate::app::MenuAction::Spell(a))
+                })
+                .collect();
+            if items.is_empty() {
+                items.push((
+                    String::from("No suggestions"),
+                    crate::app::MenuAction::Spell(crate::spell::SpellAct::Ignore(String::new())),
+                ));
+            }
+            items.push((
+                String::from("Add to dictionary"),
+                crate::app::MenuAction::Spell(crate::spell::SpellAct::Learn(w.clone())),
+            ));
+            items.push((
+                String::from("Ignore"),
+                crate::app::MenuAction::Spell(crate::spell::SpellAct::Ignore(w)),
+            ));
+            self.app.overlay = Some(Overlay::Menu(crate::app::Menu {
+                x: px,
+                y: py,
+                items,
+            }));
+            return;
+        }
         let act = self
             .app
             .doc()

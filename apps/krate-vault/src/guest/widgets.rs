@@ -134,6 +134,22 @@ pub fn anim_due(cache: &LayCache) -> Option<u64> {
 /// note should be drawn again).
 pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
     cache.env.now = krate::time::monotonic_nanos() / 1_000_000;
+    // Spelling choices made in the menu: teach the checker, or ignore.
+    let pending: Vec<crate::spell::SpellAct> = app
+        .doc_mut()
+        .map(|d| core::mem::take(&mut d.spell_pending))
+        .unwrap_or_default();
+    if !pending.is_empty() {
+        for a in pending {
+            match a {
+                crate::spell::SpellAct::Learn(w) => krate::ui::spelling::learn(&w),
+                crate::spell::SpellAct::Ignore(w) if !w.is_empty() => cache.spell_ignored.push(w),
+                _ => {}
+            }
+        }
+        cache.respell();
+        return true;
+    }
     let web = poll_web(&mut cache.env, c);
     if web {
         cache.clear();

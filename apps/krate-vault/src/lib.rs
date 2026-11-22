@@ -60,6 +60,7 @@ pub mod regex;
 pub mod sample;
 pub mod search;
 pub mod settings;
+pub mod spell;
 pub mod svg;
 pub mod tables;
 pub mod text;

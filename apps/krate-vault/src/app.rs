@@ -1071,6 +1071,8 @@ pub enum MenuAction {
     CardOpen(String),
     /// The table menu on a cell (src/tables.rs).
     Table(crate::tables::Op),
+    /// The spelling menu on a misspelled word (src/spell.rs).
+    Spell(crate::spell::SpellAct),
     /// A property's type menu (src/propedit.rs): turn it into a kind, or
     /// remove it.
     PropKind(usize, crate::props::Kind),
@@ -4161,6 +4163,12 @@ impl App {
                 let now = self.now;
                 if let Some(d) = self.doc_mut() {
                     crate::propedit::remove(d, line, now);
+                }
+            }
+            MenuAction::Spell(a) => {
+                let now = self.now;
+                if let Some(d) = self.doc_mut() {
+                    crate::spell::act(d, a, now);
                 }
             }
             MenuAction::Table(op) => {

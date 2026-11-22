@@ -73,6 +73,8 @@ pub struct Doc {
     pub find: Option<crate::find::Find>,
     /// A property being edited inside the Properties block.
     pub prop_edit: Option<crate::propedit::PropEdit>,
+    /// Spelling choices for the guest to carry out (learn, ignore).
+    pub spell_pending: Vec<crate::spell::SpellAct>,
     /// Edits made while several carets type, so each caret can follow the
     /// edits made before it.
     edit_log: Option<Vec<(Pos, Pos, Pos)>>,
@@ -185,6 +187,7 @@ impl Doc {
             extra: Vec::new(),
             find: None,
             prop_edit: None,
+            spell_pending: Vec::new(),
             edit_log: None,
             fold_cache: RefCell::new((u64::MAX, Vec::new())),
             notes_cache: RefCell::new(None),
