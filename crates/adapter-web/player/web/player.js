@@ -1736,6 +1736,20 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   canvas.addEventListener('pointerup', (e) => {
     if (e.pointerType === 'touch') return touch(e);
     ring.push({ type: 'up', window: win(), x: e.offsetX, y: e.offsetY, button: e.button, mods: mods(e), at: at(e) });
+    // A click on a text field on a computer takes the same route a tap
+    // does: the hidden field, where dictation, the emoji picker and an
+    // input method put their text. The canvas only hears keys, so text
+    // that arrives as an insert reached no field (K-1299).
+    if (e.button === 0) {
+      const r = textRects.get(win()) || [];
+      for (let i = 0; i + 3 < r.length; i += 4) {
+        if (e.offsetX >= r[i] && e.offsetX < r[i] + r[i + 2] && e.offsetY >= r[i + 1] && e.offsetY < r[i + 1] + r[i + 3]) {
+          resetIme();
+          ime.focus({ preventScroll: true });
+          break;
+        }
+      }
+    }
   });
   canvas.addEventListener('pointercancel', (e) => { if (e.pointerType === 'touch') touch(e); });
   canvas.addEventListener('pointermove', (e) => {
@@ -1809,14 +1823,20 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     else typed(ime.value.replace(HOLD, ''), e);
     resetIme();
   });
-  // Keys a phone keyboard sends as keys: Enter, Tab, arrows, Escape.
+  // Keys sent as keys rather than text: Enter, Tab, arrows, Escape, the
+  // keys that move in a line, and a computer's shortcuts (Cmd or Ctrl with a
+  // key: select all, copy, cut), so an app's own text field still answers
+  // them while the hidden field holds the focus. Typing itself arrives as
+  // text, through input.
+  const asKey = (e) => /^(Enter|Tab|Escape|Arrow\w+|Home|End|PageUp|PageDown|Delete)$/.test(e.key)
+    || ((e.metaKey || e.ctrlKey) && e.key.length === 1 && !/^[vV]$/.test(e.key));
   ime.addEventListener('keydown', (e) => {
-    if (composing || !/^(Enter|Tab|Escape|Arrow\w+)$/.test(e.key)) return;
+    if (composing || e.isComposing || !asKey(e)) return;
     ring.push({ type: 'key', window: win(), key: e.key, pressed: true, mods: mods(e), at: at(e) });
-    e.preventDefault();
+    if (!browserKeepsKey(e)) e.preventDefault();
   });
   ime.addEventListener('keyup', (e) => {
-    if (composing || !/^(Enter|Tab|Escape|Arrow\w+)$/.test(e.key)) return;
+    if (composing || e.isComposing || !asKey(e)) return;
     ring.push({ type: 'key', window: win(), key: e.key, pressed: false, mods: mods(e), at: at(e) });
   });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

@@ -97,10 +97,12 @@ self.onmessage = async ({ data }) => {
         }
         // ?probe=1 (the proofs): what is on screen rides with the frame.
         const screen = data.probe ? ui.on_screen(id) : undefined;
-        // On a touch screen, where the text fields are, when that changed:
-        // the page raises the keyboard inside the tap that lands on one.
+        // Where the text fields are, when that changed: on a phone the page
+        // raises the keyboard inside the tap that lands on one, and on a
+        // computer a click on one gives the hidden field the focus, where
+        // dictation and an input method put their text (K-1299).
         let fields;
-        if (data.touch) {
+        {
           const r = Array.from(ui.text_rects(id));
           const key = r.join(',');
           if (key !== w.fieldsKey) { w.fieldsKey = key; fields = r; }

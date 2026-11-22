@@ -251,6 +251,41 @@ async function engine(name, type) {
   await browser.close();
 }
 
+// ---- a computer: text that arrives as an insert (K-1299) -- dictation, the
+// emoji picker, an input method -- reaches the field a mouse clicked, and keys
+// typed still do.
+async function computerText() {
+  const name = 'computer text';
+  const browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}) });
+  fresh();
+  const pub = await call(env, 'alice', 'POST', '/publish', { bytes: new Uint8Array(readFileSync(hello)), headers: { 'x-krate-name': 'Hello GUI' } });
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 760 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`${HUB}/run/${pub.body.id}?probe=1`);
+  await page.waitForFunction(() => window.__krate && window.__krate.frames > 0, null, { timeout: 20000 });
+  const widget = async (pred) => ((await page.evaluate(() => ({ ...window.__krate }))).screen || []).find(pred);
+  const box = await page.locator('#screen').boundingBox();
+  const settle = (ms = 250) => page.waitForTimeout(ms);
+  const field = await widget((w) => w.kind === 'TextField');
+  if (!field) { check(name, 'the app shows a text field', false, 'none on screen'); await browser.close(); return; }
+  await page.mouse.click(box.x + field.x + field.w / 2, box.y + field.y + field.h / 2);
+  await settle();
+  check(name, 'a click on the text field gives the hidden field the focus', (await page.evaluate(() => document.activeElement && document.activeElement.id)) === 'ime');
+  await page.keyboard.insertText('dictated');
+  await settle();
+  check(name, 'text inserted with no key presses reaches the field', !!(await widget((w) => w.kind === 'TextField' && (w.label || '').endsWith('dictated'))), await widget((w) => w.kind === 'TextField'));
+  await page.keyboard.type('ok');
+  await settle();
+  check(name, 'keys typed still reach the field', !!(await widget((w) => w.kind === 'TextField' && (w.label || '').endsWith('dictatedok'))), await widget((w) => w.kind === 'TextField'));
+  await page.keyboard.press('Backspace');
+  await settle();
+  check(name, 'Backspace deletes one character, not two', !!(await widget((w) => w.kind === 'TextField' && (w.label || '').endsWith('dictatedo'))), await widget((w) => w.kind === 'TextField'));
+  check(name, 'no page errors', errors.length === 0, errors);
+  await browser.close();
+}
+
 // ---- a phone (Chromium's emulation: touch, a coarse pointer, 390x844)
 async function phone() {
   const name = 'phone';
@@ -315,7 +350,7 @@ async function phone() {
   const cdp = await ctx.newCDPSession(page);
   const man = await cdp.send('Page.getAppManifest');
   const parsed = man.data ? JSON.parse(man.data) : null;
-  check(name, 'the page links a web app manifest with the app name and its own start address', parsed && parsed.name === 'krate-hello-gui' && parsed.start_url === `/run/${hash}` && parsed.display === 'standalone' && (man.errors || []).length === 0, { url: man.url, errors: man.errors, name: parsed && parsed.name });
+  check(name, 'the page links a web app manifest with the app name, opening from its own address or the app link that follows its updates', parsed && parsed.name === 'krate-hello-gui' && [new URL(page.url()).pathname, 'app link'].some((want) => want === 'app link' ? /^\/run\/v[0-9a-f]{11}$/.test(new URL(parsed.start_url, HUB).pathname) : new URL(parsed.start_url, HUB).pathname === want) && parsed.display === 'standalone' && (man.errors || []).length === 0, { url: man.url, errors: man.errors, name: parsed && parsed.name, start: parsed && parsed.start_url, page: page.url() });
   const inst = await cdp.send('Page.getInstallabilityErrors').catch((e) => ({ error: e.message }));
   results.measures.phone = { installability: inst };
   check(name, 'Chromium finds nothing that stops it being installed', inst.installabilityErrors && inst.installabilityErrors.length === 0, inst);
@@ -339,6 +374,7 @@ try {
   }
   if (!process.argv[3] || ENGINES.includes('phone')) {
     try { await phone(); } catch (err) { check('phone', 'the run finished', false, String(err && err.stack).split('\n').slice(0, 4).join(' | ')); }
+    try { await computerText(); } catch (err) { check('computer text', 'the run finished', false, String(err && err.stack).split('\n').slice(0, 4).join(' | ')); }
   }
 } finally {
   server.close();
