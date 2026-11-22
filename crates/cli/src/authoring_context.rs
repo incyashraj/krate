@@ -276,7 +276,9 @@ capability. Believe this table over your instinct:
 If you catch yourself writing \"Krate apps cannot ...\" about anything in
 this file, stop and re-read the section instead. The true wall list is
 short: no screen capture, no sending input to other apps, no background
-process after the window closes, one window per app.
+process after the last window closes. An app may open several windows
+(a pop-out note, a palette, an inspector): each `window::create` gives its
+own id, tree and canvas, and every event names the window it came from.
 
 ## This file is complete. Do not go hunting.
 
