@@ -59,6 +59,7 @@ pub mod sample;
 pub mod search;
 pub mod settings;
 pub mod svg;
+pub mod tables;
 pub mod text;
 pub mod vault;
 pub mod vfs;

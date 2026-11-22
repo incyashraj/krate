@@ -1849,6 +1849,35 @@ impl Ui {
         crate::links::act_on(&mut self.app, act, m)
     }
 
+    /// A right-click in the note: on a table cell, Obsidian's table menu
+    /// (src/tables.rs).
+    fn editor_context(&mut self, px: f32, py: f32) {
+        let act = self
+            .app
+            .doc()
+            .and_then(|doc| editor::press(self.c, doc, &self.shown, px, py, false));
+        if let Some(editor::Act::Place(pos)) = act {
+            if let Some(d) = self.app.doc_mut() {
+                d.place(pos, false);
+            }
+        }
+        let in_table = self
+            .app
+            .doc()
+            .is_some_and(|d| crate::tables::table_at(d, d.cur.line).is_some());
+        if in_table {
+            let items = crate::tables::menu()
+                .into_iter()
+                .map(|(label, op)| (String::from(label), crate::app::MenuAction::Table(op)))
+                .collect();
+            self.app.overlay = Some(Overlay::Menu(crate::app::Menu {
+                x: px,
+                y: py,
+                items,
+            }));
+        }
+    }
+
     /// The pointer moved over the window: fold chevrons and page previews.
     fn editor_hover(&mut self, px: f32, py: f32, cmd: bool) -> bool {
         let doc = self.app.doc();
@@ -4225,6 +4254,7 @@ impl krate::Guest for Component {
                             }
                             (Some(types::PointerButton::Secondary), true) => {
                                 match ui.zone_at(p.x, p.y) {
+                                    Some(Zone::Editor) => ui.editor_context(p.x, p.y),
                                     Some(Zone::TreeRow(i)) => ui.app.context(Some(i), p.x, p.y),
                                     Some(Zone::Tree) => ui.app.context(None, p.x, p.y),
                                     Some(Zone::Tab(pane, i)) => {

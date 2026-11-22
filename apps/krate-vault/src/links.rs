@@ -484,6 +484,16 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
         d.add_caret_vertical(key == "ArrowDown");
         return Some(true);
     }
+    // In a table: cell to cell (tables.rs).
+    if d.mode == Mode::Live
+        && !d.has_extra()
+        && !completing
+        && !m.primary
+        && !m.alt
+        && crate::tables::key(d, key, m.shift, now).is_some()
+    {
+        return Some(true);
+    }
     if !d.has_extra() || completing {
         return None;
     }
@@ -520,6 +530,17 @@ pub fn text(app: &mut App, s: &str) -> bool {
     let Some(d) = app.doc_mut() else {
         return false;
     };
+    if d.mode == Mode::Live && !d.has_extra() {
+        if s == "\n" && crate::tables::key(d, "Enter", false, now).is_some() {
+            return true;
+        }
+        if let Some(esc) = crate::tables::typed(d, s) {
+            d.insert(&esc, now);
+            return true;
+        }
+        // Plain typing in a table still lands inside a cell.
+        crate::tables::snap(d);
+    }
     if !d.has_extra() || d.mode == Mode::Reading {
         return false;
     }

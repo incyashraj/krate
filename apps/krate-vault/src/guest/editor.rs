@@ -1139,7 +1139,11 @@ pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<L
     let reading = doc.mode == Mode::Reading;
     if doc.mode != Mode::Source {
         if let Some(span) = doc.span(n) {
-            let active = !reading && doc.caret_in(span.first, span.last);
+            // A table is edited inside the drawn table, never as its source
+            // (outside source mode), as Obsidian 1.15 does.
+            let active = !reading
+                && span.kind != crate::editor::SpanKind::Table
+                && doc.caret_in(span.first, span.last);
             if !active {
                 if n != span.first {
                     return Rc::new(Lay::hidden(v.sz.body));
@@ -1378,6 +1382,14 @@ fn move_one(
     n: usize,
     extend: bool,
 ) {
+    // In a table Up and Down keep the column, row to row.
+    if !extend && doc.mode == Mode::Live && n == 1 {
+        let now = doc.dirty_since.unwrap_or(0);
+        if crate::tables::key(doc, if down { "ArrowDown" } else { "ArrowUp" }, false, now).is_some()
+        {
+            return;
+        }
+    }
     let mut line = doc.cur.line;
     let text = String::from(doc.line(line));
     let l = lay(cache, c, doc, line + 1, v);
@@ -1430,6 +1442,10 @@ fn move_one(
     let col = tl.col_at(c, &target_text, row, goal);
     doc.place_vertical(Pos::new(line, col), extend);
     doc.goal_x = Some(goal);
+    // Arriving on a table row puts the caret in a cell.
+    if !extend && doc.mode == Mode::Live {
+        crate::tables::snap(doc);
+    }
 }
 
 /// Draw the note in `v`, and remember where each row went.
@@ -1557,6 +1573,11 @@ pub fn draw(
                 said.text(r(v.x, y, v.width, l.h), shown_text);
             }
         } else if let Some(w) = l.widget.as_ref() {
+            if caret_on && !doc.fresh && doc.mode == Mode::Live {
+                if let Some((cx, cy, ch)) = widgets::table_caret(c, w, doc.cur) {
+                    fill(c, r(v.x + cx - 0.5, y + cy, 1.6 * v.sz.scale, ch), t.text);
+                }
+            }
             let s = w.said();
             if !s.is_empty() {
                 said.text(r(v.x, y, v.width, l.h), &s);

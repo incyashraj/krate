@@ -1389,6 +1389,27 @@ fn callout_icon(c: u64, icon: CalloutIcon, x: f32, y: f32, col: Rgba) {
     lucide(c, el, x, y, 16.0, col);
 }
 
+/// Where the caret is drawn when it is in a table cell: x, top and height
+/// relative to the table's row.
+pub fn table_caret(c: u64, w: &Widget, cur: Pos) -> Option<(f32, f32, f32)> {
+    let Widget::Table { cells, .. } = w else {
+        return None;
+    };
+    let cell = cells.iter().find(|s| {
+        s.line == Some(cur.line) && cur.col >= s.col0 && cur.col <= s.col0 + s.text.len()
+    })?;
+    // A header cell's text is wrapped in `**`; the caret stays inside it.
+    let bold = cell.text.starts_with("**");
+    let mut local = cur.col - cell.col0;
+    if bold {
+        local = local.clamp(2, cell.text.len().saturating_sub(2));
+    }
+    let (row, x) = cell.lay.x_of(c, &cell.text, local);
+    let rl = cell.lay.rows.get(row)?;
+    let size = cell.lay.size;
+    Some((cell.x + x, cell.y + rl.base - size * 0.95, size * 1.25))
+}
+
 // ---- presses ------------------------------------------------------------------------------------
 
 fn sub_press(c: u64, s: &Sub, lx: f32, ly: f32) -> Option<Act> {

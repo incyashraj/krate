@@ -1069,6 +1069,8 @@ pub enum MenuAction {
     CardColor(String, Option<&'static str>),
     CardRemove(String),
     CardOpen(String),
+    /// The table menu on a cell (src/tables.rs).
+    Table(crate::tables::Op),
 }
 
 pub struct Menu {
@@ -4145,6 +4147,12 @@ impl App {
             MenuAction::CardColor(id, c) => self.canvas_color(&id, c),
             MenuAction::CardRemove(id) => self.canvas_remove(&id),
             MenuAction::CardOpen(p) => self.open_file(&p, true),
+            MenuAction::Table(op) => {
+                let now = self.now;
+                if let Some(d) = self.doc_mut() {
+                    crate::tables::apply(d, op, now);
+                }
+            }
             MenuAction::NewFolder(f) => self.new_folder_in(&f),
             MenuAction::OpenInNewTab(p) => self.open_file(&p, true),
             MenuAction::Rename(p) => self.start_rename(&p),
