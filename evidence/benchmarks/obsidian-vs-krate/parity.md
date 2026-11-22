@@ -95,8 +95,7 @@ in `screens/parity/`.
 
 Not built: stacked tabs, attachments and images in the file tree,
 recording hotkeys in settings, pop-out windows, community themes and
-plugins, sync, publish, PDF export. Spell check: Krate has no spell checker
-to ask (K-1340).
+plugins, sync, publish, PDF export.
 
 ## Runtime holes found while building it
 
@@ -108,8 +107,9 @@ Filed in BUGS.md, unclaimed:
 - **K-1337** (runtime-hole): no call moves a file to the computer's trash (the lead's call is on `next`; Vault's `trash_file` hook switches to it at merge).
 - **K-1341** (runtime-hole): canvas2d draws no turned text (stacked tab spines).
 - **K-1342** (runtime-hole): no way to show a PDF.
-- **K-1343** (runtime-hole): sound and video in a picked folder cannot be played.
+- **K-1343** (runtime-hole): sound and video in a picked folder cannot be played (fixed since: they play, see Embeds: sound and video).
 - **K-1344** (runtime-hole): one window per app, so no pop-out windows.
+- **K-1346** (runtime-hole): `video.open` cannot play a file the app reads in its own sandbox (only https, a picked folder or bundled assets).
 
 ## Editor and rendering, against Obsidian 1.15.1 side by side
 
@@ -119,7 +119,7 @@ in an isolated Obsidian profile and captured with `screencapture -l`, and in
 Vault headless with `krate run --task` steps that wait and `shoot`. Each
 picture in `screens/parity/` is Obsidian's note pane on the left and
 Vault's on the right. *unit* names a native test in `apps/krate-vault`
-(91 tests in all).
+(152 tests in all).
 
 | Feature | State | How verified / what differs |
 |---|---|---|
@@ -127,6 +127,7 @@ Vault's on the right. *unit* names a native test in `apps/krate-vault`
 | Callouts | Done | every Obsidian type and alias, its colour, a tenth of the colour behind, title or the type's name, `+`/`-` folding, Markdown and lists inside (unit `callouts_read_their_head`; parity/callouts-live, callouts-reading); the icons are Lucide's own shapes (ISC, LUCIDE-LICENSE.txt), as Obsidian's are |
 | Embeds: notes | Done | `![[Note]]` (headed by its name), `![[Note#Heading]]` (the section), `![[Note#^block]]` (the block), with the accent bar, their own tables, callouts, maths and pictures drawn; an embed inside an embed shows as its link (unit `sections_and_blocks_are_found`, `embeds_name_notes_pictures_and_sizes`; parity/embeds-notes-live). Obsidian's open-in-place icon on hover is not drawn |
 | Embeds: pictures | Done | `![[pic.png]]`, `|300`, `|300x200`, `![alt](path)`, found beside the note, at the root or in any folder; PNG, JPEG, BMP, GIF and WebP (lossy, lossless, animated: image-webp's decoder ported to no_std) and SVG (the app's own reader and rasteriser: paths, shapes, transforms, gradients; text drawn with the canvas's fonts) decoded in the app; GIFs and animated WebPs play, each frame at its own time; `![alt](https://...)` is fetched (optional `net.connect:*:443`) (unit `image::tests`, `webp::tests`, `svg::tests`; parity/pictures-live). AVIF cannot be decoded in an app (K-1345). SVG filters, masks, clip paths, `<use>` and CSS sheets are not read. Some hosts refuse Krate's request (Wikimedia answers 400 to any client without a contact address in its User-Agent) |
+| Embeds: sound and video | Done | `![[clip.mp4]]` and `![[song.mp3]]` (mp4, webm, ogv, mov, mkv; mp3, wav, m4a, ogg, flac, 3gp: Obsidian's formats, and aac and m4v) play in the note through `krate:gfx/video` with the controls Obsidian shows: play and pause, "0:00 / 0:03", a track to jump along, mute, the three dots; a video at its own size up to the column with the bar over its foot, a sound as a bar across the column; a press on the picture plays or pauses (unit `embeds_name_notes_pictures_and_sizes`; headless task in a picked folder: pressed "Play or pause video", the frame and clock moved to 0:02, then muted and played the sound: parity/media-live, screens/parity/vault-media-playing.png). Obsidian's video bar also has a full-screen button and its menu (speed, download, picture in picture); Vault's three dots draw but open nothing. Plays only in a folder the person picked: a vault given by path in the sandbox (`vault=./vault`) cannot reach `video.open`, which answers "the app does not carry bundled assets", and the note says Krate could not open it (K-1346). Mac and phones only, as `krate:gfx/video` is |
 | Math | Done | `$...$` inline and `$$...$$` blocks set in a serif face by the app's own TeX layout: fractions (`\frac`, `\dfrac`, `\binom`), sub- and superscripts, Greek, relations and operators, `\sum`/`\prod`/`\lim` with limits in display and beside inline, integrals, `\sqrt` and `\sqrt[n]`, `pmatrix`/`bmatrix`/`vmatrix`/`cases`/`aligned`, growing `\left( \right)`, accents, `\text`, `\mathbb`, spacing; what it cannot read shows in red, as KaTeX does (unit `math::tests`, 6 tests; parity/math-live). Glyph shapes are the system serif, not KaTeX's fonts |
 | Properties | Done | the Properties block for YAML front matter: text, list, number, checkbox, date, date and time, tags, aliases, with Lucide's icons and the 148 px key column, edited inside the block as Obsidian does: a value or name opens a field where it is drawn (Enter or a press elsewhere keeps it, Tab goes on), lists are chips with a cross and a field to add more, a date opens a month to pick from, the icon opens the type menu (Text, List, Number, Checkbox, Date, Date & time, Remove), Add property opens the new name; written back as YAML, one undo each (unit `propedit::tests`, `values_write_back_as_yaml`; headless task: changed a status, added an alias, opened the date picker, added a property: parity/properties-live, screens/parity/vault-properties-edit.png). Obsidian keeps the type a person picks in .obsidian/types.json; Vault infers it from the value |
 | Footnotes | Done | `[^1]` and `^[inline]` small and raised while editing; reading view numbers them by first reference and lists them after the note with the way back (unit `footnotes_number_in_reference_order`; parity/inline-live, inline-reading). The way-back arrow is not clickable |
@@ -146,7 +147,7 @@ Vault's on the right. *unit* names a native test in `apps/krate-vault`
 | Folding | Done | headings (to the next heading at their level) and list items (their children) fold from a chevron in the margin, shown on hover and while folded, with "..." after a folded line; Cmd+Option+[ and ] fold and unfold, with Shift all at once; folds follow edits (unit `headings_and_lists_fold`) |
 | Smart lists | Done | (earlier: `lists_continue_and_end_on_enter`) |
 | Drag text | Done | a press inside the selection drags the text and drops it where released, one undo (unit `selected_text_moves_by_dragging`); not dragged in a real window |
-| Spell check | Missing (runtime hole) | Krate has no spell checker an app can ask (K-1340) |
+| Spell check | Done | the computer's own checker (`krate:ui/spelling`, K-1340 fixed) marks unknown words with a red wavy underline in live and source mode, not in reading view; code, wiki link targets, web addresses, tags, maths, HTML tags, block ids, footnote labels and front matter keys are never marked, a link's shown text and front matter values are; only lines on screen are checked, each cached by its text and checked again when it changes; right-click on a marked word lists up to five suggestions, then Add to dictionary (the checker learns it) and Ignore (for the session); app.json `"spellcheck": false` turns it off (unit `only_prose_is_checked`, `front_matter_checks_values_not_keys`, `the_menu_replaces_or_queues`; headless task: Teh, jumpd, alais and tsak underlined once the note is clicked, nothing before: parity/spelling-live). Values inside the Properties block are not marked (Obsidian marks them while one is being edited). Our isolated Obsidian draws no marks in a capture even focused and after typing (its window is never the key window), so the mark's look is matched to Chromium's, not measured |
 
 A note opens with the editor unfocused, as Obsidian opens it: no caret and
 no line showing its syntax until it is clicked or a key is pressed (the
@@ -157,12 +158,17 @@ row).
 Performance with all of this on: the 200,000-line note (debug runtime,
 `krate run ... --task` that waits 1.5 s, Cmd+Down, types, saves):
 
-| | before (b689eb95f) | round 1 | round 2 |
-|---|---|---|---|
-| note read and parsed (`t_note_open_ms`) | 160, 163 | 171, 199 | 176, 175 |
-| first frame (`t_first_frame_ms`) | 766, 777 | 763, 810 | 726, 719 |
-| lines laid out in the whole run | 44 | 45 | 44 |
-| saved after typing | yes | yes | yes |
+| | before (b689eb95f) | round 1 | round 2 | round 3 (eb4e38b79 / a17a1d458, same load) |
+|---|---|---|---|---|
+| note read and parsed (`t_note_open_ms`) | 160, 163 | 171, 199 | 176, 175 | 209, 238 / 187, 208 |
+| first frame (`t_first_frame_ms`) | 766, 777 | 763, 810 | 726, 719 | 757, 788 / 735, 757 |
+| lines laid out in the whole run | 44 | 45 | 44 | 44 / 44 |
+| saved after typing | yes | yes | yes | yes / yes |
+
+Round 3 ran with the machine's load average near 4.5 (other builds), so
+it was measured beside eb4e38b79 built the same way, alternating runs;
+spell check adds nothing at open (nothing is checked until the note is
+clicked) and checks only the lines laid out after that.
 
 The extra time at open is finding the `$$`, `%%` and front matter lines
 once; nothing else scans the note.
