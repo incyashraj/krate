@@ -304,8 +304,8 @@ batch renamer, a photo shrinker), declare only `ui.dialog:open-folder` and \
 call `ui.dialog.open-folder(window, title)`. The person's pick IS the grant: \
 you get `{ name, token }`, and every ordinary fs call works under \
 `picked/<token>/...` -- list it, read files, write results, make \
-subfolders. No fs capability at all. The token stays good on this app's \
-later runs until the folder is gone or the person takes it back, so an app \
+subfolders. No fs capability at all. On a computer the token stays good \
+on this app's later runs until the folder is gone or the person takes it back, so an app \
 that reopens its folder (a notes vault, a photo library) saves the token in \
 `store.kv` and tries `fs::list(\"picked/<token>\")` at start; only when that \
 fails does it ask again. `apps/krate-tidy` is the worked \
