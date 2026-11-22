@@ -16,6 +16,13 @@
 	<string>Krate turns what you say into text in the box you are typing in, so you can describe an app out loud.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Krate uses the microphone only for apps that request audio capture and only after you allow it.</string>
+	<!-- macOS 26 offers "Fill code, From Messages" in every focused text
+	     field for three minutes after a code arrives, with no close button,
+	     and the Studio prompt box got it. Nothing in the Studio asks for a
+	     one-time code (sign-in is a browser link), so the menu appears only
+	     in a field marked as a one-time-code field, and we have none. -->
+	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
