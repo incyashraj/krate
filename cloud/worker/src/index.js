@@ -114,7 +114,9 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 // whose approving and candidates list they wrap.
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
-import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, endSessionsOfKind, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// One account, every way in (IC-996): list, add and remove sign-ins.
+import { addWay, wayFor, waysOf, signInsRoute, removeWayFrom, addable, appleAuthorizeUrl, verifyAppleIdToken } from "./sign-ins.js";
 // Deleting an account, and its export (K-1245).
 import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./account-delete.js";
 // A signed-in person's own app data on every device (IC-981), kept in one
@@ -864,6 +866,20 @@ export default {
       }
       if (request.method === "GET" && pathname === "/my/apps") {
         return cors(await myApps(request, env));
+      }
+      // Ways to sign in (IC-996): list, add, confirm, remove.
+      if (pathname === "/me/sign-ins" || pathname.startsWith("/me/sign-ins/")) {
+        return cors(await signInsRoute(request, url, env, signInsDeps(env)));
+      }
+      // Which ways in this hub offers, for the sign-in page.
+      if (request.method === "GET" && pathname === "/login/ways") {
+        return cors(json(addable(env)));
+      }
+      if (request.method === "GET" && pathname === "/login/apple") {
+        return noteStep(env, "signin", "apple-start", appleStart(url, env));
+      }
+      if (request.method === "POST" && pathname === "/login/apple/callback") {
+        return noteStep(env, "signin", "apple-done", appleCallback(request, url, env));
       }
       // Build sessions, kept against the account rather than the machine.
       //
@@ -3632,7 +3648,7 @@ const GITHUB_CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
 // as a bearer exactly like a GitHub token, and verifyIdentity below accepts
 // either, so nothing published under the old flow breaks.
 
-async function ensureUser(env, provider, stableId, profile) {
+async function ensureUser(env, provider, stableId, profile, options = {}) {
   // Writes only what changed (K-952). This runs on EVERY request that
   // carries a GitHub token -- Studio's session sync sends one on each save
   // and list -- and it used to PUT the user, the ident and the email ident
@@ -3645,11 +3661,19 @@ async function ensureUser(env, provider, stableId, profile) {
   const identHeld = await env.APPS.get(identKey);
   let userId = identHeld;
   let emailHeld = null;
+  // Adding a way to a signed-in account (IC-996): this account, or nothing.
+  // A way that already opens another account is never moved silently.
+  const link = options && options.link ? String(options.link) : "";
+  if (link && identHeld && identHeld !== link) return { taken: true };
+  if (link) userId = link;
   if (emailKey) {
     emailHeld = await env.APPS.get(emailKey);
     // Same inbox, same person: unify across providers by verified email.
     if (!userId) userId = emailHeld;
   }
+  // When linking, another account's address stays that account's.
+  const takeEmail = Boolean(emailKey) && !(link && emailHeld && emailHeld !== link);
+  const way = wayFor(provider, stableId, profile);
   let record;
   if (!userId) {
     userId = crypto.randomUUID();
@@ -3664,6 +3688,7 @@ async function ensureUser(env, provider, stableId, profile) {
       providers: [provider],
     };
     if (provider === "github" && profile.login) record.github_login = profile.login;
+    addWay(record, way);
     if (profile.verified_email) record.verified_emails = [profile.verified_email.toLowerCase()];
     if (profile.unverified_email && !profile.email) record.unverified_email = profile.unverified_email.toLowerCase();
     await env.APPS.put(`user:${userId}`, JSON.stringify(record));
@@ -3691,15 +3716,19 @@ async function ensureUser(env, provider, stableId, profile) {
     }
     record.name = record.name || profile.name || "";
     record.avatar_url = record.avatar_url || profile.avatar_url || "";
-    record.email = record.email || profile.email || "";
+    record.email = record.email || (takeEmail ? profile.email : "") || "";
     // The GitHub login GitHub itself vouched for (K-1328): what makes every
     // sign-in of this account that login. Only a GitHub sign-in writes it.
     if (provider === "github" && profile.login && record.github_login !== profile.login) {
       record.github_login = profile.login;
     }
+    // The way in this sign-in used, kept so Settings can list it (IC-996).
+    // Written once per new way, then free.
+    addWay(record, way);
     // An inbox proved by this sign-in becomes one of the account's
-    // organisation principals (IC-947). Written once, then free.
-    if (profile.verified_email) {
+    // organisation principals (IC-947). Written once, then free. Not when
+    // linking a provider whose address is another account's.
+    if (profile.verified_email && takeEmail) {
       const proved = profile.verified_email.toLowerCase();
       const held = Array.isArray(record.verified_emails) ? record.verified_emails : [];
       if (!held.includes(proved)) record.verified_emails = [...held, proved];
@@ -3709,13 +3738,15 @@ async function ensureUser(env, provider, stableId, profile) {
     }
   }
   if (identHeld !== userId) await env.APPS.put(identKey, userId);
-  if (emailKey && emailHeld !== userId) await env.APPS.put(emailKey, userId);
+  if (takeEmail && emailHeld !== userId) await env.APPS.put(emailKey, userId);
   // Which account a GitHub login signs in to, so an organisation notice
   // for github:<login> can reach that account's address (IC-948 D). Only a
   // GitHub sign-in writes it, and only when it changed.
   if (provider === "github" && profile.login) {
     const loginKey = `ghlogin:${String(profile.login).toLowerCase()}`;
-    if ((await env.APPS.get(loginKey)) !== userId) await env.APPS.put(loginKey, userId);
+    const loginHeld = await env.APPS.get(loginKey);
+    // Linking never takes the pointer from another account (IC-996).
+    if (loginHeld !== userId && !(link && loginHeld)) await env.APPS.put(loginKey, userId);
   }
   return record;
 }
@@ -4226,9 +4257,32 @@ function signInDeps(request) {
 function readSignInStart(raw) {
   try {
     const parsed = JSON.parse(raw);
+    // A way being added to a signed-in account (IC-996). Only
+    // /me/sign-ins/link writes one, with the account and the page's nonce.
+    if (parsed && parsed.from === "link" && typeof parsed.link === "string" && parsed.link) {
+      return { from: "link", link: parsed.link, nonce: String(parsed.nonce || ""), kind: String(parsed.kind || "") };
+    }
     if (parsed && typeof parsed === "object") return signInStart(parsed.from, parsed.nonce, parsed.app_nonce);
   } catch (e) { /* the old bare word */ }
   return signInStart(raw, "", "");
+}
+
+/// A provider answered a link started from Settings (IC-996): park what it
+/// proved under a one-time code and send the browser back to the account
+/// page that started it. Nothing is added here. The page confirms the code
+/// with its own session, and only the starting account's session may.
+async function parkLink(env, start, provider, stableId, profile) {
+  const code = crypto.randomUUID();
+  await env.APPS.put(
+    `linkdone:${code}`,
+    JSON.stringify({ link: start.link, provider, stableId: String(stableId), profile }),
+    { expirationTtl: 600 },
+  );
+  const hand = new URLSearchParams({ link: code, nonce: start.nonce || "" });
+  return new Response(null, {
+    status: 302,
+    headers: { location: `https://krate.tech/account/#${hand.toString()}`, "cache-control": "no-store" },
+  });
 }
 
 /// Deliver a finished sign-in to wherever it started. Everything rides in
@@ -4316,14 +4370,148 @@ async function googleCallback(url, env, request) {
   // the string "true"; the ID token itself carries a boolean.
   const verified = claims.email_verified === true || claims.email_verified === "true";
   const email = claims.email ? String(claims.email).toLowerCase() : "";
-  const user = await ensureUser(env, "google", claims.sub, {
+  const googleProfile = {
     email: verified ? email : undefined,
     verified_email: verified ? email : undefined,
     unverified_email: verified ? undefined : email || undefined,
     name: claims.name,
     avatar_url: claims.picture,
-  });
+  };
+  if (start.from === "link") return parkLink(env, start, "google", claims.sub, googleProfile);
+  const user = await ensureUser(env, "google", claims.sub, googleProfile);
   return deliver(start, user, await newSession(env, user.id, { kind: "google", label: sessionLabel(request && request.headers.get("user-agent"), start.from) }));
+}
+
+// -------------------------------------------------------------------- apple
+
+/// Sign in with Apple (IC-996). Hidden until the hub holds APPLE_CLIENT_ID,
+/// the Services ID registered for this hub's callback.
+async function appleStart(url, env) {
+  if (!env.APPLE_CLIENT_ID) return text("Sign in with Apple is not switched on here yet.", 503);
+  const start = signInStart(url.searchParams.get("from"), url.searchParams.get("nonce"), url.searchParams.get("app_nonce"));
+  const state = crypto.randomUUID();
+  await env.APPS.put(`login:${state}`, JSON.stringify(start), { expirationTtl: 600 });
+  // The state doubles as the token's nonce: one random value, checked twice.
+  return Response.redirect(appleAuthorizeUrl(env, state, state), 302);
+}
+
+async function appleCallback(request, url, env) {
+  if (!env.APPLE_CLIENT_ID) return text("Sign in with Apple is not switched on here yet.", 503);
+  const form = await request.formData().catch(() => null);
+  if (!form) return signInFailed(url, "failed");
+  const state = String(form.get("state") || "");
+  const stored = state ? await env.APPS.get(`login:${state}`) : null;
+  if (!stored) return signInFailed(url, "expired");
+  await env.APPS.delete(`login:${state}`);
+  const start = readSignInStart(stored);
+  const claims = await verifyAppleIdToken(env, String(form.get("id_token") || ""), state, env.__appleKeys);
+  if (!claims) return signInFailed(url, "failed");
+  // Apple gives the name once, on the first sign-in, beside the token.
+  let name = "";
+  try {
+    const who = JSON.parse(String(form.get("user") || "null"));
+    name = [who && who.name && who.name.firstName, who && who.name && who.name.lastName].filter(Boolean).join(" ");
+  } catch (_) {}
+  const verified = claims.email_verified === true || claims.email_verified === "true";
+  const email = claims.email ? String(claims.email).toLowerCase() : "";
+  const appleProfile = {
+    email: verified && email ? email : undefined,
+    verified_email: verified && email ? email : undefined,
+    unverified_email: verified ? undefined : email || undefined,
+    name,
+  };
+  if (start.from === "link") return parkLink(env, start, "apple", claims.sub, appleProfile);
+  const user = await ensureUser(env, "apple", claims.sub, appleProfile);
+  return deliver(start, user, await newSession(env, user.id, { kind: "apple", label: sessionLabel(request.headers.get("user-agent"), start.from) }));
+}
+
+/// The account a request is signed in as, for Settings: a Krate session's
+/// account, or the one a GitHub token reaches. Null when neither.
+async function accountOfRequest(request, env) {
+  const identity = await verifyGitHub(request, env).catch(() => null);
+  if (!identity || !identity.id) return null;
+  const record = JSON.parse((await env.APPS.get(`user:${identity.id}`)) || "null");
+  if (!record) return null;
+  // An account from before github_login was kept: name its GitHub login as
+  // GitHub gave it, so Settings can show which GitHub it is.
+  const github_login = record.github_login || (await vouchedGitHubLogin(env, identity.id, record));
+  return { ...record, id: identity.id, ...(github_login ? { github_login } : {}) };
+}
+
+/// What /me/sign-ins borrows from the hub (sign-ins.js).
+function signInsDeps(env) {
+  return {
+    json,
+    accountOf: (request) => accountOfRequest(request, env),
+    providerUrl: (kind, state) => {
+      if (kind === "github") {
+        const auth = new URL("https://github.com/login/oauth/authorize");
+        auth.searchParams.set("client_id", GITHUB_CLIENT_ID);
+        auth.searchParams.set("redirect_uri", `${env.PUBLIC_BASE}/login/callback`);
+        auth.searchParams.set("scope", "read:user");
+        auth.searchParams.set("state", state);
+        // Ask GitHub to show its page even to someone signed in already,
+        // so the person sees which GitHub account they are adding.
+        auth.searchParams.set("prompt", "select_account");
+        return auth.toString();
+      }
+      if (kind === "google") {
+        const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+        auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+        auth.searchParams.set("redirect_uri", `${env.PUBLIC_BASE}/login/google/callback`);
+        auth.searchParams.set("response_type", "code");
+        auth.searchParams.set("scope", "openid email profile");
+        auth.searchParams.set("state", state);
+        auth.searchParams.set("prompt", "select_account");
+        return auth.toString();
+      }
+      return appleAuthorizeUrl(env, state, state);
+    },
+    linkWay: async (provider, stableId, profile, userId) => {
+      const record = await ensureUser(env, provider, stableId, profile, { link: userId });
+      return record && record.taken ? { taken: true } : { record };
+    },
+    removeWay: (account, way) =>
+      removeWayFrom(env, account, way, {
+        endSessionsOfKind: (e, userId, kind) => endSessionsOfKind(e, userId, kind, GITHUB_CLIENT_ID),
+      }),
+    sendLinkMail: (email, userId) => sendLinkMail(env, email, userId),
+  };
+}
+
+/// The mail that proves an address before it is added (IC-996). The link
+/// lands on the account page, which confirms it with its own session.
+async function sendLinkMail(env, email, userId) {
+  const token = crypto.randomUUID().replaceAll("-", "");
+  await env.APPS.put(`email:${token}`, JSON.stringify({ email, link: userId }), { expirationTtl: 900 });
+  const link = `${env.PUBLIC_BASE}/login/email/verify?t=${token}`;
+  if (env.__mailSink) {
+    env.__mailSink.push({ to: email, link });
+    return {};
+  }
+  const sent = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      from: "Krate <login@krate.tech>",
+      to: [email],
+      subject: "Add this address to your Krate account",
+      text: `Press the link to add ${email} as a way to sign in to your Krate account:\n\n${link}\n\nOpen it in the browser where you are signed in to Krate. It works once and expires in 15 minutes. If you did not ask for this, ignore it: nothing changes.`,
+      html: emailHtml({
+        title: "Add this address to Krate",
+        preheader: "One press adds it as a way to sign in.",
+        heading: "Add this address to your Krate account",
+        blocks: [`Press the button to add ${email} as a way to sign in. Open it in the browser where you are signed in to Krate.`],
+        button: { label: "Add this address", url: link },
+        note: ["The link works once and expires in 15 minutes. If you did not ask for this, ignore it: nothing changes."],
+      }),
+    }),
+  });
+  if (!sent.ok) {
+    console.error(`resend refused the add-an-address email: ${sent.status} ${await sent.text().catch(() => "")}`);
+    return { problem: `The email could not be sent. Try again in a few minutes. (Reference: ${sent.status})` };
+  }
+  return {};
 }
 
 // -------------------------------------------------------------------- email
@@ -4435,6 +4623,11 @@ async function emailVerify(url, env, request) {
   if (!stored) return signInFailed(url, "used");
   await env.APPS.delete(`email:${token}`);
   const record = JSON.parse(stored);
+  // An address being added from Settings (IC-996): proved now, added only
+  // when the account page confirms it with that account's own session.
+  if (typeof record.link === "string" && record.link) {
+    return parkLink(env, { from: "link", link: record.link, nonce: "" }, "email", record.email, { email: record.email, verified_email: record.email });
+  }
   // The link reached this inbox, so the inbox is proved (IC-947).
   const user = await ensureUser(env, "email", record.email, { email: record.email, verified_email: record.email });
   const start = signInStart(record.from, record.nonce, record.app_nonce);
@@ -4509,13 +4702,17 @@ async function loginCallback(url, env, request) {
   });
   if (!user.ok) return text("Signed in, but the profile could not be read.", 502);
   const profile = await user.json();
-
-  const account = await ensureUser(env, "github", String(profile.id), {
+  const githubProfile = {
     login: profile.login,
     name: profile.name || "",
     avatar_url: profile.avatar_url || "",
     email: (profile.email || "").toLowerCase() || undefined,
-  });
+  };
+  // Adding GitHub to a signed-in account (IC-996): nothing is signed in
+  // here, and the token is not kept -- the GitHub login is what was proved.
+  if (start.from === "link") return parkLink(env, start, "github", String(profile.id), githubProfile);
+
+  const account = await ensureUser(env, "github", String(profile.id), githubProfile);
   // The GitHub token itself is handed over (not a krs_ session): the engine
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the

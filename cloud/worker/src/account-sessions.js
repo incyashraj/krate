@@ -32,7 +32,7 @@
 export const SESSION_TTL_SECONDS = 90 * 24 * 3600;
 /// A GitHub token does not expire; its index entry is dropped after a year.
 export const GITHUB_INDEX_TTL_SECONDS = 365 * 24 * 3600;
-const KINDS = new Set(["github", "google", "email", "company"]);
+const KINDS = new Set(["github", "google", "apple", "email", "company"]);
 
 async function sha256HexOf(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -154,6 +154,27 @@ export async function endEverySession(env, userId, clientId) {
   const listed = await env.APPS.list({ prefix, limit: 1000 });
   let ended = 0;
   for (const k of listed.keys || []) {
+    const token = k.name.slice(prefix.length);
+    if (token && (await endSession(env, k.name, token, clientId))) ended += 1;
+  }
+  return ended;
+}
+
+/// The sessions one way in made (IC-996), when that way is taken off the
+/// account: each indexed session of that kind ends. Answers how many.
+export async function endSessionsOfKind(env, userId, kind, clientId) {
+  if (!userId || !KINDS.has(kind)) return 0;
+  const prefix = `usess:${userId}:`;
+  const listed = await env.APPS.list({ prefix, limit: 1000 });
+  let ended = 0;
+  for (const k of listed.keys || []) {
+    let meta = null;
+    try {
+      meta = JSON.parse((await env.APPS.get(k.name)) || "null");
+    } catch {
+      meta = null;
+    }
+    if (!meta || meta.kind !== kind) continue;
     const token = k.name.slice(prefix.length);
     if (token && (await endSession(env, k.name, token, clientId))) ended += 1;
   }
