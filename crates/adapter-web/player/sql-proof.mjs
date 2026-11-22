@@ -96,9 +96,11 @@ for (const [engine, label, viewport, ua] of RUNS) {
     page.on('console', (m) => { if (consoleError(m)) errors.push(`${m.text()} @${JSON.stringify(m.location())}`); });
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.goto(`${base}/run/${hash}?probe=1`);
-    await page.waitForFunction(() => window.__krate && window.__krate.state === 'consent', null, { timeout: 30000 }).catch(() => {});
+    // The first open asks; a later one in the same browser goes straight
+    // in on the yes it remembered (K-1316).
+    await page.waitForFunction(() => window.__krate && (window.__krate.state === 'consent' || window.__krate.state === 'app'), null, { timeout: 30000 }).catch(() => {});
     const card = await page.evaluate(() => document.body.innerText);
-    await page.click('#consentAllow');
+    if (await page.evaluate(() => window.__krate.state === 'consent')) await page.click('#consentAllow');
     await page.waitForFunction(() => /done/.test(window.__krate.out) || window.__krate.trap, null, { timeout: 30000 }).catch(() => {});
     const r = await page.evaluate(() => ({
       out: window.__krate.out, trap: window.__krate.trap, state: window.__krate.state, notices: window.__krate.notices,
