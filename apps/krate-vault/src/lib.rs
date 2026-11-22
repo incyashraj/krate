@@ -39,6 +39,7 @@ pub mod blocks;
 pub mod bookmarks;
 pub mod buffer;
 pub mod canvas;
+pub mod charts;
 pub mod dates;
 pub mod editor;
 pub mod find;

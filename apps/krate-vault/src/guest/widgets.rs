@@ -369,7 +369,7 @@ pub enum Widget {
         top: f32,
     },
     Diagram {
-        d: crate::mermaid::Diagram,
+        d: crate::charts::Chart,
         x: f32,
         y: f32,
         line: usize,
@@ -448,8 +448,10 @@ impl Widget {
             }
             Widget::Image { note: Some(n), .. } => add(n),
             Widget::Diagram { d, .. } => {
-                for n in &d.nodes {
-                    add(&n.label);
+                for i in &d.items {
+                    if let crate::charts::Item::Text { s, .. } = i {
+                        add(s);
+                    }
                 }
             }
             Widget::Math { .. } | Widget::Image { .. } => {}
@@ -827,8 +829,8 @@ fn diagram(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
         src.push('\n');
     }
     let size = 14.0 * sz.body / 16.0;
-    let measure = |s: &str| look::width(c, s, size, 400);
-    match crate::mermaid::flowchart(&src, &measure, size) {
+    let measure = |s: &str, sz: f32| look::width(c, s, sz, 400);
+    match crate::charts::chart(&src, &measure, size, width) {
         Some(d) => {
             let pad = 12.0 * sz.body / 16.0;
             // Obsidian sets a diagram at the left of the column.
@@ -1410,105 +1412,7 @@ pub fn draw(
                 draw_sub(c, s, ox, y0, t, resolved, env);
             }
         }
-        Widget::Diagram { d, x, y, .. } => {
-            let (bx, by) = (ox + x, oy + y);
-            let size = 14.0;
-            let edge_ink = t.muted;
-            for e in &d.edges {
-                let (x0, y0, x1, y1) = (bx + e.x0, by + e.y0, bx + e.x1, by + e.y1);
-                let w = if e.thick { 2.6 } else { 1.4 };
-                if e.dotted {
-                    let (dx, dy) = (x1 - x0, y1 - y0);
-                    let len = (dx * dx + dy * dy).sqrt().max(1.0);
-                    let steps = (len / 6.0) as usize;
-                    for i in (0..steps).step_by(2) {
-                        let a = i as f32 / steps as f32;
-                        let b = ((i + 1) as f32 / steps as f32).min(1.0);
-                        look::line(
-                            c,
-                            x0 + dx * a,
-                            y0 + dy * a,
-                            x0 + dx * b,
-                            y0 + dy * b,
-                            w,
-                            edge_ink,
-                        );
-                    }
-                } else {
-                    look::line(c, x0, y0, x1, y1, w, edge_ink);
-                }
-                if e.arrow {
-                    let (dx, dy) = (x1 - x0, y1 - y0);
-                    let len = (dx * dx + dy * dy).sqrt().max(1.0);
-                    let (ux, uy) = (dx / len, dy / len);
-                    let (hx, hy) = (x1 - ux * 8.0, y1 - uy * 8.0);
-                    look::line(c, x1, y1, hx - uy * 4.5, hy + ux * 4.5, 1.6, edge_ink);
-                    look::line(c, x1, y1, hx + uy * 4.5, hy - ux * 4.5, 1.6, edge_ink);
-                }
-                if !e.label.is_empty() {
-                    let lw = look::width(c, &e.label, 12.0, 400);
-                    let (mx, my) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
-                    round(
-                        c,
-                        r(mx - lw * 0.5 - 4.0, my - 9.0, lw + 8.0, 18.0),
-                        3.0,
-                        t.code_bg,
-                    );
-                    look::text(c, &e.label, mx - lw * 0.5, my + 4.5, 12.0, 400, t.text);
-                }
-            }
-            for n in &d.nodes {
-                let rc = r(bx + n.x, by + n.y, n.w, n.h);
-                let fillc = t.code_bg;
-                let line = t.muted;
-                match n.shape {
-                    crate::mermaid::Shape::Circle => {
-                        let cx = rc.x + rc.w * 0.5;
-                        let cy = rc.y + rc.h * 0.5;
-                        let p = krate::gfx::types::Point { x: cx, y: cy };
-                        let _ = canvas2d::fill_circle(c, p, rc.w * 0.5, fillc);
-                        let _ = canvas2d::stroke_circle(c, p, rc.w * 0.5, 1.2, line);
-                    }
-                    crate::mermaid::Shape::Diamond => {
-                        let (cx, cy) = (rc.x + rc.w * 0.5, rc.y + rc.h * 0.5);
-                        let steps = (rc.h * 0.5) as usize;
-                        for i in 0..steps {
-                            let f = i as f32 / steps.max(1) as f32;
-                            let half = rc.w * 0.5 * (1.0 - f);
-                            fill(
-                                c,
-                                r(cx - half, cy - rc.h * 0.5 * f - 1.0, half * 2.0, 1.0),
-                                fillc,
-                            );
-                            fill(c, r(cx - half, cy + rc.h * 0.5 * f, half * 2.0, 1.0), fillc);
-                        }
-                        look::line(c, cx, rc.y, rc.right(), cy, 1.2, line);
-                        look::line(c, rc.right(), cy, cx, rc.bottom(), 1.2, line);
-                        look::line(c, cx, rc.bottom(), rc.x, cy, 1.2, line);
-                        look::line(c, rc.x, cy, cx, rc.y, 1.2, line);
-                    }
-                    shape => {
-                        let rad = match shape {
-                            crate::mermaid::Shape::Stadium => rc.h * 0.5,
-                            crate::mermaid::Shape::Round => 8.0,
-                            _ => 3.0,
-                        };
-                        round(c, rc, rad, fillc);
-                        look::outline(c, rc, rad, 1.2, line);
-                    }
-                }
-                let lw = look::width(c, &n.label, size, 400);
-                look::text(
-                    c,
-                    &n.label,
-                    rc.x + (rc.w - lw) * 0.5,
-                    rc.y + rc.h * 0.5 + size * 0.36,
-                    size,
-                    400,
-                    t.text,
-                );
-            }
-        }
+        Widget::Diagram { d, x, y, .. } => draw_chart(c, d, ox + x, oy + y, t),
         Widget::Footnotes { subs, top } => {
             fill(c, r(ox, oy + top, width, 1.0), t.border);
             for (num, s) in subs {
@@ -1767,6 +1671,265 @@ fn callout_icon(c: u64, icon: CalloutIcon, x: f32, y: f32, col: Rgba) {
         CalloutIcon::Quote => crate::lucide::QUOTE,
     };
     lucide(c, el, x, y, 16.0, col);
+}
+
+/// The categorical colours of charts (pie wedges, Gantt sections), from
+/// Obsidian's palette.
+const SERIES: [u32; 12] = [
+    0x027AFF, 0xE9973F, 0x44CF6E, 0xFB464C, 0xA882FF, 0x53DFDD, 0xE0DE71, 0xFA99CD, 0x7A8BA3,
+    0xB5784C, 0x3DA35D, 0x9E6FD6,
+];
+
+fn role(rl: crate::charts::Role, t: &Theme, fill: bool) -> Option<Rgba> {
+    use crate::charts::Role;
+    Some(match rl {
+        Role::None => return None,
+        Role::Node => {
+            if fill {
+                t.code_bg
+            } else {
+                t.muted
+            }
+        }
+        Role::Paper => t.bg,
+        Role::Cluster => look::alpha(t.muted, 0.12),
+        Role::Note => look::alpha(t.muted, 0.18),
+        Role::Line => t.muted,
+        Role::Text => t.text,
+        Role::Muted => t.faint,
+        Role::Series(i) => look::alpha(look::hex(SERIES[usize::from(i) % SERIES.len()]), 0.85),
+        Role::Done => look::alpha(t.muted, 0.25),
+        Role::Active => look::alpha(look::hex(0xA882FF), 0.45),
+        Role::Critical => look::alpha(look::hex(0xFB464C), 0.85),
+    })
+}
+
+fn head(c: u64, h: crate::charts::Head, tip: (f32, f32), from: (f32, f32), col: Rgba, bg: Rgba) {
+    use crate::charts::Head;
+    let (dx, dy) = (tip.0 - from.0, tip.1 - from.1);
+    let len = (dx * dx + dy * dy).sqrt().max(1.0);
+    let (ux, uy) = (dx / len, dy / len);
+    let (px, py) = (-uy, ux);
+    let at = |back: f32, side: f32| (tip.0 - ux * back + px * side, tip.1 - uy * back + py * side);
+    match h {
+        Head::None => {}
+        Head::Arrow | Head::Open => {
+            let (a, b) = (at(9.0, 4.5), at(9.0, -4.5));
+            look::line(c, tip.0, tip.1, a.0, a.1, 1.6, col);
+            look::line(c, tip.0, tip.1, b.0, b.1, 1.6, col);
+            if h == Head::Arrow {
+                for k in 1..8 {
+                    let f = k as f32 / 8.0;
+                    let (p, q) = (at(9.0 * f, 4.5 * f), at(9.0 * f, -4.5 * f));
+                    look::line(c, p.0, p.1, q.0, q.1, 1.4, col);
+                }
+            }
+        }
+        Head::Hollow => {
+            let (a, b) = (at(12.0, 6.0), at(12.0, -6.0));
+            for k in 1..10 {
+                let f = k as f32 / 10.0;
+                let (p, q) = (at(12.0 * f, 6.0 * f), at(12.0 * f, -6.0 * f));
+                look::line(c, p.0, p.1, q.0, q.1, 1.3, bg);
+            }
+            look::line(c, tip.0, tip.1, a.0, a.1, 1.4, col);
+            look::line(c, tip.0, tip.1, b.0, b.1, 1.4, col);
+            look::line(c, a.0, a.1, b.0, b.1, 1.4, col);
+        }
+        Head::Diamond | Head::FilledDiamond => {
+            let (l, m, r) = (at(7.0, 5.0), at(14.0, 0.0), at(7.0, -5.0));
+            let ink = if h == Head::FilledDiamond { col } else { bg };
+            let _ = canvas2d::fill_circle(
+                c,
+                krate::gfx::types::Point {
+                    x: (tip.0 + m.0) * 0.5,
+                    y: (tip.1 + m.1) * 0.5,
+                },
+                4.0,
+                ink,
+            );
+            look::line(c, tip.0, tip.1, l.0, l.1, 1.4, col);
+            look::line(c, l.0, l.1, m.0, m.1, 1.4, col);
+            look::line(c, m.0, m.1, r.0, r.1, 1.4, col);
+            look::line(c, r.0, r.1, tip.0, tip.1, 1.4, col);
+        }
+        Head::Cross => {
+            let (a, b, c2, d) = (at(10.0, 5.0), at(2.0, -5.0), at(10.0, -5.0), at(2.0, 5.0));
+            look::line(c, a.0, a.1, b.0, b.1, 1.6, col);
+            look::line(c, c2.0, c2.1, d.0, d.1, 1.6, col);
+        }
+    }
+}
+
+/// Paint a laid-out Mermaid chart with its top-left at (ox, oy).
+pub fn draw_chart(c: u64, d: &crate::charts::Chart, ox: f32, oy: f32, t: &Theme) {
+    use crate::charts::Item;
+    for it in &d.items {
+        match it {
+            Item::Box {
+                x,
+                y,
+                w,
+                h,
+                r: rad,
+                fill: f,
+                stroke,
+                dashed,
+            } => {
+                let rc = r(ox + x, oy + y, *w, *h);
+                if let Some(col) = role(*f, t, true) {
+                    round(c, rc, *rad, col);
+                }
+                if let Some(col) = role(*stroke, t, false) {
+                    if *dashed {
+                        let mut xx = rc.x;
+                        while xx < rc.right() {
+                            fill(c, r(xx, rc.y, 4.0f32.min(rc.right() - xx), 1.0), col);
+                            fill(
+                                c,
+                                r(xx, rc.bottom() - 1.0, 4.0f32.min(rc.right() - xx), 1.0),
+                                col,
+                            );
+                            xx += 8.0;
+                        }
+                    } else {
+                        look::outline(c, rc, *rad, 1.0, col);
+                    }
+                }
+            }
+            Item::Diamond {
+                x,
+                y,
+                w,
+                h,
+                fill: f,
+                stroke,
+            } => {
+                let (cx, cy) = (ox + x + w * 0.5, oy + y + h * 0.5);
+                if let Some(col) = role(*f, t, true) {
+                    let steps = (h * 0.5) as usize;
+                    for i in 0..steps {
+                        let k = i as f32 / steps.max(1) as f32;
+                        let half = w * 0.5 * (1.0 - k);
+                        fill(
+                            c,
+                            r(cx - half, cy - h * 0.5 * k - 1.0, half * 2.0, 1.0),
+                            col,
+                        );
+                        fill(c, r(cx - half, cy + h * 0.5 * k, half * 2.0, 1.0), col);
+                    }
+                }
+                if let Some(col) = role(*stroke, t, false) {
+                    look::line(c, cx, cy - h * 0.5, cx + w * 0.5, cy, 1.2, col);
+                    look::line(c, cx + w * 0.5, cy, cx, cy + h * 0.5, 1.2, col);
+                    look::line(c, cx, cy + h * 0.5, cx - w * 0.5, cy, 1.2, col);
+                    look::line(c, cx - w * 0.5, cy, cx, cy - h * 0.5, 1.2, col);
+                }
+            }
+            Item::Circle {
+                cx,
+                cy,
+                r: rad,
+                fill: f,
+                stroke,
+            } => {
+                let p = krate::gfx::types::Point {
+                    x: ox + cx,
+                    y: oy + cy,
+                };
+                if let Some(col) = role(*f, t, true) {
+                    let _ = canvas2d::fill_circle(c, p, *rad, col);
+                }
+                if let Some(col) = role(*stroke, t, false) {
+                    let _ = canvas2d::stroke_circle(c, p, *rad, 1.2, col);
+                }
+            }
+            Item::Wedge {
+                cx,
+                cy,
+                r: rad,
+                start,
+                sweep,
+                fill: f,
+            } => {
+                if let Some(col) = role(*f, t, false) {
+                    let p = krate::gfx::types::Point {
+                        x: ox + cx,
+                        y: oy + cy,
+                    };
+                    // An arc as wide as the radius, half way out, fills the
+                    // whole wedge.
+                    let _ = canvas2d::stroke_arc(c, p, rad * 0.5, *start, *sweep, *rad, col);
+                }
+            }
+            Item::Line {
+                pts,
+                role: rl,
+                width,
+                dashed,
+                head: h,
+                tail,
+            } => {
+                let Some(col) = role(*rl, t, false) else {
+                    continue;
+                };
+                for seg in pts.windows(2) {
+                    let (a, b) = (
+                        (ox + seg[0].0, oy + seg[0].1),
+                        (ox + seg[1].0, oy + seg[1].1),
+                    );
+                    if *dashed {
+                        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                        let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                        let n = (len / 6.0) as usize;
+                        for i in (0..n).step_by(2) {
+                            let (f0, f1) =
+                                (i as f32 / n as f32, ((i + 1) as f32 / n as f32).min(1.0));
+                            look::line(
+                                c,
+                                a.0 + dx * f0,
+                                a.1 + dy * f0,
+                                a.0 + dx * f1,
+                                a.1 + dy * f1,
+                                *width,
+                                col,
+                            );
+                        }
+                    } else {
+                        look::line(c, a.0, a.1, b.0, b.1, *width, col);
+                    }
+                }
+                let n = pts.len();
+                if n >= 2 {
+                    let tip = (ox + pts[n - 1].0, oy + pts[n - 1].1);
+                    let from = (ox + pts[n - 2].0, oy + pts[n - 2].1);
+                    head(c, *h, tip, from, col, t.bg);
+                    let tip0 = (ox + pts[0].0, oy + pts[0].1);
+                    let from0 = (ox + pts[1].0, oy + pts[1].1);
+                    head(c, *tail, tip0, from0, col, t.bg);
+                }
+            }
+            Item::Text {
+                x,
+                y,
+                s,
+                size,
+                anchor,
+                bold,
+                role: rl,
+            } => {
+                let col = role(*rl, t, false).unwrap_or(t.text);
+                let wgt = if *bold { 600 } else { 400 };
+                let w = look::width(c, s, *size, wgt);
+                let dx = match anchor {
+                    1 => w * 0.5,
+                    2 => w,
+                    _ => 0.0,
+                };
+                look::text(c, s, ox + x - dx, oy + y, *size, wgt, col);
+            }
+        }
+    }
 }
 
 /// Where the caret is drawn when it is in a table cell: x, top and height

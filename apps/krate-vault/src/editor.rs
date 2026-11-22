@@ -1004,9 +1004,8 @@ impl Doc {
         let first = (open + 1..close)
             .map(|i| self.buf.line(i).trim())
             .find(|l| !l.is_empty() && !l.starts_with("%%"))?;
-        if !(first.starts_with("graph") || first.starts_with("flowchart")) {
-            return None;
-        }
+        // Every kind Vault draws (charts.rs); others stay code.
+        crate::charts::kind(first)?;
         Some(Span {
             kind: SpanKind::Diagram,
             first: open,
@@ -1585,7 +1584,11 @@ mod obsidian_blocks {
         let s = d.span(1).unwrap();
         assert_eq!((s.kind, s.first, s.last), (SpanKind::Diagram, 0, 2));
         assert_eq!(d.span(2).map(|s| s.first), Some(0));
-        assert_eq!(d.span(4), None, "a sequence diagram stays code");
+        assert_eq!(
+            d.span(4).map(|s| s.kind),
+            Some(SpanKind::Diagram),
+            "a sequence diagram is drawn"
+        );
         assert_eq!(d.span(8), None);
     }
 
