@@ -16,3 +16,19 @@
   Content-Type: application/octet-stream
 /CNAME
   Content-Type: application/octet-stream
+
+# For AI agents (IC-997, scripts/build-agent-files.py). The home page names
+# where an agent finds Krate's API catalog, ARD catalog, MCP server card,
+# agent skills and the facts written for it (RFC 8288, RFC 9727).
+/
+  Link: </.well-known/api-catalog>; rel="api-catalog", </.well-known/ard.json>; rel="ard", </.well-known/mcp/server-card.json>; rel="service-desc"; type="application/json", </.well-known/agent-skills/index.json>; rel="describedby"; type="application/json", </llms.txt>; rel="describedby"; type="text/markdown", </docs/>; rel="service-doc"
+/.well-known/api-catalog
+  Content-Type: application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"
+/.well-known/*
+  Access-Control-Allow-Origin: *
+/*.md
+  Access-Control-Allow-Origin: *
+/llms.txt
+  Access-Control-Allow-Origin: *
+/llms-full.txt
+  Access-Control-Allow-Origin: *

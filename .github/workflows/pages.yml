@@ -18,6 +18,9 @@ on:
       - "docs/pages/**"
       - "docs/answers/**"
       - "docs/public-facts.json"
+      - "docs/agents/**"
+      - "scripts/build-agent-files.py"
+      - "cloud/site/**"
       # The Krate Mode prompt, served at the site root. Without this a
       # regenerated prompt would sit in the repo while the live URL kept
       # handing models the old API.
@@ -554,6 +557,11 @@ jobs:
           python3 scripts/test-public-facts.py
           python3 scripts/public_facts.py --check
           python3 scripts/public_facts.py --output _site/llms.txt
+          # What AI agents look for (IC-997): the MCP server card, ARD and AI
+          # catalogs, the API catalog, the agent skill, and every page as
+          # markdown. After llms.txt, which the home page's markdown is.
+          python3 scripts/build-agent-files.py --self-test
+          python3 scripts/build-agent-files.py _site
           python3 scripts/test-site-seo.py
           python3 scripts/site-seo.py finalize _site
           python3 scripts/site-seo.py check _site --require-priority

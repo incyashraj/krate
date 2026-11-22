@@ -45,3 +45,55 @@
     targets.forEach(t => io2.observe(t));
   }
 })();
+
+/* Tools an AI agent in the browser can use on any page (WebMCP, IC-997):
+   search the public Krate gallery, open an app from its link, and read the
+   facts written for AI readers. Registered only where the browser offers
+   document.modelContext (or the older navigator.modelContext); every other
+   visitor runs none of this. Each tool does what its description says and
+   nothing else: no sign-in, no writes. */
+(() => {
+  const mc = (typeof document !== 'undefined' && document.modelContext) || (typeof navigator !== 'undefined' && navigator.modelContext);
+  if (!mc || typeof mc.registerTool !== 'function') return;
+  const HUB = 'https://hub.krate.tech';
+  const text = (t) => ({ content: [{ type: 'text', text: t }] });
+  const tools = [
+    {
+      name: 'search_krate_apps',
+      description: 'Search the public Krate gallery for apps by what they do. Each result has a link that opens the app in any browser, phones included, and the same .krate file runs natively on macOS, Windows and Linux.',
+      inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'What the app should do, in plain words, e.g. "notes" or "label printer"' } }, required: ['query'] },
+      annotations: { readOnlyHint: true },
+      async execute({ query }) {
+        const r = await fetch(`${HUB}/apps?q=${encodeURIComponent(String(query || '').slice(0, 200))}`);
+        if (!r.ok) return text('The Krate gallery did not answer just now. Try again in a moment.');
+        const apps = ((await r.json()).apps || []).slice(0, 10);
+        if (!apps.length) return text(`No public Krate app matches "${query}". A person can make one at https://krate.tech/app/ or by asking Claude with the Krate connector (https://hub.krate.tech/mcp).`);
+        return text(apps.map((a) => `${a.meta.name}${a.meta.description ? ' -- ' + a.meta.description : ''}\n  ${a.url}`).join('\n'));
+      },
+    },
+    {
+      name: 'open_krate_app',
+      description: 'Open a Krate app in this tab from its hub.krate.tech link, as found by search_krate_apps.',
+      inputSchema: { type: 'object', properties: { link: { type: 'string', description: 'The app link, https://hub.krate.tech/a/...' } }, required: ['link'] },
+      async execute({ link }) {
+        const ok = /^https:\/\/hub\.krate\.tech\/(a|run)\/[A-Za-z0-9]+$/.test(String(link || ''));
+        if (!ok) return text('That is not a Krate app link. App links look like https://hub.krate.tech/a/v1a2b3c4d5e.');
+        location.assign(String(link).replace('/a/', '/run/'));
+        return text(`Opening ${link}.`);
+      },
+    },
+    {
+      name: 'get_krate_facts',
+      description: 'What Krate is, when to choose it, how it compares with Electron, Tauri and web apps, and its recorded measurements, written for AI readers.',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true },
+      async execute() {
+        const r = await fetch('/llms.txt');
+        return text(r.ok ? await r.text() : 'See https://krate.tech/llms.txt');
+      },
+    },
+  ];
+  for (const tool of tools) {
+    try { mc.registerTool(tool); } catch (e) { /* an older or stricter browser: the page works as before */ }
+  }
+})();

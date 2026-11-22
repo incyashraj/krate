@@ -104,7 +104,8 @@ def main():
     claims = benchmark_claims()
     inventory = bundle_inventory()
     labels = {"app-file-size": "Historical app bundle versus installed application",
-              "memory-50k": "Memory, 50,000 lines", "warm-start-50k": "Warm open, 50,000 lines"}
+              "memory-50k": "Memory, 50,000 lines", "warm-start-50k": "Warm open, 50,000 lines",
+              "memory-5k": "Memory, 5,000 lines"}
     benchmark_rows = "\n".join(
         f'<tr><td>{labels[c["id"]]}</td><td>{html_escape(c["us"])}</td>'
         f'<td>{html_escape(c["them"])}</td></tr>' for c in claims)

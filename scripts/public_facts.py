@@ -47,6 +47,22 @@ def benchmark_claims(root=ROOT):
     return selected
 
 
+def released_version(root=ROOT):
+    """The newest release the changelog records: (version, date).
+
+    llms.txt said "Current release: Krate 0.5.4" for weeks after 0.6.0
+    shipped, because the release lived in a hand-edited facts field. Every
+    release already writes `## [x.y.z] - YYYY-MM-DD` into CHANGELOG.md, so
+    that line is the one source; Unreleased and pre-release headings do not
+    match it.
+    """
+    text = (root / "CHANGELOG.md").read_text()
+    match = re.search(r"^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})\s*$", text, re.M)
+    if not match:
+        raise ValueError("CHANGELOG.md records no release as '## [x.y.z] - YYYY-MM-DD'")
+    return match[1], match[2]
+
+
 def source_url(path):
     return f"{load_facts()['repository']}/blob/main/{path}"
 
@@ -88,11 +104,12 @@ def render_llms():
     runtime_size = re.search(r"installed once at ([\d.]+ MiB)", claims[0]["caveat"])
     if not runtime_size:
         raise ValueError("The payload comparison must account for its shared runtime")
-    # The release comes from the facts file, not the network: this file is
+    # The release comes from the changelog, not the network: this file is
     # checked in CI, where the releases API may not answer.
+    version, released = released_version()
     lines = ["# Krate", "", "> " + facts["summary"], "",
              facts["description"], "", "## Facts", "",
-             f"- Current release: Krate {facts['current_release']} ({facts['current_release_date']}).",
+             f"- Current release: Krate {version} ({released}).",
              "- Runtimes: macOS (Apple silicon, Intel), Windows (x64, ARM64), Linux (x86_64, arm64).",
              "- What the recipient installs: " + facts["prerequisite"],
              "- Sandbox: " + facts["security"],
@@ -102,7 +119,16 @@ def render_llms():
              "- When to choose Krate: " + facts["when_to_choose"],
              "- Bundles: " + facts["bundle_accounting"],
              "- Facts page: https://krate.tech/facts/",
-             "", "## Not to be confused with", "", facts["disambiguation"],
+             "", "## How Krate compares", ""]
+    # Every measured number in the comparison is a sealed claim's number:
+    # prose that drifts from the measurement fails the build, not a reader.
+    sealed = " ".join(f"{c['us']} {c['them']}" for c in claims) + f" {runtime_size[1]}"
+    for line in facts["compared"]:
+        for number in re.findall(r"\d[\d,]*(?:\.\d+)?\s(?:KiB|MiB|ms)\b", line):
+            if number not in sealed:
+                raise ValueError(f"'{number}' in the comparison is not a sealed measurement")
+    lines += ["- " + line for line in facts["compared"]]
+    lines += ["", "## Not to be confused with", "", facts["disambiguation"],
              "", "## Scoped benchmark", "",
              "The recorded 2026-08-25 notes comparison.",
              claims[0]["scope"] + ".", ""]

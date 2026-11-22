@@ -10,7 +10,7 @@
 name = "krate-site"
 # Only for addresses ending .html (run_worker_first below): see site.js.
 main = "site.js"
-compatibility_date = "2026-11-01"
+compatibility_date = "2026-10-30"
 workers_dev = true
 # The address people use (the founder moved krate.tech's DNS off GitHub
 # Pages on 2026-11-22). www.krate.tech keeps its own redirect to here.
@@ -23,5 +23,6 @@ directory = ".site"
 binding = "ASSETS"
 html_handling = "auto-trailing-slash"
 not_found_handling = "none"
-# /page.html is served as itself, never redirected to /page (site.js).
-run_worker_first = ["/*.html"]
+# Page addresses run site.js: markdown for an agent that asks for it, and
+# /page.html served as itself. Everything else is a plain asset.
+run_worker_first = ["/", "/*/", "/*.html"]

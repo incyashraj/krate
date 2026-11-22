@@ -74,13 +74,29 @@ class PublicFactsTests(unittest.TestCase):
         self.assertIn("Historical app bundle versus installed application", rendered)
         self.assertNotIn("Historical code payload", rendered)
 
-    def test_three_claims_use_same_audited_run(self):
+    def test_published_claims_use_same_audited_run(self):
         claims = facts.benchmark_claims()
-        self.assertEqual(len(claims), 3)
+        self.assertEqual(len(claims), 4)
         self.assertEqual(len({c["evidence_run"] for c in claims}), 1)
         self.assertEqual({c["measured_on"] for c in claims}, {"2026-08-25"})
         self.assertEqual(claims[1]["us"], "178.5 MiB, one process")
         self.assertEqual(claims[2]["us"], "237.1 ms median")
+        self.assertEqual(claims[3]["us"], "62.0 MiB, one process")
+
+    def test_the_release_is_the_changelogs_newest(self):
+        version, date = facts.released_version()
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertIn(f"## [{version}] - {date}", (facts.ROOT / "CHANGELOG.md").read_text())
+
+    def test_a_comparison_number_must_be_a_sealed_measurement(self):
+        real = facts.load_facts
+        def tampered(root=facts.ROOT):
+            f = real(root)
+            f["compared"] = f["compared"] + ["Made up: 99.9 MiB against 999.9 MiB."]
+            return f
+        with patch.object(facts, "load_facts", tampered):
+            with self.assertRaisesRegex(ValueError, "not a sealed measurement"):
+                facts.render_llms()
 
     def test_missing_raw_samples_are_not_required_for_site_build(self):
         # The generated pages explain that public analysis != all retained raw data.
