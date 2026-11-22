@@ -311,24 +311,38 @@ export function lineView(line, base, { owner = false } = {}) {
   return view;
 }
 
+/// The line one of `owners` already holds for `appId`, first owner first, or
+/// null (K-1328). A person who signs in several ways owns their app's line
+/// under whichever sign-in first published it; a later publish from another
+/// sign-in must find that line, not start a second app beside it.
+export async function ownedLineFor(env, owners, appId) {
+  for (const owner of owners || []) {
+    const { id, line } = await lineFor(env, owner, appId);
+    if (line && line.owner === owner) return { id, line, owner };
+  }
+  return null;
+}
+
 /// GET /lines/<id>, GET /lines (the caller's own), POST /lines/<id>/current.
-export async function linesRoute(request, url, env, { ownerOf, identity, base }) {
+export async function linesRoute(request, url, env, { ownerOf, ownersOf, identity, base }) {
   const rest = url.pathname.replace(/^\/lines\/?/, "").split("/").filter(Boolean);
   const me = identity ? ownerOf(identity) : null;
+  // Every owner this person may act as (K-1328); older callers pass ownerOf only.
+  const mine = identity ? (ownersOf ? ownersOf(identity) : [me].filter(Boolean)) : [];
   // GET /lines?app=<manifest app id>: the caller's own app with that id, so
   // Studio can say "Publish update (v3)" before it publishes.
   if (rest.length === 0 && request.method === "GET") {
     if (!me) return { status: 401, body: { error: "sign in to see your apps" } };
     const appId = String(url.searchParams.get("app") || "").slice(0, 200);
     if (!appId) return { status: 400, body: { error: "say which app (?app=<its id>)" } };
-    const { line } = await lineFor(env, me, appId);
-    if (!line || line.owner !== me) return { status: 404, body: { error: "not published yet" } };
-    return { status: 200, body: lineView(line, base, { owner: true }) };
+    const held = await ownedLineFor(env, mine, appId);
+    if (!held) return { status: 404, body: { error: "not published yet" } };
+    return { status: 200, body: lineView(held.line, base, { owner: true }) };
   }
   const id = rest[0];
   const line = await readLine(env, id);
   if (!line) return { status: 404, body: { error: "no such app" } };
-  const owns = me && me === line.owner;
+  const owns = mine.includes(line.owner);
   if (rest.length === 1 && request.method === "GET") {
     return { status: 200, body: lineView(line, base, { owner: owns }) };
   }

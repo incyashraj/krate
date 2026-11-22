@@ -226,8 +226,9 @@ export async function tabEvent(request, env, d) {
   let maker = app.record ? "other" : "-";
   if (app.record && request.headers.get("authorization")) {
     const identity = await d.verifyGitHub(request, env).catch(() => null);
-    const me = d.ownerOf(identity);
-    if (me && me === d.ownerOfRecord(app.record)) maker = "maker";
+    // Any of the maker's sign-ins is the maker (K-1328).
+    const mine = d.ownersOf ? d.ownersOf(identity) : [d.ownerOf(identity)].filter(Boolean);
+    if (mine.includes(d.ownerOfRecord(app.record))) maker = "maker";
   }
   // A proof run (the Player's `?probe=1`) is not a person: labelled so no
   // count reads it as one, and nobody is mailed about it.

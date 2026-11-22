@@ -58,6 +58,7 @@ import {
   currentHash,
   dropVersion,
   lineFor,
+  ownedLineFor,
   linesRoute,
   publisherRefusal,
   settleRows,
@@ -721,7 +722,7 @@ export default {
       if (request.method === "POST" && pathname === "/tab") {
         const over = await rateLimited(request, env, "tab");
         if (over) return cors(over);
-        return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownerOfRecord, netOf, isBot, visitorHash }));
+        return cors(await tabEvent(request, env, { verifyGitHub, ownerOf, ownersOf, ownerOfRecord, netOf, isBot, visitorHash }));
       }
       // A report on an app from anyone who opened it, no account needed.
       if (request.method === "POST" && /^\/report\/app\/[0-9a-f]{64}$/.test(pathname)) {
@@ -987,7 +988,7 @@ export default {
         }
         const identity = request.headers.get("authorization") ? await verifyGitHub(request, env).catch(() => null) : null;
         const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-        const answer = await linesRoute(request, url, env, { ownerOf, identity, base });
+        const answer = await linesRoute(request, url, env, { ownerOf, ownersOf, identity, base });
         return cors(json(answer.body, answer.status));
       }
       if (request.method === "GET" && pathname.startsWith("/c/")) {
@@ -1114,6 +1115,43 @@ function ownerOfRecord(record) {
   return login ? `github:${String(login).toLowerCase()}` : null;
 }
 
+/// Every owner a verified identity may act as (K-1328): the GitHub login
+/// GitHub vouched for, and the Krate account. One person signs in many ways
+/// -- GitHub on the command line, Google in a browser -- and each way used
+/// to own only what it alone had published, so a republish from the other
+/// sign-in listed every app twice. A check asks this list; what a NEW
+/// publish is filed under is still one principal (`ownerOf`, or the one
+/// that already owns the app's line -- see `publishOwner`).
+function ownersOf(identity) {
+  const out = [];
+  if (!identity) return out;
+  if (identity.github === true && identity.login) out.push(`github:${String(identity.login).toLowerCase()}`);
+  if (identity.id) out.push(`account:${identity.id}`);
+  return out;
+}
+
+/// Whether `identity` owns a stored listing, ownership record or channel.
+function ownsRecord(identity, record) {
+  const theirs = ownerOfRecord(record);
+  return Boolean(theirs) && ownersOf(identity).includes(theirs);
+}
+
+/// The GitHub login GitHub itself vouched for on this account, or "".
+///
+/// Written by a GitHub sign-in or a GitHub link only (`github_login`). An
+/// older account has none written, so its `ghlogin:<login>` pointer -- which
+/// only a GitHub sign-in ever writes -- must name this account too. The
+/// account's own `login` is never trusted alone: an email sign-in sets it
+/// from the address, and boss@attacker.example would be "boss" (K-1085).
+async function vouchedGitHubLogin(env, userId, record) {
+  if (!record) return "";
+  if (typeof record.github_login === "string" && record.github_login) return record.github_login;
+  const providers = Array.isArray(record.providers) ? record.providers : [];
+  if (!providers.includes("github") || !record.login) return "";
+  const pointer = await env.APPS.get(`ghlogin:${String(record.login).toLowerCase()}`).catch(() => null);
+  return pointer === userId ? String(record.login) : "";
+}
+
 /// Whether a developer namespace (`<login>.krate.tech`, `/c/<login>/...`)
 /// may show this record: only a GitHub-vouched owner of that login.
 function ownedByGitHubLogin(record, login) {
@@ -1126,17 +1164,19 @@ function ownedByGitHubLogin(record, login) {
 /// A read hiccup answers "no", which is the pre-fix behaviour for that one
 /// request rather than a failed publish.
 async function publishedBySomeoneElse(env, hash, owner) {
+  // One owner, or every owner one person may act as (K-1328).
+  const mine = Array.isArray(owner) ? owner : [owner];
   try {
     const listing = await env.APPS.get(`app:${hash}`);
     if (listing) {
       const prior = JSON.parse(listing);
       const theirs = ownerOfRecord(prior);
-      if (theirs) return theirs !== owner;
+      if (theirs) return !mine.includes(theirs);
     }
     const record = await env.APPS.get(`owner:${hash}`);
     if (record) {
       const theirs = ownerOfRecord(JSON.parse(record));
-      return Boolean(theirs) && theirs !== owner;
+      return Boolean(theirs) && !mine.includes(theirs);
     }
   } catch (_) {}
   return false;
@@ -1283,10 +1323,25 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     rationale: c.rationale || "",
     required: Boolean(c.required),
   }));
-  // Who owns what this publish writes (K-1085): never a bare login.
-  const owner = ownerOf(identity);
+  // Who owns what this publish writes (K-1085): never a bare login. When one
+  // of this person's sign-ins already holds the app's line, an update goes
+  // there whichever way they signed in today (K-1328): the same owner keeps
+  // the same storage tag, so what people saved in the app carries over, and
+  // the app keeps one listing instead of growing a second beside it.
+  let owner = ownerOf(identity);
+  const appIdOfBundle = judgement.manifest && judgement.manifest.app && judgement.manifest.app.id;
+  if (owner && appIdOfBundle) {
+    try {
+      const held = await ownedLineFor(env, ownersOf(identity), appIdOfBundle);
+      if (held) owner = held.owner;
+    } catch (_) {
+      // A quota day: the default owner, as before this check existed.
+    }
+  }
   if (!owner) return text("publishing needs a sign-in -- run `krate publish` and it will ask", 401);
-  const vouched = owner.startsWith("github:");
+  // GitHub vouched for this person (directly, or through the account it is
+  // linked to): the listing links their profile and reads "verified".
+  const vouched = identity.github === true;
 
   // Identical bytes are idempotent, and authorship does not transfer
   // (IC-387). Content addressing means anyone can re-POST bytes they
@@ -1306,7 +1361,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
     );
   }
 
-  if (await publishedBySomeoneElse(env, hash, owner)) {
+  if (await publishedBySomeoneElse(env, hash, [owner, ...ownersOf(identity)])) {
     const base2 = (env.PUBLIC_BASE || "").replace(/\/$/, "");
     return json({
       url: `${base2}/a/${hash}`,
@@ -1508,16 +1563,29 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // the gallery shows one row per app. The old bundles and aliases stay --
   // every link already sent keeps working -- only the gallery rows go.
   // Rows that belong to a line are its versions and are left to it.
+  // "This author" is any of the person's sign-ins (K-1328): an app first
+  // published with GitHub and republished from a Google sign-in is still
+  // theirs, and its old row must fold in rather than stay listed beside it.
+  const authors = [owner, ...ownersOf(identity)];
   try {
-    const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
-    for (const key of listing.keys) {
+    // Every listing, page by page: one page of 200 stops seeing rows the
+    // moment the hub holds more than 200 apps.
+    const keys = [];
+    let cursor;
+    for (let page = 0; page < 50; page += 1) {
+      const listing = await env.APPS.list({ prefix: "app:", limit: 1000, ...(cursor ? { cursor } : {}) });
+      keys.push(...listing.keys);
+      if (listing.list_complete !== false || !listing.cursor) break;
+      cursor = listing.cursor;
+    }
+    for (const key of keys) {
       const otherHash = key.name.slice("app:".length);
       if (otherHash === hash) continue;
       const raw = await env.APPS.get(key.name);
       if (!raw) continue;
       const other = JSON.parse(raw);
       if (other.line) continue;
-      if (line && ownerOfRecord(other) === owner && other.name === meta.name) {
+      if (line && authors.includes(ownerOfRecord(other)) && other.name === meta.name) {
         // Published before apps had versions: it becomes this app's earlier
         // version (v0) rather than vanishing, so its link says a newer one
         // exists and a pick naming it follows the app (IC-976).
@@ -1527,7 +1595,7 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
         await env.APPS.put(key.name, JSON.stringify(other));
         continue;
       }
-      if (ownerOfRecord(other) === owner && other.name === meta.name) {
+      if (authors.includes(ownerOfRecord(other)) && other.name === meta.name) {
         await env.APPS.delete(key.name);
         // A retired release's bytes are anyone's to re-publish (see
         // `namable`), so its ownership record retires with its listing. The
@@ -1631,7 +1699,7 @@ async function ownedApp(hash, identity, env) {
     return { error: text("publish the app first -- images belong to a listing", 404) };
   }
   const meta = JSON.parse(raw);
-  if (!ownerOf(identity) || ownerOfRecord(meta) !== ownerOf(identity)) {
+  if (!ownsRecord(identity, meta)) {
     return { error: text("only the app's author can change its listing", 403) };
   }
   return { meta };
@@ -1799,8 +1867,7 @@ async function unpublish(request, hash, env) {
   const ownerRaw = raw ? null : await env.APPS.get(`owner:${hash}`);
   if (!raw && !ownerRaw) return text("not listed", 404);
   const meta = raw ? JSON.parse(raw) : null;
-  const author = meta ? ownerOfRecord(meta) : ownerOfRecord(JSON.parse(ownerRaw));
-  if (!ownerOf(identity) || author !== ownerOf(identity)) {
+  if (!ownsRecord(identity, meta || JSON.parse(ownerRaw))) {
     return text("only the app's author can remove it", 403);
   }
   // Delisting is not deleting. The listing is one of four places an app
@@ -2276,8 +2343,7 @@ async function takedownAppeal(request, hash, env) {
   if (!raw) return text("not found", 404);
   const record = JSON.parse(raw);
   const listed = await env.APPS.get(`app:${hash}`);
-  const author = listed ? ownerOfRecord(JSON.parse(listed)) : null;
-  if (!author || author !== ownerOf(identity)) return text("only the app's author can appeal its removal", 403);
+  if (!listed || !ownsRecord(identity, JSON.parse(listed))) return text("only the app's author can appeal its removal", 403);
   const body = await readJson(request);
   const appealText = String((body && body.text) || "").trim().slice(0, 2000);
   if (!appealText) return text("an appeal needs a sentence: what is wrong with the reason given", 400);
@@ -3590,6 +3656,7 @@ async function ensureUser(env, provider, stableId, profile) {
       avatar_url: profile.avatar_url || "",
       providers: [provider],
     };
+    if (provider === "github" && profile.login) record.github_login = profile.login;
     if (profile.verified_email) record.verified_emails = [profile.verified_email.toLowerCase()];
     if (profile.unverified_email && !profile.email) record.unverified_email = profile.unverified_email.toLowerCase();
     await env.APPS.put(`user:${userId}`, JSON.stringify(record));
@@ -3618,6 +3685,11 @@ async function ensureUser(env, provider, stableId, profile) {
     record.name = record.name || profile.name || "";
     record.avatar_url = record.avatar_url || profile.avatar_url || "";
     record.email = record.email || profile.email || "";
+    // The GitHub login GitHub itself vouched for (K-1328): what makes every
+    // sign-in of this account that login. Only a GitHub sign-in writes it.
+    if (provider === "github" && profile.login && record.github_login !== profile.login) {
+      record.github_login = profile.login;
+    }
     // An inbox proved by this sign-in becomes one of the account's
     // organisation principals (IC-947). Written once, then free.
     if (profile.verified_email) {
@@ -4616,14 +4688,18 @@ async function verifyGitHub(request, env) {
     if (!userId) return null;
     const record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "null");
     if (!record) return null;
+    // An account that GitHub vouched for -- it signed in with GitHub, or
+    // linked it -- is that GitHub login from any of its sign-ins (K-1328):
+    // the login comes from GitHub's own word, never the account's text.
+    const vouched = await vouchedGitHubLogin(env, userId, record);
     // The inboxes this account proved (an email link, or Google with
     // email_verified): its organisation principals (IC-947). `id` is the
     // account's random id: what it owns public listings by (K-1085).
     return {
-      login: record.login,
+      login: vouched || record.login,
       name: record.name,
       avatar_url: record.avatar_url,
-      github: false,
+      github: Boolean(vouched),
       id: userId,
       emails: Array.isArray(record.verified_emails) ? record.verified_emails : [],
       // The organisations whose company sign-in made this session (IC-948).
@@ -4634,7 +4710,7 @@ async function verifyGitHub(request, env) {
   const cacheKey = `token:${await sha256Hex(new TextEncoder().encode(token))}`;
   const cached = await env.APPS.get(cacheKey);
   // Only this function writes the cache, and only after GitHub vouched.
-  if (cached) return { ...JSON.parse(cached), github: true };
+  if (cached) return withAccount(env, { ...JSON.parse(cached), github: true });
 
   const response = await fetch("https://api.github.com/user", {
     headers: {
@@ -4662,7 +4738,18 @@ async function verifyGitHub(request, env) {
     // down, the K-082 disease in a second spot. Without the cache the next
     // call costs one extra GitHub round trip, which is nothing.
   }
-  return { ...identity, github: true };
+  return withAccount(env, { ...identity, github: true });
+}
+
+/// A GitHub token's identity, with the Krate account that GitHub login
+/// signs in to (K-1328), so what that account published from Google or an
+/// email sign-in is the GitHub token's to manage too. `ghlogin:` is written
+/// only by a GitHub sign-in or link, so the account really is this login's.
+/// One read; a read hiccup leaves the identity as GitHub alone.
+async function withAccount(env, identity) {
+  if (!identity || !identity.login || identity.id) return identity;
+  const id = await env.APPS.get(`ghlogin:${String(identity.login).toLowerCase()}`).catch(() => null);
+  return id ? { ...identity, id } : identity;
 }
 
 // ------------------------------------------------------------- big files
@@ -4896,7 +4983,7 @@ async function bigStart(request, env) {
     try {
       prior = owner ? JSON.parse(owner) : null;
     } catch (_) {}
-    if (!prior || ownerOfRecord(prior) !== ownerOf(identity)) {
+    if (!prior || !ownsRecord(identity, prior)) {
       return text("that app is not one you published", 403);
     }
   }
@@ -4927,6 +5014,9 @@ async function bigStart(request, env) {
     principals: org ? principalsOf(identity) : undefined,
     login: identity.login,
     owner: ownerOf(identity),
+    // Every owner this person may act as (K-1328), so the upload attaches
+    // to a listing any of their sign-ins published.
+    owners: ownersOf(identity),
     identity: {
       login: identity.login,
       name: identity.name || "",
@@ -5258,7 +5348,8 @@ async function bigVerdict(request, env, id) {
   // An upload started before owners were recorded carries none; it was a
   // BIG_PUBLISHERS login, which is a GitHub login (the legacy default).
   const uploader = record.owner || `github:${String(record.login || "").toLowerCase()}`;
-  if (!meta || ownerOfRecord(meta) !== uploader) return refuse("that app is no longer listed");
+  const uploaders = Array.isArray(record.owners) && record.owners.length ? record.owners : [uploader];
+  if (!meta || !uploaders.includes(ownerOfRecord(meta))) return refuse("that app is no longer listed");
   const previous = meta[record.kind];
   meta[record.kind] = { key: record.key, size: record.size, sha256: record.sha256 };
   try {
@@ -7099,7 +7190,7 @@ async function publishBuilt(env, who, bytes, name) {
   if (judged.crashed) return { problem: judged.problem };
   if (!judged.ok) return { problem: `not a valid .krate bundle: ${judged.problem}` };
   const identity = { login: who.login, name: who.name, avatar_url: who.avatar_url, github: who.github === true, id: who.iid };
-  if (!who.owner || ownerOf(identity) !== who.owner) return { problem: "this sign-in no longer names the account it was made for; sign in again" };
+  if (!who.owner || !ownersOf(identity).includes(who.owner)) return { problem: "this sign-in no longer names the account it was made for; sign in again" };
   const hash = await sha256Hex(body);
   const admitted = await admitJudged(env, {
     identity,
