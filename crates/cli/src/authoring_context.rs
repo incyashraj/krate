@@ -213,7 +213,8 @@ store on disk (its key-value store and database), `expect_notified =\n\
 for it -- not against anything the app says on screen, so an app that\n\
 saves, reminds or fetches proves it did.\n\
 A `click` step can add `button = \"secondary\"` to right-click (a\n\
-context menu).\n\
+context menu), and any step `window = 2` to act on and read the second\n\
+window the app opened (a pop-out).\n\
 `key = \"Shift+ArrowLeft\"` or\n\
 `\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) or `\"Primary+Alt+f\"`\n\
 (Alt is Option on a Mac) presses a chord,\n\

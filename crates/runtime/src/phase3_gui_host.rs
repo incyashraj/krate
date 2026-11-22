@@ -2732,6 +2732,28 @@ impl Phase3GuiHost {
             return;
         };
         let number = index + 1;
+        // `window = n` acts on and reads the n-th window the app opened (a
+        // pop-out), K-1353; the first by default.
+        let window = match step.window {
+            None => window,
+            Some(n) => match self.windows.get(n.saturating_sub(1) as usize).copied() {
+                Some(chosen) => chosen,
+                None => {
+                    let open = self.windows.len();
+                    if let Some(driver) = self.usability.as_mut() {
+                        driver.report.task = Some(crate::usability::Observation::Broke {
+                            detail: format!(
+                                "step {number}: there is no window {n}; {open} are open"
+                            ),
+                        });
+                        driver.report.task_name = Some(name.clone());
+                        driver.report.task_steps_done = index;
+                        driver.task_dispatched_at = None;
+                    }
+                    return;
+                }
+            },
+        };
         // An action is settling: give the app its frame before the next
         // step, the same grace the click and keyboard steps get.
         if let Some(at) = dispatched_at {

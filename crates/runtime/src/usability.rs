@@ -144,6 +144,10 @@ pub struct TaskStep {
     /// "middle".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub button: Option<String>,
+    /// Which window the step acts on and reads, counting from 1 in the
+    /// order the app opened them (a pop-out is 2). The first by default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u32>,
     /// Hold a key down for a while, "key milliseconds" ("w 3000"): walking
     /// in a game, scrolling with an arrow key. Released when the time is up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,6 +266,9 @@ impl TaskStep {
             return Err("`button` goes with a `click` or `click_at` step".to_string());
         }
         self.pointer_button()?;
+        if self.window == Some(0) {
+            return Err("windows count from 1: `window = 1` is the first".to_string());
+        }
         if let Some(Err(why)) = self.held_key() {
             return Err(why);
         }
@@ -1159,5 +1166,22 @@ mod button_tests {
             step(None, Some("secondary")).validate().is_err(),
             "a button needs a click"
         );
+    }
+}
+
+#[cfg(test)]
+mod window_step_tests {
+    use super::*;
+
+    #[test]
+    fn a_step_may_name_its_window_counting_from_one() {
+        let step = |w: Option<u32>| TaskStep {
+            shoot: Some("x.png".into()),
+            window: w,
+            ..Default::default()
+        };
+        assert!(step(None).validate().is_ok());
+        assert!(step(Some(2)).validate().is_ok());
+        assert!(step(Some(0)).validate().is_err());
     }
 }
