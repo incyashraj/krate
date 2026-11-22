@@ -719,11 +719,12 @@ impl Raster {
         let Some(p) = self.px.get_mut(i..i + 3) else {
             return;
         };
-        let a = a.min(1.0);
-        let c = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
-        for k in 0..3 {
-            p[k] = (f32::from(p[k]) + (f32::from(c[k]) - f32::from(p[k])) * a) as u8;
-        }
+        // Integer blending: this runs for every pixel of every line.
+        let a = (a.min(1.0) * 256.0) as u32;
+        let inv = 256 - a;
+        p[0] = ((u32::from(p[0]) * inv + ((rgb >> 16) & 0xff) * a) >> 8) as u8;
+        p[1] = ((u32::from(p[1]) * inv + ((rgb >> 8) & 0xff) * a) >> 8) as u8;
+        p[2] = ((u32::from(p[2]) * inv + (rgb & 0xff) * a) >> 8) as u8;
     }
 
     pub fn get(&self, x: u32, y: u32) -> [u8; 4] {
@@ -960,5 +961,80 @@ mod tests {
         assert!(r.px.chunks(4).all(|p| p[..3] != [0, 255, 0]));
         r.line(5.0, -100.0, 5.0, 100.0, 0x0000FF, 1.0);
         assert!(r.get(5, 0)[2] > 200 && r.get(5, 19)[2] > 200);
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+
+    /// `cargo test --release graph::bench -- --ignored --nocapture`: one
+    /// step and one picture at 10,000 notes, timed.
+    #[test]
+    #[ignore]
+    fn ten_thousand_notes_frame_cost() {
+        let n = 10_000u32;
+        let nodes: Vec<Node> = (0..n)
+            .map(|_| Node {
+                x: 0.0,
+                y: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+                kind: Kind::Note,
+                label: String::new(),
+                path: None,
+                degree: 0,
+                color: None,
+                fixed: false,
+            })
+            .collect();
+        let mut edges = Vec::new();
+        let mut z: u64 = 7;
+        for i in 0..n {
+            for _ in 0..5 {
+                z = z
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let j = ((z >> 33) % u64::from(n)) as u32;
+                if j != i {
+                    edges.push((i.min(j), i.max(j)));
+                }
+            }
+        }
+        edges.sort_unstable();
+        edges.dedup();
+        let mut g = Graph::from_parts(nodes, edges);
+        let opt = Options::default();
+        let t = std::time::Instant::now();
+        for _ in 0..10 {
+            g.tick(&opt);
+        }
+        let tick = t.elapsed().as_secs_f64() / 10.0;
+        let mut r = Raster::new(724, 720);
+        let t = std::time::Instant::now();
+        r.clear(0x1C1C1C);
+        let (x0, y0, x1, y1) = g.bounds();
+        let zoom = (724.0 / (x1 - x0)).min(720.0 / (y1 - y0));
+        for &(a, b) in &g.edges {
+            let (na, nb) = (&g.nodes[a as usize], &g.nodes[b as usize]);
+            r.line(
+                (na.x - x0) * zoom,
+                (na.y - y0) * zoom,
+                (nb.x - x0) * zoom,
+                (nb.y - y0) * zoom,
+                0x3F3F3F,
+                1.0,
+            );
+        }
+        for nd in &g.nodes {
+            r.disc((nd.x - x0) * zoom, (nd.y - y0) * zoom, 2.0, 0xB3B3B3, 1.0);
+        }
+        let draw = t.elapsed().as_secs_f64();
+        std::println!(
+            "edges {} tick {:.1} ms picture {:.1} ms",
+            g.edges.len(),
+            tick * 1000.0,
+            draw * 1000.0
+        );
     }
 }

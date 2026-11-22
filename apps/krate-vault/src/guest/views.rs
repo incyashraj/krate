@@ -48,6 +48,13 @@ enum Ctl {
 pub struct GraphImage {
     key: u64,
     image: Option<u64>,
+    /// What the kept picture was drawn with besides the camera, the camera
+    /// it was drawn at, and when.
+    layout_key: u64,
+    cam: (f32, f32, f32),
+    made_at: u64,
+    /// The picture on screen is a moved copy: draw it properly soon.
+    pending: bool,
     controls: Vec<(Rect, Ctl)>,
     /// The slider tracks, by slider number: (x, width).
     sliders: Vec<(u8, f32, f32)>,
@@ -105,7 +112,8 @@ fn slider_set(o: &mut crate::graph::Options, i: u8, v: f32) {
 
 impl Ui {
     pub(super) fn views_busy(&self) -> bool {
-        matches!(self.app.view(), Some(View::Graph(g)) if g.graph.as_ref().is_none_or(|x| x.running()) || g.stale)
+        self.graph_img.pending
+            || matches!(self.app.view(), Some(View::Graph(g)) if g.graph.as_ref().is_none_or(|x| x.running()) || g.stale)
     }
 
     // ---- the graph ---------------------------------------------------------------
@@ -134,6 +142,9 @@ impl Ui {
             );
             return;
         };
+        if self.unseen {
+            return;
+        }
         let (cx, cy, zoom) = (g.cam.0, g.cam.1, g.zoom);
         let opt = g.opt.clone();
         let hover = g.hover;
@@ -141,22 +152,44 @@ impl Ui {
         let dense = a.w * a.h < 700_000.0;
         let px = if dense { 2.0 } else { 1.0 };
         let (pw, ph) = ((a.w * px).max(1.0) as u32, (a.h * px).max(1.0) as u32);
-        let mut key: u64 = 0xcbf2_9ce4_8422_2325;
-        for v in [cx, cy, zoom, a.w, a.h, opt.node_size, opt.line_size] {
-            fnv(&mut key, &v.to_bits().to_le_bytes());
+        let mut lkey: u64 = 0xcbf2_9ce4_8422_2325;
+        for v in [a.w, a.h, opt.node_size, opt.line_size] {
+            fnv(&mut lkey, &v.to_bits().to_le_bytes());
         }
-        fnv(&mut key, &(gr.nodes.len() as u64).to_le_bytes());
-        fnv(&mut key, &gr.alpha.to_bits().to_le_bytes());
-        fnv(&mut key, &[u8::from(t.dark), u8::from(opt.show_arrow)]);
+        fnv(&mut lkey, &(gr.nodes.len() as u64).to_le_bytes());
+        fnv(&mut lkey, &gr.alpha.to_bits().to_le_bytes());
+        fnv(&mut lkey, &[u8::from(t.dark), u8::from(opt.show_arrow)]);
         fnv(
-            &mut key,
+            &mut lkey,
             &(hover.map_or(u64::MAX, |h| h as u64)).to_le_bytes(),
         );
         if let Some(n) = gr.nodes.first() {
-            fnv(&mut key, &n.x.to_bits().to_le_bytes());
+            fnv(&mut lkey, &n.x.to_bits().to_le_bytes());
         }
+        let mut key = lkey;
+        for v in [cx, cy, zoom] {
+            fnv(&mut key, &v.to_bits().to_le_bytes());
+        }
+        // While the camera moves (or the layout is still settling), the
+        // picture already kept is moved and scaled to where it belongs, and
+        // drawn again properly a moment after the motion stops: a pan at
+        // 10,000 notes is a copy, not 50,000 lines a frame.
+        let now = super::ms();
+        let running = gr.running();
+        let fresh_enough =
+            now.saturating_sub(self.graph_img.made_at) < if running { 60 } else { 150 };
+        let reuse = self.graph_img.image.is_some()
+            && key != self.graph_img.key
+            && fresh_enough
+            && (lkey == self.graph_img.layout_key || running);
         let to_screen = |x: f32, y: f32| ((x - cx) * zoom + a.w * 0.5, (y - cy) * zoom + a.h * 0.5);
-        if key != self.graph_img.key || self.graph_img.image.is_none() {
+        if reuse {
+            self.graph_img.pending = true;
+        } else if key != self.graph_img.key || self.graph_img.image.is_none() {
+            self.graph_img.pending = false;
+            self.graph_img.layout_key = lkey;
+            self.graph_img.cam = (cx, cy, zoom);
+            self.graph_img.made_at = now;
             let mut ras = Raster::new(pw, ph);
             ras.clear(look::rgb(t.bg));
             let line = look::rgb(t.graph_line);
@@ -242,16 +275,26 @@ impl Ui {
             self.graph_img.key = key;
         }
         if let Some(img) = self.graph_img.image {
-            let _ = canvas_images::draw(
-                self.c,
-                img,
+            let (cx0, cy0, z0) = self.graph_img.cam;
+            let f = if z0 > 0.0 { zoom / z0 } else { 1.0 };
+            let dest = if reuse {
+                canvas_images::Rect {
+                    x: a.x + a.w * 0.5 * (1.0 - f) + (cx0 - cx) * zoom,
+                    y: a.y + a.h * 0.5 * (1.0 - f) + (cy0 - cy) * zoom,
+                    width: a.w * f,
+                    height: a.h * f,
+                }
+            } else {
                 canvas_images::Rect {
                     x: a.x,
                     y: a.y,
                     width: a.w,
                     height: a.h,
-                },
-            );
+                }
+            };
+            let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+            let _ = canvas_images::draw(self.c, img, dest);
+            let _ = canvas2d::clear_clip(self.c);
         }
         // Names under the dots, when there is room to read them.
         let fade = 2.0f32.powf(-opt.text_fade);
@@ -897,6 +940,10 @@ impl Ui {
                     } else if line.starts_with("---") || line.trim().is_empty() {
                         ty += fs * 0.6;
                         continue;
+                    } else if let Some(item) = line.trim_start().strip_prefix("- ") {
+                        let mut b = String::from("\u{2022}  ");
+                        b.push_str(&crate::md::plain(item, 0));
+                        (fs, 400, b)
                     } else {
                         (fs, 400, crate::md::plain(line, 0))
                     };

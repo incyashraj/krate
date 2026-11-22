@@ -2464,6 +2464,10 @@ impl App {
             // The lines that link, read from the linking notes (the first
             // hundred notes; a pane shows no more than that at once).
             for b in data.iter_mut().take(BACKLINK_CONTEXT) {
+                // A canvas links from its cards, not from lines of text.
+                if !b.path.ends_with(".md") {
+                    continue;
+                }
                 let text = match self.open_text(&b.path) {
                     Some(t) => Some(t),
                     None => self.vault.as_mut().and_then(|v| read_note(v, &b.path).ok()),

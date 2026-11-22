@@ -153,6 +153,8 @@ struct Ui {
     first_frame_done: bool,
     index_done_said: bool,
     graph_img: views::GraphImage,
+    /// Laying a frame out without showing it (to fit a view first).
+    unseen: bool,
 }
 
 fn ms() -> u64 {
@@ -275,7 +277,9 @@ impl Ui {
             _ => false,
         };
         if unfitted {
+            self.unseen = true;
             self.draw_frame(false);
+            self.unseen = false;
             self.after_draw();
         }
         self.draw_frame(true);
@@ -1918,9 +1922,12 @@ impl Ui {
             round(self.c, nr, 6.0, t.hover);
         }
         let cy = y + sz.row * 0.5;
-        look::chevron(self.c, list.x + 24.0 * k, cy, true, k, t.faint);
         let n = lines.iter().filter(|l| !l.is_empty()).count();
-        let ns = grouped(n.max(1));
+        // A file with no lines to show (a canvas) has no fold and no count.
+        if n > 0 {
+            look::chevron(self.c, list.x + 24.0 * k, cy, true, k, t.faint);
+        }
+        let ns = if n > 0 { grouped(n) } else { String::new() };
         let nw = width(self.c, &ns, sz.small, 400);
         fit(
             self.c,
@@ -1947,7 +1954,8 @@ impl Ui {
             if line.is_empty() {
                 continue;
             }
-            let shown = crate::md::plain(line, 0);
+            // The line as written, links and all, as the notes app shows it.
+            let shown = String::from(line.as_str());
             let room = list.w - 24.0 * k - 26.0 * k;
             let wrapped = self.wrap(&shown, sz.ui, room);
             let wrapped: Vec<String> = wrapped.into_iter().take(4).collect();
@@ -2020,7 +2028,12 @@ impl Ui {
             .backlinks()
             .iter()
             .map(|b| {
-                let name = String::from(crate::app::strip_ext(crate::vfs::file_name(&b.path)));
+                let file = crate::vfs::file_name(&b.path);
+                let name = String::from(if b.path.ends_with(".md") {
+                    crate::app::strip_ext(file)
+                } else {
+                    file
+                });
                 let ctx = if b.context.is_empty() {
                     b.lines.iter().map(|_| String::new()).collect()
                 } else {
@@ -3716,6 +3729,7 @@ impl krate::Guest for Component {
             first_frame_done: false,
             index_done_said: false,
             graph_img: views::GraphImage::default(),
+            unseen: false,
         };
         ui.app.now = krate::time::now_millis();
         ui.app.local = local_now();
