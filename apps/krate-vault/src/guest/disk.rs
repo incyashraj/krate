@@ -18,9 +18,11 @@ use krate::fs;
 /// request over 8 MiB (K-1335, fixed since), and a 200,000-line note is
 /// bigger than that, so Vault sends pieces either way.
 const CHUNK: usize = 4 << 20;
-/// How often to look for changes made outside the app. The runtime's
-/// watch is a scan of the folder, so this is a cost paid while idle.
-pub const WATCH_EVERY_MS: u64 = 3_000;
+/// How often to ask for changes made outside the app. Krate walks the
+/// folder only when the system says something changed (aadbd1f37), so the
+/// ask is cheap; once a second keeps idle wake-ups low until a change can
+/// wake the event wait itself.
+pub const WATCH_EVERY_MS: u64 = 1_000;
 
 pub struct DiskFs {
     root: String,
