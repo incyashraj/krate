@@ -11,7 +11,9 @@ benchmark result yet.
   in [parity.md](parity.md), feature by feature.
 - The vaults: `scripts/make-bench-vault.py`, deterministic, stdlib only.
 - Pictures of every state: [screens/](screens/), taken headless with
-  `krate run --task` steps against the generated vaults.
+  `krate run --task` steps against the generated vaults; [screens/parity/](screens/parity/)
+  puts Obsidian 1.15.1 (window captures, isolated profile) and Vault side by
+  side on the same vault.
 
 ## 1. Make the vaults
 
@@ -84,7 +86,9 @@ Arguments after `--`, one per word:
 | `vault=./vault` | open the folder `vault` under `--sandbox-root` |
 | `open=<path in vault>` | open that note (`open=Big note 200000.md`, `open=Projects/01/Tundra brief 00001.md`) |
 | `search=<query>` | run a vault search at start and show the search pane |
-| `show=switcher` / `palette` / `outline` / `tags` / `outgoing` | open that at start |
+| `show=a,b,...` | at start: `switcher`, `palette`, `outline`, `tags`, `outgoing`, `backlinks`, `unlinked`, `properties`, `bookmarks`, `graph`, `localgraph`, `settings`, `plugins`, `appearance`, `splitright`, `splitdown`, `daily`, `recovery`, `ribbon`, `newtab`, `pin` |
+| `right` / `light` | open the right sidebar / draw in the light theme |
+| `settle` | before the first frame, finish indexing and let a graph's layout settle (for a still picture) |
 | `reading` | start the note in reading view |
 | `sample` | open the built-in sample vault (memory only) |
 | `trace` | print timing marks as they happen (below) |
