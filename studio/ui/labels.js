@@ -96,7 +96,15 @@
     }
     // Lay it out once to find how tall the label is when ^LL does not say.
     const ops = [];
-    let at = [0, 0], font = { h: 30, w: 0 }, block = null, by = { w: 2, ratio: 3, h: 10 * dpmm }, field = null, reverse = false, unknown = new Set();
+    let at = [0, 0], font = { h: 30, w: 0 }, block = null, by = { w: 2, ratio: 3, h: 10 * dpmm }, field = null, reverse = false, hex = null, unknown = new Set();
+    // ^FH: the field's data carries escapes like _41 (hex bytes), the
+    // indicator character given (default underscore).
+    const unhex = (data, mark) => {
+      const esc = mark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const bytes = [];
+      data.replace(new RegExp(`${esc}([0-9A-Fa-f]{2})|[\\s\\S]`, "g"), (m, h) => { if (h) bytes.push(parseInt(h, 16)); else for (const b of new TextEncoder().encode(m)) bytes.push(b); return ""; });
+      return new TextDecoder().decode(new Uint8Array(bytes));
+    };
     for (const c of cmds) {
       const a = c.args.split(",");
       switch (c.code) {
@@ -114,10 +122,13 @@
           ops.push({ op: "box", x: at[0], y: at[1], w, h, t, white: (a[3] || "B").trim() === "W" });
           break;
         }
-        case "FD": case "FV":
-          if (field) ops.push({ op: field.kind, x: at[0], y: at[1], data: c.args, font: { ...font }, block, by: { ...by }, f: field, reverse });
+        case "FH": hex = (c.args || "_").charAt(0) || "_"; break;
+        case "FD": case "FV": {
+          const data = hex ? unhex(c.args, hex) : c.args;
+          if (field) ops.push({ op: field.kind, x: at[0], y: at[1], data, font: { ...font }, block, by: { ...by }, f: field, reverse });
           break;
-        case "FS": field = null; block = null; reverse = false; break;
+        }
+        case "FS": field = null; block = null; reverse = false; hex = null; break;
         case "XA": case "XZ": case "PW": case "LL": case "CI": case "PQ": case "MM": case "MN": case "MD": case "PR": case "LR": case "PO": case "LS": case "JM": case "FX": break;
         default: unknown.add("^" + c.code);
       }

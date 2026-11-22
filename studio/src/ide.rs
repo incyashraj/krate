@@ -53,6 +53,16 @@ const SKIP: [&str; 5] = [
     ".DS_Store",
     ".last-full-check",
 ];
+
+/// Krate's own bookkeeping in a project, left off the file tree (K-1321): the
+/// AI session that wrote it, the starter it began from, the AI's transcript.
+/// Still carried and written back with a change -- the next ask continues
+/// that session -- just not the person's to open or edit.
+const TREE_HIDES: [&str; 3] = [
+    ".agent-session-id",
+    ".starter-mode",
+    ".agent-transcript.txt",
+];
 /// What a bundle's source carries where this machine's SDK path goes
 /// (krate_bundle::SDK_PLACEHOLDER).
 const SDK_PLACEHOLDER: &str = "{KRATE_SDK}";
@@ -307,7 +317,7 @@ fn tree_of(project: &Path) -> Vec<TreeEntry> {
         let mut items: Vec<(bool, String, PathBuf, u64)> = Vec::new();
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if SKIP.contains(&name.as_str()) {
+            if SKIP.contains(&name.as_str()) || TREE_HIDES.contains(&name.as_str()) {
                 continue;
             }
             let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
@@ -809,7 +819,14 @@ fn check(
     if no_run {
         cmd.arg("--no-run");
     }
-    let ran = run_streamed(cmd, project, sink)?;
+    // The verdict comes back as JSON lines for Studio to read; the terminal
+    // shows the words around them, not the machine's objects.
+    let words = |line: &str| {
+        if !line.trim_start().starts_with('{') {
+            sink(line);
+        }
+    };
+    let ran = run_streamed(cmd, project, &words)?;
     let json = ran
         .out
         .iter()
@@ -1071,6 +1088,7 @@ fn ask(
     engine: &Path,
     project: &Path,
     request: &str,
+    context: &str,
     agent: &str,
     sink: Sink,
 ) -> Result<Vec<Proposed>, String> {
@@ -1095,10 +1113,17 @@ fn ask(
         crate::studio_build(&mut cmd);
         cmd.arg("revise")
             .args(["--agent", agent, "--output"])
-            .arg(&after)
-            .arg("--")
-            .arg(project)
-            .arg(request);
+            .arg(&after);
+        // Where the person is looking, as a file the AI reads beside the
+        // request. Inside the request it was judged as something asked for,
+        // and a change that did exactly what was asked "may be missing:
+        // around, 205" (K-1319).
+        if !context.trim().is_empty() {
+            let note = work.join("where-the-person-is-looking.txt");
+            std::fs::write(&note, context).map_err(|e| e.to_string())?;
+            cmd.arg("--attach").arg(&note);
+        }
+        cmd.arg("--").arg(project).arg(request);
         let ran = run_streamed(cmd, project, sink)?;
         // Exit 6: the AI's change did not do what was asked (see
         // is_off_request); the project is untouched either way.
@@ -1616,7 +1641,15 @@ pub(crate) async fn ide_checks(
         let engine = engine()?;
         let mut cmd = engine_cmd(&engine, false);
         cmd.arg("check-app").arg(&project).arg("--json");
-        let ran = run_streamed(cmd, &project, &line_sink(app, &project))?;
+        // The verdict is one JSON line for the cards; the terminal shows the
+        // words around it, not the machine's object.
+        let terminal = line_sink(app, &project);
+        let words = |line: &str| {
+            if !line.trim_start().starts_with('{') {
+                terminal(line);
+            }
+        };
+        let ran = run_streamed(cmd, &project, &words)?;
         ran.out
             .iter()
             .rev()
@@ -1980,6 +2013,7 @@ pub(crate) async fn ide_ask(
     app: tauri::AppHandle,
     path: String,
     request: String,
+    context: Option<String>,
     agent: Option<String>,
 ) -> Result<AskPreview, String> {
     blocking(move || {
@@ -1998,6 +2032,7 @@ pub(crate) async fn ide_ask(
             &engine,
             &project,
             &request,
+            context.as_deref().unwrap_or(""),
             &agent,
             &line_sink(app, &project),
         )?;
@@ -2830,7 +2865,7 @@ fi"#,
                 ],
             );
             t.engine(&revise_engine(&bundle, 0, "echo done"));
-            let files = ask(&engine().unwrap(), &p, "-make it blue", "codex", &quiet).unwrap();
+            let files = ask(&engine().unwrap(), &p, "-make it blue", "", "codex", &quiet).unwrap();
             let rels: Vec<&str> = files.iter().map(|f| f.rel.as_str()).collect();
             assert_eq!(rels, vec!["assets/icon.bin", "src/lib.rs"]);
             let lib = &files[1];
@@ -2871,12 +2906,12 @@ fi"#,
             t.engine("exit 0");
             let e = engine().unwrap();
             assert_eq!(
-                ask(&e, &p, "   ", "claude", &quiet).unwrap_err(),
+                ask(&e, &p, "   ", "", "claude", &quiet).unwrap_err(),
                 "Say what to change."
             );
             for agent in ["--yolo", "a b", "", "claude;rm"] {
                 assert_eq!(
-                    ask(&e, &p, "blue", agent, &quiet).unwrap_err(),
+                    ask(&e, &p, "blue", "", agent, &quiet).unwrap_err(),
                     format!("{agent} is not an AI Krate knows")
                 );
             }
@@ -2896,22 +2931,22 @@ fi"#,
             ));
             let e = engine().unwrap();
             assert_eq!(
-                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                ask(&e, &p, "blue", "", "claude", &quiet).unwrap_err(),
                 "The change did not do what you asked.\nasked for: blue\nbut it is red"
             );
             t.engine(&revise_engine(&bundle, 6, "true"));
             assert_eq!(
-                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                ask(&e, &p, "blue", "", "claude", &quiet).unwrap_err(),
                 "The change did not do what you asked, so your project was left as it was."
             );
             t.engine("if [ \"$1\" = revise ]; then echo 'error: the AI is not signed in' >&2; exit 1; fi");
             assert_eq!(
-                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                ask(&e, &p, "blue", "", "claude", &quiet).unwrap_err(),
                 "error: the AI is not signed in"
             );
             t.engine("exit 0");
             assert_eq!(
-                ask(&e, &p, "blue", "claude", &quiet).unwrap_err(),
+                ask(&e, &p, "blue", "", "claude", &quiet).unwrap_err(),
                 "the AI finished but no changed app was written"
             );
             assert_eq!(

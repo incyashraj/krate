@@ -1670,6 +1670,9 @@ body:not(.light) .ide-ask { background: #1c1c1f; color: #a891ff; }
 .ide-ans.hidden { display: none; }
 .ide-ans .ia-q { margin-bottom: 8px; font-weight: 500; color: var(--ink); }
 .ide-ans .ia-a p { margin: 0 0 8px; max-width: 72ch; }
+.ide-ans .ia-a ul, .ide-ans .ia-a ol { margin: 0 0 8px; padding-left: 20px; max-width: 72ch; }
+.ide-ans .ia-a li { margin: 2px 0; }
+.ide-ans .ia-a li::marker { color: var(--ink-3); }
 .ide-ans code { padding: 1px 5px; border-radius: 5px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); color: var(--ink); }
 .ide-ans pre { margin: 4px 0 10px; padding: 10px 12px; border-radius: 9px; overflow: auto; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); color: var(--ink); }
 .ide-ans .ia-foot { margin-top: 4px; font-size: 12px; color: var(--ink-3); }
@@ -1681,7 +1684,11 @@ body:not(.light) .ide-ask { background: #1c1c1f; color: #a891ff; }
 @keyframes krWaitDot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .ide-ans .ia-wait i { animation: none; opacity: .6; } }
 .ide-panel { height: var(--panel-h); flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--bg); transition: height .45s var(--ease); }
-.ip-tabs { height: 38px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px; }
+.ip-tabs { height: 38px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+.ip-tabs::-webkit-scrollbar { display: none; }
+/* One line, always: in a narrow column "Problems 0" and "Krate API" broke
+   in two and the row grew. */
+.ip-tabs > * { flex: none; white-space: nowrap; }
 .ip-tabs > button[data-ip] { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: none; cursor: pointer; font: 400 12.5px var(--sans); color: var(--ink-3); }
 .ip-tabs > button[data-ip].on { color: var(--ink); background: var(--selected); }
 .ip-tabs > button[data-ip]:not(.on):hover, .ip-tabs .ib:hover { color: var(--ink); background: var(--hover); }

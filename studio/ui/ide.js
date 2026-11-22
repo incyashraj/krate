@@ -30,6 +30,11 @@
   const call = (cmd, args) => invoke(cmd, args);
   const toast = (t) => { if (window.krToast) window.krToast(t); };
   const short = (p) => String(p || "").replace(/^\/Users\/[^/]+\//, "~/").replace(/^\/home\/[^/]+\//, "~/").replace(/^C:\\Users\\[^\\]+\\/i, "~\\");
+  // Krate's own bookkeeping in a project: which AI session wrote it, which
+  // starter it began from, the AI's transcript. Written with a change, never
+  // put in front of a person to review, open or edit (K-1321).
+  const INTERNAL = /^\.(agent-session-id|starter-mode|agent-transcript\.txt)$/;
+  const internal = (rel) => INTERNAL.test(String(rel || ""));
   const kb = (n) => n == null ? "" : n < 1024 ? `${n} B` : n < 1048576 ? `${Math.round(n / 1024)} KB` : `${(n / 1048576).toFixed(1)} MB`;
   const ago = (secs) => {
     if (!secs) return "";
@@ -97,7 +102,10 @@
       "&.cm-focused": { outline: "none" },
       ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.75" },
       ".cm-content": { padding: "14px 0 120px", caretColor: "var(--ink)" },
-      ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "var(--ink-4)" },
+      // The page's own colour, not transparent: the gutter stays put while
+      // the code scrolls sideways under it, and with no background the code
+      // showed straight through the line numbers (K-1324).
+      ".cm-gutters": { backgroundColor: "var(--side-bg)", border: "none", color: "var(--ink-4)" },
       ".cm-lineNumbers .cm-gutterElement": { padding: "0 12px 0 16px" },
       ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--ink) 3.5%, transparent)" },
       ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--ink-2)" },
@@ -221,6 +229,13 @@
         const line = doc.line(n), t = line.text.replace(/#.*$/, "");
         const h = t.match(/^\s*\[([^\]]+)\]/); if (h) { inCaps = /capabilit/i.test(h[1]); continue; }
         if (!inCaps) continue;
+        // Only capability names: a `cap = "..."` value, or the strings of a
+        // `required`/`optional` list (on its own line or carried on). A
+        // rationale is the author's words, and every one was marked "not a
+        // capability Krate knows" (K-1323).
+        const key = (t.match(/^\s*([A-Za-z_][\w-]*)\s*=/) || [])[1];
+        const listLine = /^\s*"/.test(t) || /^\s*\]/.test(t);
+        if (key ? !/^(cap|required|optional)$/.test(key) : !listLine) continue;
         const rx = /"([^"]*)"/g; let m;
         while ((m = rx.exec(t))) {
           const base = m[1].split(":")[0];
@@ -332,7 +347,10 @@
     const doc = edView.state.doc;
     const ln = doc.line(Math.max(1, Math.min(line || 1, doc.lines)));
     const at = Math.min(ln.from + Math.max(0, (col || 1) - 1), ln.to);
-    edView.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+    // Centred, not just in view: "just in view" is the bottom line, which
+    // the floating Ask bar covers, so a jump landed on a line nobody could
+    // see.
+    edView.dispatch({ selection: { anchor: at }, effects: CM.EditorView.scrollIntoView(at, { y: "center" }) });
     edView.focus();
   }
   // The errors drawn in the editor too (a mark in the gutter, a line under
@@ -1052,7 +1070,11 @@
   /* The AI's change, shown before it lands: each file as a diff, each one
    * accepted or not. Only what is accepted is written (ide_apply), and the
    * editor's own undo still takes it back afterwards. */
-  function review(files) {
+  function review(all) {
+    const quiet = all.filter((f) => internal(f.rel));
+    const files = all.filter((f) => !internal(f.rel));
+    // Only bookkeeping changed: nothing a person would want to look at.
+    if (!files.length) return Promise.resolve(quiet);
     return new Promise((resolve) => {
       const box = document.createElement("div");
       box.className = "ide-review"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Review the change");
@@ -1076,7 +1098,8 @@
         ["beforeinput", "paste", "drop", "cut"].forEach((t) => document.removeEventListener(t, hold, true));
         document.removeEventListener("keydown", keys, true);
         const keep = ok ? [...box.querySelectorAll("input[data-k]")].filter((c) => c.checked).map((c) => files[+c.dataset.k]) : [];
-        box.remove(); resolve(keep);
+        // The bookkeeping goes with an accepted change, and only with one.
+        box.remove(); resolve(keep.length ? keep.concat(quiet) : keep);
       };
       box.tabIndex = -1;
       requestAnimationFrame(() => { const y = box.querySelector(".rv-yes"); (y || box).focus(); });
@@ -1089,14 +1112,14 @@
     });
   }
   // The file and lines the person is looking at go with the request, so
-  // "make this faster" means this.
+  // "make this faster" means this -- as a note the AI reads, attached.
   function askContext() {
     if (!edView || !ide.cur) return "";
     const st = edView.state, sel = st.selection.main;
-    if (sel.empty) return `\n\n(I am looking at ${ide.cur}, around line ${st.doc.lineAt(sel.head).number}.)`;
+    if (sel.empty) return `The person is looking at ${ide.cur}, around line ${st.doc.lineAt(sel.head).number}.`;
     const a = st.doc.lineAt(sel.from).number, z = st.doc.lineAt(sel.to).number;
     const text = st.sliceDoc(sel.from, sel.to).slice(0, 6000);
-    return `\n\n(This is about ${ide.cur}, lines ${a}–${z}:\n\`\`\`\n${text}\n\`\`\`)`;
+    return `The person means ${ide.cur}, lines ${a}–${z}:\n\`\`\`\n${text}\n\`\`\``;
   }
   async function askAI(request, opts = {}) {
     if (!ide || ide.busy) return;
@@ -1107,7 +1130,10 @@
     busy(true, `${agentWords()} is working…`);
     term(`==> asking ${agentWords()}: ${request.split("\n")[0]}`);
     try {
-      const r = await call("ide_ask", { path: ide.path, request: request + (opts.noContext ? "" : askContext()), agent: agentName() });
+      // Where the person is looking goes beside the request, not inside it:
+      // Krate judges the change against the words asked, and "around line
+      // 205" is not something anybody asked for (K-1319).
+      const r = await call("ide_ask", { path: ide.path, request, context: opts.noContext ? "" : askContext(), agent: agentName() });
       const files = (r && r.files) || [];
       const settled = () => setStatus(ide.built ? "ok" : ide.lastFail ? "bad" : "idle", ide.built ? "Builds" : ide.lastFail ? "Does not build" : "Not built yet");
       if (!files.length) { busy(false); term("==> nothing needed changing", "g"); settled(); return; }
@@ -1131,9 +1157,11 @@
         }
       }
       const changed = await call("ide_apply", { path: ide.path, files: keep.map((f) => ({ rel: f.rel, text: f.after, b64: f.b64 })) });
-      term(`==> changed ${changed.join(", ")}`, "g");
+      const shown = changed.filter((c) => !internal(c));
+      term(`==> changed ${(shown.length ? shown : changed).join(", ")}`, "g");
       await loadTree();
       for (const rel of changed) {
+        if (internal(rel)) continue;
         const f = keep.find((x) => x.rel === rel); if (!f || f.after == null) continue;
         const text = f.after, old = before.get(rel);
         let doc = ide.docs.get(rel);
@@ -1147,9 +1175,9 @@
         }
         if (!ide.open.includes(rel)) ide.open.push(rel);
       }
-      if (changed.length && !changed.includes(ide.cur)) ide.cur = changed.find((c) => /\.rs$/.test(c)) || changed[0];
+      if (shown.length && !shown.includes(ide.cur)) ide.cur = shown.find((c) => /\.rs$/.test(c)) || shown[0];
       showDoc(); paintTabs(); paintTree();
-      build(`${changed[0]} changed`);
+      build(`${(shown[0] || changed[0])} changed`);
     } catch (err) {
       busy(false);
       setStatus("bad", "The change did not land");
@@ -1176,10 +1204,24 @@
   }
   // Plain words with `code` and fenced blocks; everything else escaped.
   function answerHtml(text) {
+    const inline = (t) => esc(t).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+    // A run of "- item" or "1. item" lines is a list, as the AI meant it,
+    // not a paragraph of hyphens.
+    const block = (p) => {
+      const lines = p.split("\n");
+      const bullet = /^\s*[-*•]\s+/, number = /^\s*\d+[.)]\s+/;
+      if (lines.every((l) => bullet.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(bullet, ""))}</li>`).join("")}</ul>`;
+      if (lines.every((l) => number.test(l))) return `<ol>${lines.map((l) => `<li>${inline(l.replace(number, ""))}</li>`).join("")}</ol>`;
+      // A lead-in line followed by list items: the line, then the list.
+      const first = lines.findIndex((l) => bullet.test(l) || number.test(l));
+      if (first > 0 && lines.slice(first).every((l) => bullet.test(l) || number.test(l) || /^\s{2,}\S/.test(l))) {
+        return `<p>${lines.slice(0, first).map(inline).join("<br>")}</p>` + block(lines.slice(first).join("\n").replace(/\n\s{2,}/g, " "));
+      }
+      return `<p>${lines.map(inline).join("<br>")}</p>`;
+    };
     return String(text).split(/```[a-z]*\n?/).map((part, i) => i % 2
       ? `<pre>${esc(part.replace(/\n$/, ""))}</pre>`
-      : part.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
-        .map((p) => `<p>${esc(p).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>")}</p>`).join("")).join("");
+      : part.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).map(block).join("")).join("");
   }
   async function explain(question) {
     if (!ide || ide.explaining) return;
