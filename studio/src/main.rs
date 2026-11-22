@@ -22,6 +22,7 @@ use tauri::{Emitter, Manager};
 #[cfg(test)]
 mod command_tests;
 mod ide;
+mod pretend_serial;
 
 /// The one build allowed at a time, by process id, so Stop can reach it.
 ///
@@ -6297,6 +6298,7 @@ fn main() {
             ide::ide_hw_run,
             ide::ide_hw_stop,
             ide::ide_hw_jobs,
+            ide::ide_serial_send,
             ide::ide_pack,
             ide::ide_run,
             ide::ide_ask,

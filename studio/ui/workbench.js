@@ -211,10 +211,14 @@
   // receipts as text, a PNG as itself).
   let printing = false, poll = null, shownJobs = 0;
   const b64bytes = (b64) => Uint8Array.from(atob(b64 || ""), (c) => c.charCodeAt(0));
+  const IDLE_PRINT = "When the app asks for a printer, it gets this one. Its labels appear here as they would come out: text, boxes, barcodes and QR codes at 203 dpi.";
+  const IDLE_SERIAL = "When the app asks for a serial device, it gets this one: a real serial port with Studio on the other end.";
+  // Windows has no pseudo-terminal a serial API opens: the instrument is a
+  // Mac and Linux part, and the card is not shown where it cannot work.
+  if (document.body.classList.contains("windows") || /win/i.test(navigator.platform || "")) $("wbSerial").remove();
   function jobCard(job) {
     const li = document.createElement("li");
     li.className = "wb-job";
-    li.style.setProperty("--i", "0");
     const head = `<div class="wb-job-h"><b>${esc(job.title || "Untitled job")}</b><span>${job.copies > 1 ? job.copies + " copies · " : ""}${esc(job.kind.toUpperCase())} · ${job.bytes.toLocaleString()} bytes</span></div>`;
     const bytes = b64bytes(job.data);
     const text = new TextDecoder("latin1").decode(bytes);
@@ -241,6 +245,17 @@
     }
     return li;
   }
+  // Control characters shown as a person reads a serial log: ⏎ for CR LF.
+  const shown = (t) => String(t || "").replace(/\r\n/g, "⏎\n").replace(/\r/g, "␍").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "·");
+  function paintSerial(serial) {
+    if (!$("wbSerial") || !serial) return;
+    $("wbConsole").classList.remove("hidden");
+    const from = $("wbFromApp"), to = $("wbToApp");
+    const f = shown(serial.from_app).slice(-4000) || "Nothing yet.";
+    const t = (serial.to_app || []).slice(-60).join("\n") || "Nothing yet.";
+    if (from.textContent !== f) { from.textContent = f; from.scrollTop = from.scrollHeight; }
+    if (to.textContent !== t) { to.textContent = t; to.scrollTop = to.scrollHeight; }
+  }
   async function pollJobs() {
     if (!path) return;
     try {
@@ -249,36 +264,50 @@
       const list = $("wbJobs");
       for (const job of jobs.slice(shownJobs)) list.prepend(jobCard(job));
       shownJobs = Math.max(shownJobs, jobs.length);
-      if (printing && !r.running) setPrinting(false, jobs.length ? `The app closed after ${jobs.length === 1 ? "one job" : jobs.length + " jobs"}.` : "The app closed without printing.");
-      else if (printing) $("wbPrintSt").textContent = jobs.length ? `Running · ${jobs.length === 1 ? "1 job" : jobs.length + " jobs"} printed, newest first.` : "Running · print something from the app's window.";
+      $("wbPrintSt").textContent = jobs.length ? `${jobs.length === 1 ? "1 job" : jobs.length + " jobs"} printed, newest first.` : printing ? "Waiting for the app to print." : IDLE_PRINT;
+      paintSerial(r.serial);
+      if (printing && !r.running) setRunning(false, "The app closed. What it sent stays here until the next run.");
     } catch (err) { /* the next tick tries again */ }
   }
-  function setPrinting(on, words) {
+  function setRunning(on, words) {
     printing = on;
-    $("wbPrintRun").textContent = on ? "Stop" : "Run with it";
-    $("wbPrinter").classList.toggle("on", on);
-    if (words) $("wbPrintSt").textContent = words;
+    $("wbHwRun").textContent = on ? "Stop" : "Run with them";
+    document.querySelectorAll(".wb-hw").forEach((c) => c.classList.toggle("on", on));
+    if ($("wbScale")) $("wbScale").disabled = on;
+    $("wbHwSt").textContent = words || "";
     clearInterval(poll); poll = null;
     if (on) poll = setInterval(pollJobs, 1000);
   }
-  $("wbPrintRun").addEventListener("click", async () => {
+  $("wbHwRun").addEventListener("click", async () => {
     if (!path) return;
-    if (printing) { await call("ide_hw_stop", { path }).catch(() => {}); await pollJobs(); setPrinting(false, "Stopped."); return; }
-    if (!built) { $("wbPrintSt").textContent = "Build it first: there is no app to run yet."; return; }
+    if (printing) { await call("ide_hw_stop", { path }).catch(() => {}); await pollJobs(); setRunning(false, "Stopped. What it sent stays here until the next run."); return; }
+    if (!built) { setRunning(false, "Build it first: there is no app to run yet."); return; }
     $("wbJobs").innerHTML = ""; shownJobs = 0;
+    if ($("wbConsole")) { $("wbConsole").classList.add("hidden"); $("wbFromApp").textContent = ""; $("wbToApp").textContent = ""; }
     try {
-      const name = await call("ide_hw_run", { path });
-      setPrinting(true, `Running with ${name}. Print something from the app's window.`);
+      const r = await call("ide_hw_run", { path, scale: !!($("wbScale") && $("wbScale").checked) });
+      setRunning(true, "Running in its own window. Use it there; what it sends shows up below.");
+      if ($("wbSerialSt") && r.serial) $("wbSerialSt").textContent = "Attached. The app gets it when it asks for a serial device.";
+      pollJobs();
     } catch (err) {
-      setPrinting(false, String(err));
+      setRunning(false, String(err));
     }
+  });
+  if ($("wbSend")) $("wbSend").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = $("wbSendIn"), line = input.value;
+    if (!line || !path) return;
+    try { await call("ide_serial_send", { path, line }); input.value = ""; pollJobs(); }
+    catch (err) { $("wbSerialSt").textContent = String(err); }
   });
 
   /* ---- the IDE's events ------------------------------------------------ */
   window.addEventListener("kr-ide-open", (e) => {
     if (path && printing) call("ide_hw_stop", { path }).catch(() => {});
-    setPrinting(false, "When the app asks for a printer, it gets this one. Its labels appear here as they would come out: text, boxes, barcodes and QR codes at 203 dpi.");
+    setRunning(false, "");
     $("wbJobs").innerHTML = ""; shownJobs = 0;
+    $("wbPrintSt").textContent = IDLE_PRINT;
+    if ($("wbSerial")) { $("wbSerialSt").textContent = IDLE_SERIAL; $("wbConsole").classList.add("hidden"); }
     path = e.detail.path; built = false; asks = []; off = new Set();
     $("wbPerms").innerHTML = `<p class="ip-none">Build it to see what it asks for.</p>`;
     $("wbPermShot").classList.add("hidden");

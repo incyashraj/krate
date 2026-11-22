@@ -1636,9 +1636,21 @@ pub(crate) async fn ide_checks(
 const PRETEND_PRINTER: &str = "Zebra_ZD421";
 
 /// Each project's app running against simulated hardware, and its folder.
-fn hardware_runs() -> &'static Mutex<HashMap<PathBuf, (std::process::Child, PathBuf)>> {
-    static RUNS: OnceLock<Mutex<HashMap<PathBuf, (std::process::Child, PathBuf)>>> =
-        OnceLock::new();
+struct HardwareRun {
+    child: std::process::Child,
+    /// The pretend serial instrument, when one was attached; dropping it
+    /// closes it.
+    serial: Option<Serial>,
+}
+
+#[cfg(unix)]
+type Serial = crate::pretend_serial::PretendSerial;
+/// Windows has no pseudo-terminal a serial API opens, so no instrument.
+#[cfg(not(unix))]
+struct Serial;
+
+fn hardware_runs() -> &'static Mutex<HashMap<PathBuf, HardwareRun>> {
+    static RUNS: OnceLock<Mutex<HashMap<PathBuf, HardwareRun>>> = OnceLock::new();
     RUNS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -1655,7 +1667,7 @@ fn spool_for(project: &Path) -> PathBuf {
 /// prints lands in a folder the workbench reads, instead of on paper. A
 /// run already going for this project is closed first.
 #[tauri::command]
-pub(crate) async fn ide_hw_run(path: String) -> Result<String, String> {
+pub(crate) async fn ide_hw_run(path: String, scale: bool) -> Result<serde_json::Value, String> {
     blocking(move || {
         let project = project_dir(&path)?;
         let wasm = wasm_path(&project);
@@ -1668,7 +1680,19 @@ pub(crate) async fn ide_hw_run(path: String) -> Result<String, String> {
         let _ = std::fs::remove_dir_all(&spool);
         std::fs::create_dir_all(spool.join(PRETEND_PRINTER))
             .map_err(|e| format!("could not make the pretend printer: {e}"))?;
-        let child = engine_cmd(&engine, false)
+        #[cfg(unix)]
+        let serial = Some(crate::pretend_serial::PretendSerial::open(scale)?);
+        #[cfg(not(unix))]
+        let serial: Option<Serial> = {
+            let _ = scale;
+            None
+        };
+        let mut cmd = engine_cmd(&engine, false);
+        #[cfg(unix)]
+        if let Some(serial) = &serial {
+            cmd.env("KRATE_SERIAL_PICK", serial.path());
+        }
+        let child = cmd
             .current_dir(&project)
             .env("KRATE_PRINTER_SPOOL", &spool)
             .env("KRATE_PRINTER_PICK", PRETEND_PRINTER)
@@ -1682,11 +1706,15 @@ pub(crate) async fn ide_hw_run(path: String) -> Result<String, String> {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|e| format!("could not run the Krate engine: {e}"))?;
+        let instrument = serial.is_some();
         hardware_runs()
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(project, (child, spool));
-        Ok(PRETEND_PRINTER.replace('_', " "))
+            .insert(project, HardwareRun { child, serial });
+        Ok(serde_json::json!({
+            "printer": PRETEND_PRINTER.replace('_', " "),
+            "serial": instrument,
+        }))
     })
     .await
 }
@@ -1696,9 +1724,9 @@ fn stop_hardware(project: &Path) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(project);
-    if let Some((mut child, _)) = run {
-        let _ = child.kill();
-        let _ = child.wait();
+    if let Some(mut run) = run {
+        let _ = run.child.kill();
+        let _ = run.child.wait();
     }
 }
 
@@ -1707,6 +1735,41 @@ pub(crate) async fn ide_hw_stop(path: String) -> Result<(), String> {
     blocking(move || {
         stop_hardware(&project_dir(&path)?);
         Ok(())
+    })
+    .await
+}
+
+#[cfg(unix)]
+fn serial_snapshot(serial: Option<&Serial>) -> serde_json::Value {
+    match serial {
+        Some(serial) => {
+            let (from_app, to_app) = serial.snapshot();
+            serde_json::json!({ "path": serial.path(), "from_app": from_app, "to_app": to_app })
+        }
+        None => serde_json::Value::Null,
+    }
+}
+
+#[cfg(not(unix))]
+fn serial_snapshot(_serial: Option<&Serial>) -> serde_json::Value {
+    serde_json::Value::Null
+}
+
+/// Send one line to the app from the pretend serial instrument.
+#[tauri::command]
+pub(crate) async fn ide_serial_send(path: String, line: String) -> Result<(), String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let runs = hardware_runs().lock().unwrap_or_else(|e| e.into_inner());
+        let Some(run) = runs.get(&project) else {
+            return Err("Run the app with the hardware first.".to_string());
+        };
+        #[cfg(unix)]
+        if let Some(serial) = &run.serial {
+            return serial.send(&line);
+        }
+        let _ = (run, line);
+        Err("There is no pretend serial instrument on this computer.".to_string())
     })
     .await
 }
@@ -1758,15 +1821,18 @@ fn printed_jobs(dir: &Path) -> Vec<PrintedJob> {
 pub(crate) async fn ide_hw_jobs(path: String) -> Result<serde_json::Value, String> {
     blocking(move || {
         let project = project_dir(&path)?;
-        let running = {
+        let (running, serial) = {
             let mut runs = hardware_runs().lock().unwrap_or_else(|e| e.into_inner());
             match runs.get_mut(&project) {
-                Some((child, _)) => matches!(child.try_wait(), Ok(None)),
-                None => false,
+                Some(run) => (
+                    matches!(run.child.try_wait(), Ok(None)),
+                    serial_snapshot(run.serial.as_ref()),
+                ),
+                None => (false, serde_json::Value::Null),
             }
         };
         let jobs = printed_jobs(&spool_for(&project).join(PRETEND_PRINTER));
-        Ok(serde_json::json!({ "running": running, "jobs": jobs }))
+        Ok(serde_json::json!({ "running": running, "jobs": jobs, "serial": serial }))
     })
     .await
 }
