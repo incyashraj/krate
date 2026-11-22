@@ -774,7 +774,12 @@ impl App {
             return;
         }
         let opt = if local.is_some() {
-            graph::Options::default()
+            // A local graph shows the links to and from its note, not the
+            // links among its neighbours, until asked.
+            graph::Options {
+                neighbors: false,
+                ..graph::Options::default()
+            }
         } else {
             graph::Options::from_json(&self.settings.graph.data)
         };
@@ -786,7 +791,7 @@ impl App {
             cam: (0.0, 0.0),
             zoom: 1.0,
             fitted: false,
-            controls: local.is_none(),
+            controls: true,
             hover: None,
             stale: true,
             animate: None,
@@ -2057,6 +2062,28 @@ impl App {
     }
 }
 
+/// How many times a line names `key` (lower-cased) as a word, outside
+/// links.
+pub fn mention_count(line: &str, key: &str) -> usize {
+    let l = lower(line);
+    let mut from = 0;
+    let mut n = 0;
+    while let Some(i) = l.get(from..).and_then(|s| s.find(key)).map(|i| i + from) {
+        let before = l[..i].chars().next_back();
+        let after = l[i + key.len()..].chars().next();
+        let word = before.is_none_or(|c| !c.is_alphanumeric())
+            && after.is_none_or(|c| !c.is_alphanumeric());
+        let in_link = l[..i]
+            .rfind("[[")
+            .is_some_and(|o| l[o..i].find("]]").is_none());
+        if word && !in_link {
+            n += 1;
+        }
+        from = i + key.len().max(1);
+    }
+    n
+}
+
 /// Whether a line names `key` (lower-cased) as a word, outside a link.
 /// A note's text with property `key` set to `value` (empty: removed).
 pub fn set_property_text(text: &str, key: &str, value: &str) -> String {
@@ -2127,7 +2154,7 @@ pub fn set_property_text(text: &str, key: &str, value: &str) -> String {
 /// A linked side tab's title, as the notes app names it.
 pub fn side_title(pane: RightPane, path: &str) -> String {
     let mut s = String::from(match pane {
-        RightPane::Outline => "Outline of ",
+        RightPane::Outline => return String::from("Outline"),
         RightPane::Outgoing => "Outgoing links from ",
         _ => "Backlinks for ",
     });
@@ -2417,7 +2444,7 @@ mod tests {
         a.select_tab(0);
         a.run(Cmd::OpenOutlineHere);
         assert!(matches!(a.view(), Some(View::Side(sd)) if sd.note.as_deref() == Some("Home.md")));
-        assert_eq!(a.tab().unwrap().title(), "Outline of Home");
+        assert_eq!(a.tab().unwrap().title(), "Outline");
         let other = a.pane;
         // The note's group keeps its stacking; the side view follows it.
         a.focus_pane(0);
@@ -2711,6 +2738,7 @@ mod tests {
         assert!(mentions("Go home now", "home"));
         assert!(!mentions("homework", "home"));
         assert!(!mentions("see [[home]]", "home"));
+        assert_eq!(mention_count("home, home and [[home]] at home2", "home"), 2);
         assert_eq!(
             link_first("the Home page", "home", "Home"),
             "the [[Home]] page"

@@ -180,6 +180,7 @@ impl Base {
                 return n.clone();
             }
         }
+        let bare = bare.strip_prefix("formula.").unwrap_or(bare);
         String::from(bare.strip_prefix("file.").unwrap_or(bare))
     }
 
@@ -533,7 +534,15 @@ impl Ex<'_, '_> {
                         as_date(&v).map(|d| d.day_number()),
                         as_date(&r).map(|d| d.day_number()),
                     );
-                    Value::Num((a.unwrap_or(0) - b.unwrap_or(0)) as f64)
+                    // A duration, shown as the notes app shows one ("9 days").
+                    let n = a.unwrap_or(0) - b.unwrap_or(0);
+                    let mut s = String::new();
+                    if n < 0 {
+                        s.push('-');
+                    }
+                    crate::text::push_num(&mut s, n.unsigned_abs() as usize);
+                    s.push_str(if n.abs() == 1 { " day" } else { " days" });
+                    Value::Str(s)
                 }
                 (_, _, "+") => {
                     let mut s = show(&v);
@@ -940,7 +949,7 @@ mod tests {
             formulas: &b.formulas,
             today: "2026-11-22",
         };
-        assert_eq!(value("formula.left", &row), Value::Num(11.0));
+        assert_eq!(value("formula.left", &row), Value::s("11 days"));
         assert_eq!(value("formula.label", &row), Value::s("Task 3 (open)"));
     }
 
@@ -967,7 +976,7 @@ mod tests {
             eval("if(status == \"done\", \"yes\", \"no\")", &row),
             Value::s("yes")
         );
-        assert_eq!(eval("due - today()", &row), Value::Num(9.0));
+        assert_eq!(eval("due - today()", &row), Value::s("9 days"));
         assert_eq!(
             eval("due.format(\"DD.MM.YYYY\")", &row),
             Value::s("01.12.2026")

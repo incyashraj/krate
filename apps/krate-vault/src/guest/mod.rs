@@ -157,6 +157,8 @@ struct Ui {
     unseen: bool,
     /// Where the pointer is, as last reported.
     hover_point: Option<(f32, f32)>,
+    /// The count the next result block shows, when not its line count.
+    block_count: Option<usize>,
     /// Web pages being read for link cards: address and handle.
     fetches: Vec<(String, u64)>,
 }
@@ -2065,11 +2067,16 @@ impl Ui {
         }
         let cy = y + sz.row * 0.5;
         let n = lines.iter().filter(|l| !l.is_empty()).count();
+        let told = self.block_count.take();
         // A file with no lines to show (a canvas) has no fold and no count.
         if n > 0 {
             look::chevron(self.c, list.x + 24.0 * k, cy, true, k, t.faint);
         }
-        let ns = if n > 0 { grouped(n) } else { String::new() };
+        let ns = match told {
+            Some(c) => grouped(c),
+            None if n > 0 => grouped(n),
+            None => String::new(),
+        };
         let nw = width(self.c, &ns, sz.small, 400);
         fit(
             self.c,
@@ -2236,14 +2243,25 @@ impl Ui {
         }
         y += 14.0 * k;
         // Unlinked mentions: found between frames once the section is open.
-        let unl: Option<Vec<(String, Vec<String>)>> = self.app.unlinked.as_ref().map(|u| {
+        // Each note with its lines and how many mentions (the notes app
+        // counts mentions, not notes); a canvas shows its file name only.
+        let unl: Option<Vec<(String, Vec<String>, usize)>> = self.app.unlinked.as_ref().map(|u| {
             u.found
                 .iter()
                 .map(|(p, ls)| {
-                    (
-                        String::from(crate::app::strip_ext(crate::vfs::file_name(p))),
-                        ls.iter().map(|(_, s)| s.clone()).collect(),
-                    )
+                    let n: usize = ls
+                        .iter()
+                        .map(|(_, s)| crate::workspace::mention_count(s, &key).max(1))
+                        .sum();
+                    if p.ends_with(".canvas") {
+                        (String::from(crate::vfs::file_name(p)), Vec::new(), n)
+                    } else {
+                        (
+                            String::from(crate::app::strip_ext(crate::vfs::file_name(p))),
+                            ls.iter().map(|(_, s)| s.clone()).collect(),
+                            n,
+                        )
+                    }
                 })
                 .collect()
         });
@@ -2257,7 +2275,9 @@ impl Ui {
             list,
             y,
             "Unlinked mentions",
-            unl.as_ref().map(Vec::len).filter(|_| uopen),
+            unl.as_ref()
+                .map(|v| v.iter().map(|x| x.2).sum())
+                .filter(|_| uopen),
             Hit::Section(1),
             uopen,
         );
@@ -2279,11 +2299,12 @@ impl Ui {
                     t.faint,
                 );
             }
-            for (i, (name, lines)) in found.iter().enumerate() {
+            for (i, (name, lines, count)) in found.iter().enumerate() {
                 if y > list.bottom() {
                     break;
                 }
                 let top = y;
+                self.block_count = Some(*count);
                 y = self.result_block(list, y, name, lines, &key, Hit::Unlinked(i, 0), &|l| {
                     Hit::Unlinked(i, l)
                 });
@@ -3917,6 +3938,7 @@ impl krate::Guest for Component {
             graph_img: views::GraphImage::default(),
             unseen: false,
             hover_point: None,
+            block_count: None,
             fetches: Vec::new(),
         };
         ui.app.now = krate::time::now_millis();
@@ -3960,6 +3982,14 @@ impl krate::Guest for Component {
             if ui.app.vault.is_some() {
                 ui.app.open_file(note, false);
                 ui.mark("t_note_open_ms");
+            }
+        }
+        // `also=<path>` opens more files, each in a new tab.
+        for line in raw.split('\n') {
+            if let Some(p) = line.strip_prefix("also=") {
+                if ui.app.vault.is_some() {
+                    ui.app.open_file(p, true);
+                }
             }
         }
         if let Some(q) = arg(&raw, "search") {
@@ -4025,6 +4055,23 @@ impl krate::Guest for Component {
                     "ribbon" => ui.app.run(Cmd::ToggleRibbon),
                     "newtab" => ui.app.run(Cmd::NewTab),
                     "pin" => ui.app.run(Cmd::TogglePin),
+                    "stack" => ui.app.run(Cmd::StackTabs),
+                    "outlinehere" => ui.app.run(Cmd::OpenOutlineHere),
+                    "backlinkshere" => ui.app.run(Cmd::OpenBacklinksHere),
+                    "hotkeys" => {
+                        ui.app.run(Cmd::Settings);
+                        ui.app.click(
+                            Hit::SettingsNav(crate::app::SettingsPage::Hotkeys),
+                            Mods::default(),
+                        );
+                    }
+                    "files" => {
+                        ui.app.run(Cmd::Settings);
+                        ui.app.click(
+                            Hit::SettingsNav(crate::app::SettingsPage::Files),
+                            Mods::default(),
+                        );
+                    }
                     _ => {}
                 }
             }
@@ -4035,8 +4082,14 @@ impl krate::Guest for Component {
             for _ in 0..400 {
                 let start = krate::time::monotonic_nanos();
                 let mut more = || krate::time::monotonic_nanos().saturating_sub(start) < 50_000_000;
-                if !ui.app.tick(&mut more) && !ui.app.busy() {
+                let worked = ui.app.tick(&mut more);
+                ui.host_requests();
+                ui.poll_fetches();
+                if !worked && !ui.app.busy() && ui.fetches.is_empty() {
                     break;
+                }
+                if !ui.fetches.is_empty() {
+                    krate::time::sleep_millis(25);
                 }
             }
         }

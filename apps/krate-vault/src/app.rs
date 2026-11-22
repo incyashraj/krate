@@ -330,7 +330,7 @@ impl View {
             }
             View::File(f) => {
                 f.path = String::from(p);
-                f.title = String::from(file_name(p));
+                f.title = String::from(strip_any_ext(file_name(p)));
             }
             _ => {}
         }
@@ -1681,7 +1681,7 @@ impl App {
             FileKind::Image | FileKind::Pdf | FileKind::Media | FileKind::Other => {
                 Some(View::File(Box::new(FileTab {
                     path: String::from(path),
-                    title: String::from(file_name(path)),
+                    title: String::from(strip_any_ext(file_name(path))),
                     kind,
                 })))
             }
@@ -4431,6 +4431,14 @@ fn push_rows(v: &Vault, folder: usize, depth: u16, open: &BTreeSet<String>, out:
 
 fn strip_md(name: &str) -> &str {
     name.strip_suffix(".md").unwrap_or(name)
+}
+
+/// A file's name without its extension, whatever it is.
+pub fn strip_any_ext(name: &str) -> &str {
+    match name.rfind('.') {
+        Some(i) if i > 0 => &name[..i],
+        _ => name,
+    }
 }
 
 /// A file's name without `.md`, `.canvas` or `.base`.

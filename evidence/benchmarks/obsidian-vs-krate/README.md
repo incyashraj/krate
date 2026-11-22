@@ -91,9 +91,10 @@ Arguments after `--`, one per word:
 | `vault=./vault` | open the folder `vault` under `--sandbox-root` |
 | `open=<path in vault>` | open that note (`open=Big note 200000.md`, `open=Projects/01/Tundra brief 00001.md`) |
 | `search=<query>` | run a vault search at start and show the search pane |
-| `show=a,b,...` | at start: `switcher`, `palette`, `outline`, `tags`, `outgoing`, `backlinks`, `unlinked`, `properties`, `bookmarks`, `graph`, `localgraph`, `settings`, `plugins`, `appearance`, `splitright`, `splitdown`, `daily`, `recovery`, `ribbon`, `newtab`, `pin` |
+| `show=a,b,...` | at start: `switcher`, `palette`, `outline`, `tags`, `outgoing`, `backlinks`, `unlinked`, `properties`, `bookmarks`, `graph`, `localgraph`, `settings`, `plugins`, `appearance`, `splitright`, `splitdown`, `daily`, `recovery`, `ribbon`, `newtab`, `pin`, `stack`, `outlinehere`, `backlinkshere`, `hotkeys`, `files` |
+| `also=<path>` | open another file in a new tab (repeatable) |
 | `right` / `light` | open the right sidebar / draw in the light theme |
-| `settle` | before the first frame, finish indexing and let a graph's layout settle (for a still picture) |
+| `settle` | before the first frame, finish indexing, let a graph's layout settle and read canvas link pages (for a still picture) |
 | `reading` | start the note in reading view |
 | `preview=<link>` | show the page preview for that link at start (Cmd-hover cannot be done headless) |
 | `sample` | open the built-in sample vault (memory only) |

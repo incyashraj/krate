@@ -78,10 +78,6 @@ fn fnv(h: &mut u64, bytes: &[u8]) {
     }
 }
 
-fn grouped_n(n: usize) -> String {
-    crate::text::grouped(n)
-}
-
 fn col(c: u32) -> Rgba {
     look::hex(c)
 }
@@ -160,6 +156,7 @@ impl Ui {
         let (cx, cy, zoom) = (g.cam.0, g.cam.1, g.zoom);
         let opt = g.opt.clone();
         let hover = g.hover;
+        let local_center = g.local.clone();
         // "Animate": the notes appear one after another over four seconds.
         let total_n = gr.nodes.len();
         let shown_n = match g.animate {
@@ -282,6 +279,13 @@ impl Ui {
                 let rad = (n.radius(opt.node_size) * zoom).max(1.2);
                 let base = match (n.kind, n.color) {
                     (_, Some(c)) => c,
+                    // A local graph's own note, in the accent.
+                    _ if local_center
+                        .as_deref()
+                        .is_some_and(|c| n.path.as_deref() == Some(c)) =>
+                    {
+                        look::rgb(t.link)
+                    }
                     (Kind::Unresolved, _) => look::rgb(t.faint),
                     (Kind::Tag, _) => 0x44CF6E,
                     _ => look::rgb(t.muted),
@@ -786,15 +790,22 @@ impl Ui {
                         }
                         // Centred on the middle the layout pulls to, as near
                         // full size as fits, the far edges allowed to run off.
-                        let mut xs: Vec<f32> = gr.nodes.iter().map(|n| n.x.abs()).collect();
-                        let mut ys: Vec<f32> = gr.nodes.iter().map(|n| n.y.abs()).collect();
+                        // A local graph centres on its own note.
+                        let (ox, oy) = g
+                            .local
+                            .as_deref()
+                            .and_then(|l| gr.find(l))
+                            .and_then(|i| gr.nodes.get(i))
+                            .map_or((0.0, 0.0), |n| (n.x, n.y));
+                        let mut xs: Vec<f32> = gr.nodes.iter().map(|n| (n.x - ox).abs()).collect();
+                        let mut ys: Vec<f32> = gr.nodes.iter().map(|n| (n.y - oy).abs()).collect();
                         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
                         ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
                         let q =
                             |v: &[f32]| v.get(v.len() * 95 / 100).copied().unwrap_or(1.0).max(1.0);
                         let (hx, hy) = (q(&xs) + 40.0, q(&ys) + 40.0);
                         g.zoom = (a.w * 0.5 / hx).min(a.h * 0.5 / hy).clamp(0.02, 1.0);
-                        g.cam = (0.0, 0.0);
+                        g.cam = (ox, oy);
                         if !gr.running() {
                             g.fitted = true;
                         }
@@ -1419,7 +1430,8 @@ impl Ui {
             .collect();
         for rv in &rows_vals {
             for (i, v) in rv.iter().enumerate() {
-                let w = width(self.c, v, fsz, 400) + 24.0 * k;
+                let date = v.len() >= 10 && v.as_bytes().get(4) == Some(&b'-');
+                let w = width(self.c, v, fsz, 400) + if date { 40.0 } else { 24.0 } * k;
                 if let Some(x) = widths.get_mut(i) {
                     *x = x.max(w).clamp(60.0 * k, 300.0 * k);
                 }
@@ -1434,7 +1446,8 @@ impl Ui {
             let gap = 16.0 * k;
             let per = (((tbl.w - gap) / (cw + gap)) as usize).max(1);
             let line = sz.ui * 1.6;
-            let ch = line * (cols.len() as f32) + 28.0 * k;
+            // A card: the name, then each property's name over its value.
+            let ch = line + (cols.len().saturating_sub(1) as f32) * line * 2.0 + 28.0 * k;
             let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
             for (ri, rv) in rows_vals.iter().enumerate() {
                 let cx = tbl.x + gap + (ri % per) as f32 * (cw + gap);
@@ -1461,6 +1474,18 @@ impl Ui {
                             cw - 28.0 * k,
                         );
                     } else {
+                        let label = cols.get(i).map(|c| base.column_name(c)).unwrap_or_default();
+                        fit(
+                            self.c,
+                            &label,
+                            cx + 14.0 * k,
+                            ly,
+                            sz.small,
+                            400,
+                            t.muted,
+                            cw - 28.0 * k,
+                        );
+                        ly += line;
                         fit(
                             self.c,
                             &shown,
@@ -1468,7 +1493,7 @@ impl Ui {
                             ly,
                             sz.ui,
                             400,
-                            if v.is_empty() { t.faint } else { t.muted },
+                            t.text,
                             cw - 28.0 * k,
                         );
                     }
@@ -1565,26 +1590,33 @@ impl Ui {
                 } else {
                     crate::props::format_date(label)
                 };
+                // The property's name, then the group's value, as the notes
+                // app heads a group.
+                let gname = w
+                    .group_by
+                    .as_ref()
+                    .map(|(p, _)| base.column_name(p))
+                    .unwrap_or_default();
+                let nw = width(self.c, &gname, sz.small, 400);
+                text(
+                    self.c,
+                    &gname,
+                    tbl.x + 16.0 * k,
+                    gy + rh * 0.6 + fsz * 0.36,
+                    sz.small,
+                    400,
+                    t.muted,
+                );
                 text(
                     self.c,
                     &shown,
-                    tbl.x + 16.0 * k,
+                    tbl.x + 22.0 * k + nw,
                     gy + rh * 0.6 + fsz * 0.36,
                     fsz,
                     600,
                     t.text,
                 );
-                let cnt = grouped_n(*n);
-                let lw = width(self.c, &shown, fsz, 600);
-                text(
-                    self.c,
-                    &cnt,
-                    tbl.x + 26.0 * k + lw,
-                    gy + rh * 0.6 + fsz * 0.36,
-                    fsz,
-                    400,
-                    t.faint,
-                );
+                let _ = n;
                 self.said.text(r(tbl.x, gy, tbl.w, rh), &shown);
                 fill(self.c, r(tbl.x, gy + rh * 1.2, tbl.w, 1.0), t.border);
                 extra += rh * 1.2;
@@ -1755,7 +1787,7 @@ impl Ui {
                         // never larger than it is.
                         let room_w = a.w - 64.0 * k;
                         let room_h = a.h - 64.0 * k;
-                        let f = (room_w / w as f32).min(room_h / hh as f32).min(1.0);
+                        let f = (room_w / w as f32).min(room_h / hh as f32);
                         let (dw, dh) = (w as f32 * f, hh as f32 * f);
                         let _ = canvas_images::draw(
                             self.c,
