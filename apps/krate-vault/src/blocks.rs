@@ -343,6 +343,24 @@ impl Embed {
     pub fn is_image(&self) -> bool {
         is_image_name(&self.target)
     }
+
+    /// A video or a sound by its extension (the kinds Obsidian embeds):
+    /// `Some(true)` for a sound, `Some(false)` for a video.
+    pub fn media(&self) -> Option<bool> {
+        media_kind(&self.target)
+    }
+}
+
+/// Obsidian's media: sounds (mp3, wav, m4a, ogg, flac, 3gp, webm sound is
+/// taken as video) and videos (mp4, webm, ogv, mov, mkv).
+pub fn media_kind(name: &str) -> Option<bool> {
+    let lower = name.to_ascii_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    match ext {
+        "mp3" | "wav" | "m4a" | "ogg" | "flac" | "3gp" | "aac" => Some(true),
+        "mp4" | "webm" | "ogv" | "mov" | "mkv" | "m4v" => Some(false),
+        _ => None,
+    }
 }
 
 pub fn is_image_name(name: &str) -> bool {
@@ -712,6 +730,9 @@ mod tests {
 
     #[test]
     fn embeds_name_notes_pictures_and_sizes() {
+        assert_eq!(embed("![[clip.mp4]]").unwrap().media(), Some(false));
+        assert_eq!(embed("![[song.MP3]]").unwrap().media(), Some(true));
+        assert_eq!(embed("![[note]]").unwrap().media(), None);
         let e = embed("![[sunset.png|300]]").unwrap();
         assert_eq!(
             (e.target.as_str(), e.width, e.is_image()),

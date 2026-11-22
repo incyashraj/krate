@@ -41,11 +41,22 @@ pub enum Act {
     DateMonth(bool),
     /// A press that lands on something that does nothing.
     Nothing,
+    /// A media embed's controls: which embed (its key), and what.
+    Media(String, MediaOp),
     /// Put the caret here (a click into a block drawn whole shows its
     /// source there).
     Place(Pos),
     /// A press on the find bar.
     Find(FindHit),
+}
+
+/// What a press on an audio or video player does.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MediaOp {
+    PlayPause,
+    /// Jump to this fraction of the way through.
+    Seek(f32),
+    Mute,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -97,7 +108,7 @@ pub fn act_on(app: &mut App, act: Act, m: Mods) -> bool {
     let now = app.now;
     match act {
         Act::Follow(full) => follow(app, &full, m.primary),
-        Act::Url(_) => return false,
+        Act::Url(_) | Act::Media(..) => return false,
         Act::Tag(t) => app.search_tag(&t),
         Act::Find(h) => {
             let Some(d) = app.doc_mut() else {

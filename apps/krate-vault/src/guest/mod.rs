@@ -1841,6 +1841,11 @@ impl Ui {
         let Some(act) = act else {
             return false;
         };
+        // A sound or video player's controls (src/guest/widgets.rs).
+        if let editor::Act::Media(key, op) = &act {
+            self.cache.env.media_act(key, *op);
+            return true;
+        }
         if let editor::Act::Url(u) = &act {
             if krate::ui::launcher::open_url(u).is_err() {
                 self.app.say("Krate did not let this app open web links");

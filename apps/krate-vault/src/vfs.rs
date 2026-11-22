@@ -31,6 +31,11 @@ pub trait Vfs {
     fn read_bytes(&mut self, path: &str) -> Result<Vec<u8>, String> {
         self.read(path).map(String::into_bytes)
     }
+    /// Where Krate's video player finds a file of the vault (for audio and
+    /// video embeds), when the files are on disk.
+    fn media_path(&self, _path: &str) -> Option<String> {
+        None
+    }
     /// Move a file or folder to the computer's trash. A folder in memory
     /// has none, so the vault uses its own `.trash` instead.
     fn trash(&mut self, _path: &str) -> Result<(), String> {

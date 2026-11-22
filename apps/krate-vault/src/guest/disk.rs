@@ -192,6 +192,10 @@ impl Vfs for DiskFs {
         String::from_utf8(bytes).map_err(|_| String::from("it is not UTF-8 text"))
     }
 
+    fn media_path(&self, path: &str) -> Option<String> {
+        Some(self.at_path(path))
+    }
+
     fn read_bytes(&mut self, path: &str) -> Result<Vec<u8>, String> {
         let file = files::open(&self.at_path(path), OpenMode::Read).map_err(why)?;
         let mut bytes: Vec<u8> = Vec::new();
