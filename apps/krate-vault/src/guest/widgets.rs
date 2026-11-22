@@ -328,6 +328,7 @@ fn sub(
         gap: false,
         comment: false,
         fold: 0,
+        struck: false,
     };
     Rc::new(layout(c, &text, ctx, "", &[]))
 }
@@ -1327,141 +1328,65 @@ fn draw_value(c: u64, p: &PropRow, x: f32, cy: f32, room: f32, t: &Theme) {
     }
 }
 
-/// The icons a property's kind shows, about 14 px.
-fn prop_icon(c: u64, kind: Kind, x: f32, y: f32, col: Rgba) {
-    let s = 1.3;
-    match kind {
-        Kind::Text => {
-            for (i, w) in [12.0, 12.0, 8.0].iter().enumerate() {
-                let yy = y - 4.0 + i as f32 * 4.0;
-                look::line(c, x - 6.0, yy, x - 6.0 + w, yy, s, col);
-            }
-        }
-        Kind::Tags => {
-            look::line(c, x - 6.0, y - 6.0, x + 1.0, y - 6.0, s, col);
-            look::line(c, x + 1.0, y - 6.0, x + 7.0, y, s, col);
-            look::line(c, x + 7.0, y, x + 1.0, y + 6.0, s, col);
-            look::line(c, x + 1.0, y + 6.0, x - 6.0, y - 1.0, s, col);
-            look::line(c, x - 6.0, y - 1.0, x - 6.0, y - 6.0, s, col);
-        }
-        Kind::Aliases => {
-            look::line(c, x - 6.0, y + 5.0, x - 6.0, y, s, col);
-            look::line(c, x - 6.0, y, x + 5.0, y, s, col);
-            look::line(c, x + 2.0, y - 3.0, x + 5.0, y, s, col);
-            look::line(c, x + 2.0, y + 3.0, x + 5.0, y, s, col);
-        }
-        Kind::Number => {
-            look::text(c, "#", x - 5.0, y + 5.0, 13.0, 600, col);
-        }
-        Kind::Checkbox => {
-            look::outline(c, r(x - 6.0, y - 6.0, 12.0, 12.0), 3.0, s, col);
-            look::line(c, x - 3.0, y, x - 1.0, y + 2.5, s, col);
-            look::line(c, x - 1.0, y + 2.5, x + 3.5, y - 3.0, s, col);
-        }
-        Kind::Date | Kind::DateTime => {
-            look::outline(c, r(x - 6.0, y - 5.0, 12.0, 11.0), 2.0, s, col);
-            look::line(c, x - 6.0, y - 1.5, x + 6.0, y - 1.5, s, col);
-            look::line(c, x - 3.0, y - 7.0, x - 3.0, y - 4.0, s, col);
-            look::line(c, x + 3.0, y - 7.0, x + 3.0, y - 4.0, s, col);
-        }
-        Kind::List => {
-            for i in 0..3 {
-                let yy = y - 4.0 + i as f32 * 4.0;
+/// Stroke a Lucide icon at `size` px centred on (x, y): its 2-unit lines
+/// scaled, round-ended (`look::line` draws round dots).
+pub fn lucide(c: u64, elements: &str, x: f32, y: f32, size: f32, col: Rgba) {
+    let w = (2.0 * size / 24.0).max(1.0);
+    for line in crate::svg::icon_lines(elements, x, y, size) {
+        if line.len() == 1
+            || line
+                .windows(2)
+                .all(|p| (p[0].0 - p[1].0).abs() + (p[0].1 - p[1].1).abs() < 0.05)
+        {
+            if let Some(p) = line.first() {
                 let _ = canvas2d::fill_circle(
                     c,
-                    krate::gfx::types::Point { x: x - 5.0, y: yy },
-                    1.1,
+                    krate::gfx::types::Point { x: p.0, y: p.1 },
+                    w * 0.5,
                     col,
                 );
-                look::line(c, x - 2.0, yy, x + 6.0, yy, s, col);
             }
+            continue;
+        }
+        for seg in line.windows(2) {
+            look::line(c, seg[0].0, seg[0].1, seg[1].0, seg[1].1, w, col);
         }
     }
 }
 
-/// A callout type's icon, about 16 px, in its colour.
-fn callout_icon(c: u64, icon: CalloutIcon, x: f32, y: f32, col: Rgba) {
-    let s = 1.6;
-    let circle = |rad: f32| {
-        let _ = canvas2d::stroke_circle(c, krate::gfx::types::Point { x, y }, rad, s, col);
+/// The Lucide icon Obsidian shows for a property's type.
+fn prop_icon(c: u64, kind: Kind, x: f32, y: f32, col: Rgba) {
+    let el = match kind {
+        Kind::Text => crate::lucide::TEXT,
+        Kind::Tags => crate::lucide::TAGS,
+        Kind::Aliases => crate::lucide::FORWARD,
+        Kind::Number => crate::lucide::BINARY,
+        Kind::Checkbox => crate::lucide::SQUARE_CHECK,
+        Kind::Date => crate::lucide::CALENDAR,
+        Kind::DateTime => crate::lucide::CLOCK,
+        Kind::List => crate::lucide::LIST,
     };
-    match icon {
-        CalloutIcon::Pencil => {
-            look::line(c, x - 6.0, y + 6.0, x + 4.0, y - 4.0, s, col);
-            look::line(c, x + 4.0, y - 4.0, x + 6.0, y - 2.0, s, col);
-            look::line(c, x + 6.0, y - 2.0, x - 4.0, y + 8.0, s, col);
-            look::line(c, x - 6.0, y + 6.0, x - 7.0, y + 8.0, s, col);
-            look::line(c, x - 7.0, y + 8.0, x - 4.0, y + 8.0, s, col);
-        }
-        CalloutIcon::Clipboard => {
-            look::outline(c, r(x - 6.0, y - 6.0, 12.0, 14.0), 2.0, s, col);
-            look::outline(c, r(x - 3.0, y - 8.0, 6.0, 4.0), 1.0, s, col);
-        }
-        CalloutIcon::Info => {
-            circle(7.5);
-            look::line(c, x, y - 1.0, x, y + 4.0, s, col);
-            let _ = canvas2d::fill_circle(c, krate::gfx::types::Point { x, y: y - 4.0 }, 1.1, col);
-        }
-        CalloutIcon::Check => {
-            look::outline(c, r(x - 7.0, y - 7.0, 14.0, 14.0), 3.0, s, col);
-            look::line(c, x - 3.5, y, x - 1.0, y + 3.0, s, col);
-            look::line(c, x - 1.0, y + 3.0, x + 4.0, y - 3.0, s, col);
-        }
-        CalloutIcon::Flame => {
-            look::line(c, x, y - 8.0, x + 5.0, y - 1.0, s, col);
-            look::line(c, x + 5.0, y - 1.0, x + 4.0, y + 5.0, s, col);
-            look::line(c, x + 4.0, y + 5.0, x, y + 8.0, s, col);
-            look::line(c, x, y + 8.0, x - 4.0, y + 5.0, s, col);
-            look::line(c, x - 4.0, y + 5.0, x - 4.5, y + 0.0, s, col);
-            look::line(c, x - 4.5, y, x - 2.0, y - 2.0, s, col);
-            look::line(c, x - 2.0, y - 2.0, x, y - 8.0, s, col);
-        }
-        CalloutIcon::CheckCircle => {
-            circle(7.5);
-            look::line(c, x - 3.5, y, x - 1.0, y + 3.0, s, col);
-            look::line(c, x - 1.0, y + 3.0, x + 4.0, y - 3.0, s, col);
-        }
-        CalloutIcon::Help => {
-            circle(7.5);
-            look::text(c, "?", x - 3.2, y + 4.5, 12.0, 700, col);
-        }
-        CalloutIcon::Warning => {
-            look::line(c, x, y - 7.5, x + 8.0, y + 6.5, s, col);
-            look::line(c, x + 8.0, y + 6.5, x - 8.0, y + 6.5, s, col);
-            look::line(c, x - 8.0, y + 6.5, x, y - 7.5, s, col);
-            look::line(c, x, y - 2.0, x, y + 2.0, s, col);
-            let _ = canvas2d::fill_circle(c, krate::gfx::types::Point { x, y: y + 4.3 }, 1.0, col);
-        }
-        CalloutIcon::Cross => {
-            look::line(c, x - 6.0, y - 6.0, x + 6.0, y + 6.0, s, col);
-            look::line(c, x + 6.0, y - 6.0, x - 6.0, y + 6.0, s, col);
-        }
-        CalloutIcon::Zap => {
-            look::line(c, x + 2.0, y - 8.0, x - 6.0, y + 1.0, s, col);
-            look::line(c, x - 6.0, y + 1.0, x + 1.0, y + 1.0, s, col);
-            look::line(c, x + 1.0, y + 1.0, x - 2.0, y + 8.0, s, col);
-            look::line(c, x - 2.0, y + 8.0, x + 6.0, y - 1.0, s, col);
-            look::line(c, x + 6.0, y - 1.0, x - 1.0, y - 1.0, s, col);
-            look::line(c, x - 1.0, y - 1.0, x + 2.0, y - 8.0, s, col);
-        }
-        CalloutIcon::Bug => {
-            look::outline(c, r(x - 4.5, y - 4.0, 9.0, 12.0), 4.5, s, col);
-            for dy in [-1.0, 3.0, 7.0] {
-                look::line(c, x - 8.0, y + dy, x - 4.5, y + dy, s, col);
-                look::line(c, x + 4.5, y + dy, x + 8.0, y + dy, s, col);
-            }
-        }
-        CalloutIcon::List => {
-            for i in 0..3 {
-                let yy = y - 5.0 + i as f32 * 5.0;
-                look::line(c, x - 7.0, yy, x - 5.5, yy, s, col);
-                look::line(c, x - 2.0, yy, x + 7.0, yy, s, col);
-            }
-        }
-        CalloutIcon::Quote => {
-            look::text(c, "“", x - 6.0, y + 9.0, 22.0, 700, col);
-        }
-    }
+    lucide(c, el, x, y, 16.0, col);
+}
+
+/// A callout type's Lucide icon, 16 px, in its colour.
+fn callout_icon(c: u64, icon: CalloutIcon, x: f32, y: f32, col: Rgba) {
+    let el = match icon {
+        CalloutIcon::Pencil => crate::lucide::PENCIL,
+        CalloutIcon::Clipboard => crate::lucide::CLIPBOARD_LIST,
+        CalloutIcon::Info => crate::lucide::INFO,
+        CalloutIcon::Check => crate::lucide::CIRCLE_CHECK,
+        CalloutIcon::Flame => crate::lucide::FLAME,
+        CalloutIcon::CheckCircle => crate::lucide::CHECK,
+        CalloutIcon::Help => crate::lucide::CIRCLE_HELP,
+        CalloutIcon::Warning => crate::lucide::TRIANGLE_ALERT,
+        CalloutIcon::Cross => crate::lucide::X,
+        CalloutIcon::Zap => crate::lucide::ZAP,
+        CalloutIcon::Bug => crate::lucide::BUG,
+        CalloutIcon::List => crate::lucide::LIST,
+        CalloutIcon::Quote => crate::lucide::QUOTE,
+    };
+    lucide(c, el, x, y, 16.0, col);
 }
 
 // ---- presses ------------------------------------------------------------------------------------
@@ -1682,17 +1607,45 @@ pub fn draw_find_bar(
         },
     );
     shown.find.push((FindHit::Query, q));
+    // Match case, whole word, regular expression: toggles in the field.
+    let mut tx = q.right() - 4.0;
+    for (hit, on, glyph) in [
+        (FindHit::Regex, f.regex, ".*"),
+        (FindHit::Word, f.word, "ab"),
+        (FindHit::Case, f.case, "Aa"),
+    ] {
+        let b = r(tx - 26.0, q.y + 4.0, 24.0, q.h - 8.0);
+        if on {
+            round(c, b, 4.0, look::alpha(t.accent, 0.35));
+        }
+        let gw = look::width(c, glyph, 12.0, 600);
+        let ink = if on { t.text } else { t.muted };
+        look::text(
+            c,
+            glyph,
+            b.x + (b.w - gw) * 0.5,
+            b.y + b.h * 0.5 + 4.0,
+            12.0,
+            600,
+            ink,
+        );
+        if hit == FindHit::Word {
+            fill(c, r(b.x + 5.0, b.bottom() - 5.0, b.w - 10.0, 1.0), ink);
+        }
+        said.button(
+            b,
+            match hit {
+                FindHit::Case => "Match case",
+                FindHit::Word => "Match whole word",
+                _ => "Use regular expression",
+            },
+        );
+        shown.find.push((hit, b));
+        tx -= 26.0;
+    }
     let label = f.label();
     let lw = look::width(c, &label, 13.0, 400);
-    look::text(
-        c,
-        &label,
-        q.right() - lw - 10.0,
-        q.y + 20.0,
-        13.0,
-        400,
-        t.muted,
-    );
+    look::text(c, &label, tx - lw - 8.0, q.y + 20.0, 13.0, 400, t.muted);
     let mut x = q.right() + 8.0;
     for hit in [
         FindHit::Prev,
@@ -1803,6 +1756,10 @@ pub fn hover(
     if over_popup {
         return changed;
     }
+    // Editing view previews with Cmd held; reading view on plain hover
+    // (Obsidian's defaults).
+    let reading = doc.is_some_and(|d| d.mode == Mode::Reading);
+    let cmd = cmd || reading;
     let link = match (doc, cmd) {
         (Some(d), true) => editor::link_at(c, d, shown, px, py),
         _ => None,

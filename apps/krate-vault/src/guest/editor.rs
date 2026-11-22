@@ -116,6 +116,9 @@ pub struct Lay {
     pub fold: u8,
     /// A task's mark (`x`, `/`, `-`) for the states a checkbox draws.
     pub task_mark: u8,
+    /// Struck through and dimmed: a done task, or (reading view) an item
+    /// under one.
+    pub struck: bool,
 }
 
 impl Lay {
@@ -297,6 +300,7 @@ impl Lay {
             widget: None,
             fold: 0,
             task_mark: 0,
+            struck: false,
         }
     }
 
@@ -333,6 +337,35 @@ pub struct Ctx {
     pub comment: bool,
     /// 0: cannot fold; 1: can fold; 2: folded.
     pub fold: u8,
+    /// Reading view: a list item under a done task, struck through with it.
+    pub struck: bool,
+}
+
+/// Whether list item `n` sits (at any depth) under a ticked task, which
+/// reading view strikes through with its children.
+fn under_done_task(doc: &Doc, n: usize) -> bool {
+    let mut ind = crate::text::indent_of(doc.line(n)).len();
+    let mut p = n;
+    while ind > 0 && p > 0 && n - p < 200 {
+        p -= 1;
+        let l = doc.line(p);
+        if l.trim().is_empty() {
+            return false;
+        }
+        let i = crate::text::indent_of(l).len();
+        if i < ind {
+            match doc.block(p) {
+                Block::Task { checked: true, .. }
+                    if matches!(l.trim_start().as_bytes().get(3), Some(b'x' | b'X')) =>
+                {
+                    return true
+                }
+                b if b.is_list() => ind = i,
+                _ => return false,
+            }
+        }
+    }
+    false
 }
 
 pub fn heading_size(level: u8, body: f32) -> f32 {
@@ -535,6 +568,11 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
                 comment: true,
                 ..md::Style::default()
             };
+        }
+    }
+    if ctx.struck {
+        for s in segs.iter_mut().skip(2) {
+            s.style.strike = true;
         }
     }
     // The hidden-marker trick only hides when the line is not being edited;
@@ -864,6 +902,7 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
         widget: None,
         fold: ctx.fold,
         task_mark,
+        struck: ctx.struck || matches!(task_mark, b'x' | b'X'),
     }
 }
 
@@ -915,6 +954,7 @@ pub fn layout_title(c: u64, title: &str, width: f32, sz: &Sizes) -> Lay {
         widget: None,
         fold: 0,
         task_mark: 0,
+        struck: false,
     }
 }
 
@@ -931,6 +971,18 @@ pub struct LayCache {
     pub preview: Option<widgets::Preview>,
     /// Selected text is being dragged to a new place.
     pub text_drag: bool,
+    /// Settings > Appearance > Show inline title, turned off.
+    pub hide_title: bool,
+    /// Settings > Editor > Show line numbers.
+    pub line_numbers: bool,
+}
+
+impl LayCache {
+    /// The settings the note view follows, set each frame by the guest.
+    pub fn follow_settings(&mut self, show_inline_title: bool, show_line_numbers: bool) {
+        self.hide_title = !show_inline_title;
+        self.line_numbers = show_line_numbers;
+    }
 }
 
 const CACHE_MAX: usize = 6_000;
@@ -973,6 +1025,7 @@ fn key(text: &str, ctx: &Ctx, lang: &str, nums: &[usize]) -> u64 {
             u8::from(ctx.gap),
             u8::from(ctx.comment),
             ctx.fold,
+            u8::from(ctx.struck),
         ],
     );
     fnv(&mut h, &ctx.width.to_bits().to_le_bytes());
@@ -1055,6 +1108,13 @@ fn has_notes_row(doc: &Doc) -> bool {
 /// line is reading view's footnotes).
 pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<Lay> {
     if vi == 0 {
+        if cache.hide_title {
+            // Settings > Appearance > Show inline title, off: the note
+            // starts at the top with the editor's padding.
+            let mut l = Lay::hidden(v.sz.body);
+            l.h = 24.0 * v.sz.scale;
+            return Rc::new(l);
+        }
         let k = {
             let mut h: u64 = 0x1234_5678;
             fnv(&mut h, doc.title.as_bytes());
@@ -1126,13 +1186,14 @@ pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<L
     let ctx = Ctx {
         block,
         mode: doc.mode,
-        active: ((n >= a && n <= b) || extra_active) && !reading,
+        active: ((n >= a && n <= b) || extra_active) && !reading && !doc.fresh,
         width: v.width,
         body: v.sz.body,
         code: v.sz.code,
         gap,
         comment: doc.mode != Mode::Source && doc.in_comment(n),
         fold,
+        struck: reading && block.is_list() && under_done_task(doc, n),
     };
     let lang = if block == Block::Code {
         doc.fence_lang(n)
@@ -1273,7 +1334,7 @@ pub fn reveal(cache: &mut LayCache, c: u64, doc: &mut Doc, v: &View) {
     }
 }
 
-/// Move the caret up or down by `n` rows as drawn (wrapped rows count;
+/// Move every caret up or down by `n` rows as drawn (wrapped rows count;
 /// folded lines are stepped over).
 pub fn move_vertical(
     cache: &mut LayCache,
@@ -1284,7 +1345,39 @@ pub fn move_vertical(
     n: usize,
     extend: bool,
 ) {
+    if doc.extra.is_empty() {
+        move_one(cache, c, doc, v, down, n, extend);
+        return;
+    }
+    let carets = doc.carets();
     doc.extra.clear();
+    let mut out: Vec<(Option<Pos>, Pos)> = Vec::new();
+    for (an, p) in carets {
+        doc.anchor = an;
+        doc.cur = p;
+        doc.goal_x = None;
+        move_one(cache, c, doc, v, down, n, extend);
+        out.push((doc.anchor, doc.cur));
+    }
+    out.dedup_by(|x, y| x.1 == y.1);
+    let lead = out.remove(0);
+    doc.anchor = lead.0;
+    doc.cur = lead.1;
+    out.retain(|x| x.1 != lead.1);
+    doc.extra = out;
+    doc.goal_x = None;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn move_one(
+    cache: &mut LayCache,
+    c: u64,
+    doc: &mut Doc,
+    v: &View,
+    down: bool,
+    n: usize,
+    extend: bool,
+) {
     let mut line = doc.cur.line;
     let text = String::from(doc.line(line));
     let l = lay(cache, c, doc, line + 1, v);
@@ -1437,7 +1530,17 @@ pub fn draw(
                     }
                 }
             }
-            if caret_on && doc.mode != Mode::Reading {
+            if cache.line_numbers && doc.mode != Mode::Reading {
+                // The gutter: each line's number at its first row.
+                if let Some(rl) = l.rows.first() {
+                    let mut s = String::new();
+                    crate::text::push_num(&mut s, n + 1);
+                    let size = (v.sz.body * 0.8).round();
+                    let w = look::width(c, &s, size, 400);
+                    look::text(c, &s, v.x - 14.0 - w, y + rl.base, size, 400, t.faint);
+                }
+            }
+            if caret_on && doc.mode != Mode::Reading && !doc.fresh {
                 if n == doc.cur.line {
                     draw_caret(c, &l, text, v, y, doc.cur.col, t);
                 }
@@ -1830,9 +1933,7 @@ pub fn draw_line(
             col = t.muted;
         } else if l.deco == Deco::Code {
             col = tok_colour(run.tok, t);
-        } else if run.tok == Tok::Punct
-            || (l.deco == Deco::Task(true) && matches!(l.task_mark, b'x' | b'X'))
-        {
+        } else if run.tok == Tok::Punct || l.struck {
             col = t.muted;
         } else if l.deco == Deco::Title {
             col = t.text;

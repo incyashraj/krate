@@ -1752,6 +1752,11 @@ impl Ui {
         if focused {
             self.hit(ed, Zone::Editor);
         }
+        // Inline title and line numbers, as the settings say (editor.rs).
+        self.cache.follow_settings(
+            self.app.settings.show_inline_title(),
+            self.app.settings.show_line_number(),
+        );
         let caret_on = focused && self.caret_visible();
         let app = &self.app;
         let resolved = |name: &str| -> bool { app.resolved(name) };

@@ -2187,9 +2187,7 @@ fn mentions(line: &str, key: &str) -> bool {
         let after = l[i + key.len()..].chars().next();
         let word = before.is_none_or(|c| !c.is_alphanumeric())
             && after.is_none_or(|c| !c.is_alphanumeric());
-        let in_link = l[..i]
-            .rfind("[[")
-            .is_some_and(|o| l[o..i].find("]]").is_none());
+        let in_link = l[..i].rfind("[[").is_some_and(|o| !l[o..i].contains("]]"));
         if word && !in_link {
             return true;
         }
@@ -2207,9 +2205,7 @@ fn link_first(line: &str, key: &str, name: &str) -> String {
         let after = l[i + key.len()..].chars().next();
         let word = before.is_none_or(|c| !c.is_alphanumeric())
             && after.is_none_or(|c| !c.is_alphanumeric());
-        let in_link = l[..i]
-            .rfind("[[")
-            .is_some_and(|o| l[o..i].find("]]").is_none());
+        let in_link = l[..i].rfind("[[").is_some_and(|o| !l[o..i].contains("]]"));
         if word && !in_link && line.is_char_boundary(i) && line.is_char_boundary(i + key.len()) {
             let shown = &line[i..i + key.len()];
             let mut out = String::from(&line[..i]);

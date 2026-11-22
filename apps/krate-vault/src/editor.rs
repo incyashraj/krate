@@ -51,6 +51,10 @@ pub struct Doc {
     pub save_error: Option<String>,
     /// The caret moved since the view last made sure it is on screen.
     pub reveal: bool,
+    /// Opened and not touched yet: like Obsidian, a note opens without the
+    /// editor focused, so no caret shows and no line shows its syntax
+    /// until the person clicks into it or presses a key.
+    pub fresh: bool,
     /// The `$$` lines of display-math blocks, kept like the fences.
     pub maths: Marks,
     /// The `%%` lines of comment blocks.
@@ -170,6 +174,7 @@ impl Doc {
             dirty_since: None,
             save_error: None,
             reveal: false,
+            fresh: true,
             maths: Marks::default(),
             comments: Marks::default(),
             front: None,
@@ -315,12 +320,14 @@ impl Doc {
         if let Some(log) = self.edit_log.as_mut() {
             log.push((a, b, end));
         }
+        self.fresh = false;
         self.dirty_since.get_or_insert(now);
         self.reveal = true;
         end
     }
 
     fn set_cursor(&mut self, p: Pos, extend: bool) {
+        self.fresh = false;
         if extend {
             self.anchor.get_or_insert(self.cur);
         } else {
@@ -615,12 +622,14 @@ impl Doc {
     }
 
     pub fn select_all(&mut self) {
+        self.fresh = false;
         self.anchor = Some(Pos::new(0, 0));
         self.cur = self.buf.end();
         self.goal_x = None;
     }
 
     pub fn select_range(&mut self, a: Pos, b: Pos) {
+        self.fresh = false;
         self.anchor = Some(self.buf.clamp(a));
         self.cur = self.buf.clamp(b);
         self.goal_x = None;
@@ -999,6 +1008,9 @@ impl Doc {
 
     /// Whether the caret or a selection touches lines `a..=b`.
     pub fn caret_in(&self, a: usize, b: usize) -> bool {
+        if self.fresh {
+            return false;
+        }
         let (s, e) = match self.selection() {
             Some((x, y)) => (x.line, y.line),
             None => (self.cur.line, self.cur.line),

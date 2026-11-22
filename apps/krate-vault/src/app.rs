@@ -2575,6 +2575,10 @@ impl App {
     }
 
     pub fn accept_completion(&mut self, i: usize) {
+        // A block chosen after `[[Note#^` gets its id written (links.rs).
+        if crate::links::accept_block(self, i) {
+            return;
+        }
         let Some(name) = self
             .completion
             .as_ref()

@@ -29,8 +29,63 @@ pub struct Find {
     /// Matches as (line, byte, length), in order.
     pub matches: Vec<(usize, usize, usize)>,
     pub current: Option<usize>,
-    /// What the matches were found for: the query and the note's version.
-    found_for: Option<(String, u64)>,
+    /// Match case, whole word, regular expression: the bar's three toggles.
+    pub case: bool,
+    pub word: bool,
+    pub regex: bool,
+    /// Why the regular expression could not be read.
+    pub error: Option<String>,
+    /// What the matches were found for: the query, the toggles and the
+    /// note's version.
+    found_for: Option<(String, u8, u64)>,
+}
+
+fn word_char(c: Option<char>) -> bool {
+    c.is_some_and(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// Whether `line[a..b]` stands as a whole word.
+fn whole_word(line: &str, a: usize, b: usize) -> bool {
+    !word_char(line.get(..a).and_then(|h| h.chars().next_back()))
+        && !word_char(line.get(b..).and_then(|t| t.chars().next()))
+}
+
+/// The matches in one line as (byte, length, the replacement's groups).
+fn line_matches(
+    line: &str,
+    q: &str,
+    lq: &str,
+    case: bool,
+    word: bool,
+    re: Option<&crate::regex::Regex>,
+) -> Vec<(usize, usize, Vec<Option<String>>)> {
+    let mut out = Vec::new();
+    if let Some(re) = re {
+        for (a, b, groups) in re.find_all(line) {
+            if b > a && (!word || whole_word(line, a, b)) {
+                out.push((a, b - a, groups));
+            }
+        }
+        return out;
+    }
+    let mut from = 0;
+    loop {
+        let hit = if case {
+            line.get(from..)
+                .and_then(|r| r.find(q))
+                .map(|i| (from + i, q.len()))
+        } else {
+            find_ci(line, lq, from).map(|at| (at, match_len(line, at, lq).max(1)))
+        };
+        let Some((at, len)) = hit else {
+            break;
+        };
+        if !word || whole_word(line, at, at + len) {
+            out.push((at, len, Vec::new()));
+        }
+        from = at + len.max(1);
+    }
+    out
 }
 
 impl Find {
@@ -52,30 +107,41 @@ impl Find {
         count: usize,
         version: u64,
     ) {
-        let q = lower(&self.query.text);
+        let q = self.query.text.clone();
+        let lq = lower(&q);
+        let flags = u8::from(self.case) | u8::from(self.word) << 1 | u8::from(self.regex) << 2;
         if self
             .found_for
             .as_ref()
-            .is_some_and(|(fq, v)| *fq == q && *v == version)
+            .is_some_and(|(fq, fl, v)| *fq == q && *fl == flags && *v == version)
         {
             return;
         }
         self.matches.clear();
-        if !q.is_empty() {
+        self.error = None;
+        let re = if self.regex && !q.is_empty() {
+            match crate::regex::Regex::new(&q, !self.case) {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    self.error = Some(e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if !q.is_empty() && (!self.regex || re.is_some()) {
             'all: for n in 0..count {
                 let line = doc_lines(n);
-                let mut from = 0;
-                while let Some(at) = find_ci(line, &q, from) {
-                    let len = match_len(line, at, &q).max(1);
+                for (at, len, _) in line_matches(line, &q, &lq, self.case, self.word, re.as_ref()) {
                     self.matches.push((n, at, len));
                     if self.matches.len() >= MAX_MATCHES {
                         break 'all;
                     }
-                    from = at + len;
                 }
             }
         }
-        self.found_for = Some((q, version));
+        self.found_for = Some((q, flags, version));
         self.current = self.current.filter(|c| *c < self.matches.len());
     }
 
@@ -94,6 +160,9 @@ impl Find {
     pub fn label(&self) -> String {
         if self.query.text.is_empty() {
             return String::new();
+        }
+        if let Some(e) = &self.error {
+            return e.clone();
         }
         if self.matches.is_empty() {
             return String::from("No results");
@@ -172,13 +241,13 @@ pub fn replace_one(doc: &mut Doc, now: u64) {
     let Some(f) = doc.find.as_ref() else {
         return;
     };
-    let with = f.replace.text.clone();
     let Some(i) = f.current.or_else(|| f.index_from(doc.cur)) else {
         return;
     };
     let Some(&(l, c, len)) = f.matches.get(i) else {
         return;
     };
+    let with = replacement(doc, l, c);
     doc.replace(Pos::new(l, c), Pos::new(l, c + len), &with, now);
     doc.cur = Pos::new(l, c + with.len());
     doc.anchor = None;
@@ -195,19 +264,40 @@ pub fn replace_one(doc: &mut Doc, now: u64) {
     }
 }
 
+/// What the match at `line`, byte `at` is replaced with: the replace
+/// field, with `$1` and `$&` filled in when it is a regular expression.
+fn replacement(doc: &Doc, l: usize, at: usize) -> String {
+    let Some(f) = doc.find.as_ref() else {
+        return String::new();
+    };
+    if !f.regex {
+        return f.replace.text.clone();
+    }
+    let Ok(re) = crate::regex::Regex::new(&f.query.text, !f.case) else {
+        return f.replace.text.clone();
+    };
+    let groups = re
+        .find_all(doc.line(l))
+        .into_iter()
+        .find(|m| m.0 == at)
+        .map(|m| m.2)
+        .unwrap_or_default();
+    crate::regex::expand(&f.replace.text, &groups)
+}
+
 /// Replace every match, as one undo.
 pub fn replace_all(doc: &mut Doc, now: u64) -> usize {
     refresh(doc);
     let Some(f) = doc.find.as_ref() else {
         return 0;
     };
-    let with = f.replace.text.clone();
     let all = f.matches.clone();
     if all.is_empty() {
         return 0;
     }
     doc.buf.begin_group(doc.cur);
     for (l, c, len) in all.iter().rev() {
+        let with = replacement(doc, *l, *c);
         doc.replace(Pos::new(*l, *c), Pos::new(*l, c + len), &with, now);
     }
     doc.buf.end_group(doc.cur);
@@ -290,6 +380,16 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
         }
         "Enter" if in_replace => replace_one(doc, now),
         "Enter" => step(doc, m.shift),
+        _ if m.alt && !m.primary && matches!(k.as_str(), "c" | "w" | "r" | "ç" | "∑" | "®") => {
+            if let Some(f) = doc.find.as_mut() {
+                match k.as_str() {
+                    "c" | "ç" => f.case = !f.case,
+                    "w" | "∑" => f.word = !f.word,
+                    _ => f.regex = !f.regex,
+                }
+            }
+            after_query_edit(doc);
+        }
         "Tab" if replacing => {
             if let Some(f) = doc.find.as_mut() {
                 f.in_replace = !f.in_replace;
@@ -329,6 +429,11 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
         }
     }
     Some(true)
+}
+
+/// Find again after a toggle changed.
+pub fn requery(doc: &mut Doc) {
+    after_query_edit(doc);
 }
 
 fn after_query_edit(doc: &mut Doc) {
@@ -419,6 +524,32 @@ mod tests {
         assert_eq!(d.find.as_ref().unwrap().label(), "No results");
         d.undo();
         assert_eq!(d.text(), "lion cat\ndog cat", "replace all is one undo");
+    }
+
+    #[test]
+    fn case_whole_word_and_regex_toggles() {
+        let mut d = doc("Cat cat concat\ncat-2 CAT");
+        open(&mut d, true);
+        d.find.as_mut().unwrap().query = Input::with("cat");
+        refresh(&mut d);
+        assert_eq!(d.find.as_ref().unwrap().matches.len(), 5);
+        d.find.as_mut().unwrap().case = true;
+        refresh(&mut d);
+        assert_eq!(d.find.as_ref().unwrap().matches.len(), 3);
+        d.find.as_mut().unwrap().word = true;
+        refresh(&mut d);
+        assert_eq!(d.find.as_ref().unwrap().matches, [(0, 4, 3), (1, 0, 3)]);
+        let f = d.find.as_mut().unwrap();
+        f.case = false;
+        f.word = false;
+        f.regex = true;
+        f.query = Input::with(r"(\w+)-(\d)");
+        f.replace = Input::with("$2:$1");
+        assert_eq!(replace_all(&mut d, 0), 1);
+        assert_eq!(d.line(1), "2:cat CAT");
+        d.find.as_mut().unwrap().query = Input::with("(");
+        refresh(&mut d);
+        assert!(d.find.as_ref().unwrap().label().contains("Unclosed"));
     }
 
     #[test]
