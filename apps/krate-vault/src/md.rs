@@ -929,6 +929,15 @@ impl Fences {
         !self.is_fence(n) && self.before(n) % 2 == 1
     }
 
+    /// The fence line that opens the code block line `n` is in.
+    pub fn opener(&self, n: usize) -> Option<usize> {
+        if !self.in_code(n) {
+            return None;
+        }
+        let k = self.before(n);
+        self.lines.get(k.checked_sub(1)?).copied()
+    }
+
     /// Whether fence line `n` opens a block (an even number before it).
     pub fn opens(&self, n: usize) -> bool {
         self.is_fence(n) && self.before(n).is_multiple_of(2)

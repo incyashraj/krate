@@ -41,6 +41,7 @@ pub mod buffer;
 pub mod canvas;
 pub mod dates;
 pub mod editor;
+pub mod find;
 pub mod graph;
 pub mod highlight;
 pub mod json;

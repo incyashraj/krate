@@ -8,11 +8,14 @@
 //! lines it touched, so a keystroke in a 200,000-line note costs what it
 //! costs in a short one.
 
+use crate::blocks::{self, Footnotes, Marks};
 use crate::buffer::{Buffer, Pos};
 use crate::md::{self, Block, Fences};
 use crate::text::{chars_in, words_in};
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 /// How a note is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +51,62 @@ pub struct Doc {
     pub save_error: Option<String>,
     /// The caret moved since the view last made sure it is on screen.
     pub reveal: bool,
+    /// The `$$` lines of display-math blocks, kept like the fences.
+    pub maths: Marks,
+    /// The `%%` lines of comment blocks.
+    pub comments: Marks,
+    /// The last line of the front matter, when the note has one.
+    pub front: Option<usize>,
+    /// Headings and list items folded shut, by line.
+    pub folds: BTreeSet<usize>,
+    /// Callouts whose fold was flipped from how they are written (`-`
+    /// opened, `+` closed), by the line of their head.
+    pub callouts_flipped: BTreeSet<usize>,
+    /// Carets beyond the main one (Option-click, Cmd+D), each with its own
+    /// selection anchor.
+    pub extra: Vec<(Option<Pos>, Pos)>,
+    /// Find and replace in this note, while its bar is open.
+    pub find: Option<crate::find::Find>,
+    /// Edits made while several carets type, so each caret can follow the
+    /// edits made before it.
+    edit_log: Option<Vec<(Pos, Pos, Pos)>>,
+    /// The fold ranges and footnotes as of a buffer version, worked out
+    /// when the view first asks after an edit.
+    fold_cache: RefCell<(u64, Vec<(usize, usize)>)>,
+    notes_cache: RefCell<Option<(u64, alloc::rc::Rc<Footnotes>)>>,
+}
+
+/// A run of lines drawn as one piece (when the caret is not in it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpanKind {
+    Front,
+    Math,
+    Table,
+    Callout,
+    Embed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    pub kind: SpanKind,
+    pub first: usize,
+    pub last: usize,
+}
+
+/// Where position `q` lands after `a..b` was replaced by text ending at `e`
+/// (`q` at or after `b`).
+fn follow(q: Pos, a: Pos, b: Pos, e: Pos) -> Pos {
+    if q < b {
+        return if q < a { q } else { e };
+    }
+    if q.line == b.line {
+        Pos::new(e.line, e.col + (q.col - b.col))
+    } else {
+        Pos::new(
+            (q.line as isize + e.line as isize - b.line as isize) as usize,
+            q.col,
+        )
+    }
 }
 
 /// The edit a list line continues with on Enter, if any.
@@ -109,9 +168,31 @@ impl Doc {
             dirty_since: None,
             save_error: None,
             reveal: false,
+            maths: Marks::default(),
+            comments: Marks::default(),
+            front: None,
+            folds: BTreeSet::new(),
+            callouts_flipped: BTreeSet::new(),
+            extra: Vec::new(),
+            find: None,
+            edit_log: None,
+            fold_cache: RefCell::new((u64::MAX, Vec::new())),
+            notes_cache: RefCell::new(None),
         };
+        d.rebuild_blocks();
         d.recount();
         d
+    }
+
+    /// Find the math and comment blocks and the front matter afresh.
+    pub fn rebuild_blocks(&mut self) {
+        let buf = &self.buf;
+        let fences = &self.fences;
+        let n = buf.line_count();
+        let code = |i: usize| fences.in_code(i) || fences.is_fence(i);
+        self.maths = Marks::build(n, |i| !code(i) && blocks::is_math_mark(buf.line(i)));
+        self.comments = Marks::build(n, |i| !code(i) && blocks::is_comment_mark(buf.line(i)));
+        self.front = blocks::front_matter_end(|i| buf.line(i), n);
     }
 
     /// Count words and characters across the whole note.
@@ -180,11 +261,53 @@ impl Doc {
             self.words += words_in(l);
             self.chars += chars_in(l);
         }
+        let fences_before = self.fences.count();
         let buf = &self.buf;
+        let touched_fence = (a.line..=end.line).any(|n| md::is_fence(buf.line(n)));
         self.fences
             .edit(a.line, b.line - a.line + 1, end.line - a.line + 1, |n| {
                 buf.line(n)
             });
+        if touched_fence || self.fences.count() != fences_before {
+            // Code moved: which `$$` and `%%` lines count changed with it.
+            self.rebuild_blocks();
+        } else {
+            let buf = &self.buf;
+            let fences = &self.fences;
+            let code = |i: usize| fences.in_code(i) || fences.is_fence(i);
+            let (old, new) = (b.line - a.line + 1, end.line - a.line + 1);
+            self.maths.edit(a.line, old, new, |i| {
+                !code(i) && blocks::is_math_mark(buf.line(i))
+            });
+            self.comments.edit(a.line, old, new, |i| {
+                !code(i) && blocks::is_comment_mark(buf.line(i))
+            });
+            if a.line <= self.front.map_or(0, |f| f + 1) {
+                self.front = blocks::front_matter_end(|i| buf.line(i), buf.line_count());
+            }
+        }
+        // Folds and flipped callouts follow the lines they are on.
+        let delta = end.line as isize - b.line as isize;
+        if delta != 0 || !self.folds.is_empty() {
+            let shift = |set: &BTreeSet<usize>| -> BTreeSet<usize> {
+                set.iter()
+                    .filter_map(|l| {
+                        if *l < a.line || (*l == a.line && a.col > 0) {
+                            Some(*l)
+                        } else if *l > b.line || (*l == b.line && b.col == 0) {
+                            Some((*l as isize + delta).max(0) as usize)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            };
+            self.folds = shift(&self.folds);
+            self.callouts_flipped = shift(&self.callouts_flipped);
+        }
+        if let Some(log) = self.edit_log.as_mut() {
+            log.push((a, b, end));
+        }
         self.dirty_since.get_or_insert(now);
         self.reveal = true;
         end
@@ -511,6 +634,8 @@ impl Doc {
 
     fn after_history(&mut self, p: Pos) {
         self.fences = Fences::build((0..self.buf.line_count()).map(|i| self.buf.line(i)));
+        self.rebuild_blocks();
+        self.extra.clear();
         self.recount();
         self.cur = self.buf.clamp(p);
         self.anchor = None;
@@ -736,6 +861,429 @@ impl Doc {
         out
     }
 
+    // ---- blocks that span lines ----------------------------------------------------
+
+    /// The table, callout, math block, embed or front matter line `n` is
+    /// part of.
+    pub fn span(&self, n: usize) -> Option<Span> {
+        if let Some(f) = self.front {
+            if n <= f {
+                return Some(Span {
+                    kind: SpanKind::Front,
+                    first: 0,
+                    last: f,
+                });
+            }
+        }
+        let code = |i: usize| self.fences.in_code(i) || self.fences.is_fence(i);
+        if code(n) {
+            return None;
+        }
+        if let Some((first, last)) = self.maths.span(n) {
+            return Some(Span {
+                kind: SpanKind::Math,
+                first,
+                last,
+            });
+        }
+        let line = self.buf.line(n);
+        let t = line.trim();
+        if t.len() >= 4 && t.starts_with("$$") && t.ends_with("$$") && t.matches("$$").count() == 2
+        {
+            return Some(Span {
+                kind: SpanKind::Math,
+                first: n,
+                last: n,
+            });
+        }
+        if blocks::row_like(line) {
+            let mut s = n;
+            while s > 0
+                && n - s < blocks::RUN_LIMIT
+                && blocks::row_like(self.buf.line(s - 1))
+                && !code(s - 1)
+            {
+                s -= 1;
+            }
+            if s + 1 < self.buf.line_count() {
+                let header = blocks::split_row(self.buf.line(s)).len();
+                let delim = blocks::delimiter_row(self.buf.line(s + 1));
+                if delim.is_some_and(|d| d.len() == header) {
+                    let mut e = s + 1;
+                    let last = self.buf.last_line();
+                    while e < last
+                        && e - s < blocks::RUN_LIMIT
+                        && blocks::row_like(self.buf.line(e + 1))
+                        && !code(e + 1)
+                    {
+                        e += 1;
+                    }
+                    if n <= e {
+                        return Some(Span {
+                            kind: SpanKind::Table,
+                            first: s,
+                            last: e,
+                        });
+                    }
+                }
+            }
+        }
+        if blocks::strip_quote(line).is_some() {
+            let mut s = n;
+            while s > 0
+                && n - s < blocks::RUN_LIMIT
+                && blocks::strip_quote(self.buf.line(s - 1)).is_some()
+            {
+                s -= 1;
+            }
+            if blocks::callout_head(self.buf.line(s)).is_some() {
+                let mut e = n;
+                let last = self.buf.last_line();
+                while e < last
+                    && e - s < blocks::RUN_LIMIT
+                    && blocks::strip_quote(self.buf.line(e + 1)).is_some()
+                {
+                    e += 1;
+                }
+                return Some(Span {
+                    kind: SpanKind::Callout,
+                    first: s,
+                    last: e,
+                });
+            }
+        }
+        if blocks::embed(line).is_some() {
+            return Some(Span {
+                kind: SpanKind::Embed,
+                first: n,
+                last: n,
+            });
+        }
+        None
+    }
+
+    /// Whether the caret or a selection touches lines `a..=b`.
+    pub fn caret_in(&self, a: usize, b: usize) -> bool {
+        let (s, e) = match self.selection() {
+            Some((x, y)) => (x.line, y.line),
+            None => (self.cur.line, self.cur.line),
+        };
+        let main = s <= b && e >= a;
+        main || self.extra.iter().any(|(_, p)| p.line >= a && p.line <= b)
+    }
+
+    /// Whether line `n` is inside a `%%` comment block.
+    pub fn in_comment(&self, n: usize) -> bool {
+        !self.fences.in_code(n) && self.comments.span(n).is_some()
+    }
+
+    /// The opening fence of the code block line `n` is in.
+    pub fn fence_lang(&self, n: usize) -> &str {
+        match self.fences.opener(n) {
+            Some(o) => md::fence_lang(self.buf.line(o)),
+            None => "",
+        }
+    }
+
+    /// Whether a callout at `head` is shown folded.
+    pub fn callout_folded(&self, head: usize) -> bool {
+        let written = blocks::callout_head(self.buf.line(head))
+            .and_then(|h| h.fold)
+            .is_some_and(|open| !open);
+        written != self.callouts_flipped.contains(&head)
+    }
+
+    pub fn toggle_callout(&mut self, head: usize) {
+        if !self.callouts_flipped.remove(&head) {
+            self.callouts_flipped.insert(head);
+        }
+    }
+
+    // ---- folding --------------------------------------------------------------------
+
+    /// The lines a fold at `n` would hide, when `n` can fold: the section
+    /// under a heading, or the children of a list item.
+    pub fn fold_range(&self, n: usize) -> Option<(usize, usize)> {
+        let last = self.buf.last_line();
+        if n >= last {
+            return None;
+        }
+        match self.block(n) {
+            Block::Heading { level, .. } => {
+                let mut e = n;
+                while e < last {
+                    let next = e + 1;
+                    if let Block::Heading { level: l2, .. } = self.block(next) {
+                        if l2 <= level {
+                            break;
+                        }
+                    }
+                    e = next;
+                }
+                // Trailing blank lines stay visible, as they do in the editor.
+                while e > n && self.buf.line(e).trim().is_empty() {
+                    e -= 1;
+                }
+                (e > n).then_some((n + 1, e))
+            }
+            b if b.is_list() => {
+                let ind = crate::text::indent_of(self.buf.line(n)).len();
+                let mut e = n;
+                while e < last {
+                    let l = self.buf.line(e + 1);
+                    if l.trim().is_empty() || crate::text::indent_of(l).len() <= ind {
+                        break;
+                    }
+                    e += 1;
+                }
+                (e > n).then_some((n + 1, e))
+            }
+            _ => None,
+        }
+    }
+
+    /// Fold or unfold at line `n` (or the line the caret is on).
+    pub fn toggle_fold(&mut self, n: usize) -> bool {
+        if self.folds.remove(&n) {
+            return true;
+        }
+        if self.fold_range(n).is_some() {
+            self.folds.insert(n);
+            // The caret does not stay inside what was hidden.
+            if let Some((a, b)) = self.fold_range(n) {
+                if self.cur.line >= a && self.cur.line <= b {
+                    self.place(Pos::new(n, self.buf.line_len(n)), false);
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Fold every heading and list item that can fold, or unfold them all.
+    pub fn fold_all(&mut self, fold: bool) {
+        self.folds.clear();
+        if fold {
+            for n in 0..self.buf.line_count() {
+                if self.fold_range(n).is_some() && !self.fences.in_code(n) {
+                    self.folds.insert(n);
+                }
+            }
+        }
+    }
+
+    fn fold_ranges(&self) -> core::cell::Ref<'_, (u64, Vec<(usize, usize)>)> {
+        let v = self.buf.version ^ (self.folds.len() as u64).rotate_left(48);
+        if self.fold_cache.borrow().0 != v {
+            let mut ranges: Vec<(usize, usize)> = self
+                .folds
+                .iter()
+                .filter_map(|f| self.fold_range(*f))
+                .collect();
+            ranges.sort_unstable();
+            *self.fold_cache.borrow_mut() = (v, ranges);
+        }
+        self.fold_cache.borrow()
+    }
+
+    /// Whether line `n` is hidden inside a fold.
+    pub fn folded_away(&self, n: usize) -> bool {
+        if self.folds.is_empty() {
+            return false;
+        }
+        let r = self.fold_ranges();
+        r.1.iter().any(|(a, b)| n >= *a && n <= *b)
+    }
+
+    // ---- footnotes -------------------------------------------------------------------
+
+    /// The note's footnotes, numbered by first reference.
+    pub fn footnotes(&self) -> alloc::rc::Rc<Footnotes> {
+        if let Some((v, f)) = self.notes_cache.borrow().as_ref() {
+            if *v == self.buf.version {
+                return f.clone();
+            }
+        }
+        let f = alloc::rc::Rc::new(Footnotes::collect(
+            self.buf.line_count(),
+            |n| self.buf.line(n),
+            |n| self.fences.in_code(n) || self.fences.is_fence(n),
+        ));
+        *self.notes_cache.borrow_mut() = Some((self.buf.version, f.clone()));
+        f
+    }
+
+    // ---- links into the note ---------------------------------------------------------
+
+    /// The line a link's `#Heading` or `^block` names in this note.
+    pub fn anchor_line(&self, anchor: &str) -> Option<usize> {
+        let lines: Vec<&str> = (0..self.buf.line_count())
+            .map(|n| self.buf.line(n))
+            .collect();
+        if let Some(id) = anchor.strip_prefix('^') {
+            return blocks::block_lines(&lines, id).map(|(_, e)| e);
+        }
+        // `#A#B` names B under A; the last part decides.
+        let last = anchor.rsplit('#').next().unwrap_or(anchor);
+        blocks::heading_section(&lines, last).map(|(s, _)| s)
+    }
+
+    /// Put the caret at line `n` and show it near the top of the view, as
+    /// following a link to a heading does.
+    pub fn jump_to(&mut self, n: usize) {
+        let n = n.min(self.buf.last_line());
+        // Unfold whatever hides it.
+        let hiding: Vec<usize> = self
+            .folds
+            .iter()
+            .copied()
+            .filter(|f| self.fold_range(*f).is_some_and(|(a, b)| n >= a && n <= b))
+            .collect();
+        for f in hiding {
+            self.folds.remove(&f);
+        }
+        self.place(Pos::new(n, 0), false);
+        self.top = n + 1;
+        self.top_off = 0.0;
+        self.reveal = false;
+    }
+
+    // ---- several carets ---------------------------------------------------------------
+
+    /// Add a caret at `p` (Option-click), or take away the one there.
+    pub fn add_caret(&mut self, p: Pos) {
+        let p = self.buf.clamp(p);
+        if let Some(i) = self.extra.iter().position(|(_, q)| *q == p) {
+            self.extra.remove(i);
+            return;
+        }
+        if p == self.cur {
+            return;
+        }
+        self.extra.push((self.anchor, self.cur));
+        self.anchor = None;
+        self.cur = p;
+    }
+
+    /// Add a caret on the line above or below every caret, at the same
+    /// column where the line is long enough.
+    pub fn add_caret_vertical(&mut self, down: bool) {
+        let mut all: Vec<Pos> = self.extra.iter().map(|(_, p)| *p).collect();
+        all.push(self.cur);
+        let edge = if down {
+            all.iter().max().copied()
+        } else {
+            all.iter().min().copied()
+        };
+        let Some(edge) = edge else {
+            return;
+        };
+        let line = if down {
+            if edge.line >= self.buf.last_line() {
+                return;
+            }
+            edge.line + 1
+        } else {
+            if edge.line == 0 {
+                return;
+            }
+            edge.line - 1
+        };
+        let col = self.cur.col.min(self.buf.line_len(line));
+        self.add_caret(Pos::new(line, col));
+    }
+
+    /// Cmd+D: select the word at the caret, or add the next place the
+    /// selected text occurs as another selection.
+    pub fn select_next_occurrence(&mut self) {
+        let Some((a, b)) = self.selection() else {
+            let (a, b) = self.word_at(self.cur);
+            if a != b {
+                self.select_range(a, b);
+            }
+            return;
+        };
+        if a.line != b.line {
+            return;
+        }
+        let needle = self.buf.slice(a, b);
+        let mut taken: Vec<Pos> = self.extra.iter().filter_map(|(an, _)| *an).collect();
+        taken.push(a);
+        let last = taken.iter().max().copied().unwrap_or(a);
+        let lines = self.buf.line_count();
+        for k in 0..=lines {
+            let n = (last.line + k) % lines;
+            let from = if k == 0 { last.col + 1 } else { 0 };
+            let line = self.buf.line(n);
+            if let Some(off) = line
+                .get(from.min(line.len())..)
+                .and_then(|r| r.find(needle.as_str()))
+            {
+                let at = Pos::new(n, from + off);
+                if taken.contains(&at) {
+                    return;
+                }
+                let end = Pos::new(n, at.col + needle.len());
+                self.extra.push((self.anchor, self.cur));
+                self.anchor = Some(at);
+                self.cur = end;
+                self.reveal = true;
+                return;
+            }
+        }
+    }
+
+    pub fn has_extra(&self) -> bool {
+        !self.extra.is_empty()
+    }
+
+    /// Run `f` at every caret, last in the note first, so an edit never
+    /// moves a caret it has not reached; each earlier edit then moves the
+    /// carets after it. One undo takes back all of it.
+    pub fn each_caret(&mut self, now: u64, f: impl Fn(&mut Doc, u64)) {
+        if self.extra.is_empty() {
+            f(self, now);
+            return;
+        }
+        let mut carets: Vec<(Option<Pos>, Pos)> = core::mem::take(&mut self.extra);
+        carets.push((self.anchor, self.cur));
+        carets.sort_by(|x, y| y.1.cmp(&x.1));
+        carets.dedup_by(|x, y| x.1 == y.1);
+        self.buf.begin_group(self.cur);
+        let mut done: Vec<(Option<Pos>, Pos)> = Vec::new();
+        for (an, p) in carets {
+            self.anchor = an;
+            self.cur = p;
+            self.edit_log = Some(Vec::new());
+            f(self, now);
+            let log = self.edit_log.take().unwrap_or_default();
+            for (a, b, e) in log {
+                for (dan, dp) in done.iter_mut() {
+                    *dp = follow(*dp, a, b, e);
+                    if let Some(x) = dan.as_mut() {
+                        *x = follow(*x, a, b, e);
+                    }
+                }
+            }
+            done.push((self.anchor, self.cur));
+        }
+        // The first caret in the note leads; the rest stay with it.
+        done.sort_by(|x, y| x.1.cmp(&y.1));
+        done.dedup_by(|x, y| x.1 == y.1);
+        let lead = done.remove(0);
+        self.anchor = lead.0;
+        self.cur = lead.1;
+        self.extra = done;
+        self.buf.end_group(self.cur);
+    }
+
+    /// Every caret and its selection, the main one first.
+    pub fn carets(&self) -> Vec<(Option<Pos>, Pos)> {
+        let mut v = alloc::vec![(self.anchor, self.cur)];
+        v.extend(self.extra.iter().copied());
+        v
+    }
+
     pub fn mark_saved(&mut self) {
         self.buf.mark_saved();
         self.dirty_since = None;
@@ -915,5 +1463,122 @@ mod tests {
         }
         d.insert(" ", 0);
         assert_eq!(d.words, words0 + 1);
+    }
+}
+
+#[cfg(test)]
+mod obsidian_blocks {
+    use super::*;
+
+    fn doc(text: &str) -> Doc {
+        Doc::new("n.md", "n", text)
+    }
+
+    const NOTE: &str = "---\ntitle: x\n---\n# Head\n\n| a | b |\n| --- | :-: |\n| 1 | 2 |\n\n> [!tip]- Fold\n> body\n\n$$\nx^2\n$$\n![[pic.png]]\n```\n| not | table |\n| --- | --- |\n$$\n```\n%%\nhidden\n%%\n";
+
+    #[test]
+    fn spans_are_found_from_any_of_their_lines() {
+        let d = doc(NOTE);
+        let k = |n| d.span(n).map(|s| (s.kind, s.first, s.last));
+        assert_eq!(k(1), Some((SpanKind::Front, 0, 2)));
+        assert_eq!(k(3), None);
+        assert_eq!(k(5), Some((SpanKind::Table, 5, 7)));
+        assert_eq!(k(7), Some((SpanKind::Table, 5, 7)));
+        assert_eq!(k(10), Some((SpanKind::Callout, 9, 10)));
+        assert!(d.callout_folded(9));
+        assert_eq!(k(13), Some((SpanKind::Math, 12, 14)));
+        assert_eq!(k(15), Some((SpanKind::Embed, 15, 15)));
+        assert_eq!(k(17), None, "a table in code is code");
+        assert_eq!(k(19), None, "and so is $$");
+        assert!(d.in_comment(22) && !d.in_comment(20));
+        assert_eq!(d.fence_lang(17), "");
+    }
+
+    #[test]
+    fn blocks_follow_edits() {
+        let mut d = doc(NOTE);
+        // Typing a fence above everything turns the rest to code.
+        d.place(Pos::new(3, 0), false);
+        d.insert("```\n", 0);
+        assert_eq!(d.span(14), None, "math inside code is code");
+        d.undo();
+        assert!(d.span(13).is_some());
+        // Breaking the front matter's closing line ends the front matter.
+        d.replace(Pos::new(2, 0), Pos::new(2, 3), "--", 0);
+        assert_eq!(d.front, None);
+        d.toggle_callout(9);
+        assert!(!d.callout_folded(9));
+    }
+
+    #[test]
+    fn headings_and_lists_fold() {
+        let mut d = doc("# A\none\n## B\ntwo\n\n# C\n- item\n  - child\n  - child\n- next");
+        assert_eq!(d.fold_range(0), Some((1, 3)));
+        assert_eq!(d.fold_range(2), Some((3, 3)));
+        assert_eq!(d.fold_range(6), Some((7, 8)));
+        assert_eq!(d.fold_range(9), None);
+        d.place(Pos::new(1, 1), false);
+        assert!(d.toggle_fold(0));
+        assert!(d.folded_away(1) && d.folded_away(3) && !d.folded_away(4));
+        assert_eq!(d.cur, Pos::new(0, 3), "the caret leaves the fold");
+        // A line typed above moves the fold with its heading.
+        d.place(Pos::new(0, 0), false);
+        d.insert("intro\n", 0);
+        assert!(d.folds.contains(&1) && d.folded_away(2));
+        d.jump_to(3);
+        assert!(d.folds.is_empty(), "jumping into a fold opens it");
+        d.fold_all(true);
+        assert_eq!(d.folds.len(), 4);
+    }
+
+    #[test]
+    fn several_carets_type_together() {
+        let mut d = doc("one\ntwo\nthree");
+        d.place(Pos::new(0, 3), false);
+        d.add_caret(Pos::new(1, 3));
+        d.add_caret(Pos::new(2, 5));
+        d.each_caret(0, |d, now| d.insert("!", now));
+        assert_eq!(d.text(), "one!\ntwo!\nthree!");
+        d.each_caret(0, |d, now| d.newline(now));
+        assert_eq!(d.text(), "one!\n\ntwo!\n\nthree!\n");
+        assert_eq!(d.carets().len(), 3);
+        d.undo();
+        assert_eq!(d.text(), "one!\ntwo!\nthree!", "one undo for every caret");
+        // Two carets on one line.
+        let mut e = doc("ab");
+        e.place(Pos::new(0, 0), false);
+        e.add_caret(Pos::new(0, 1));
+        e.each_caret(0, |d, now| d.insert("x", now));
+        assert_eq!(e.text(), "xaxb");
+        e.each_caret(0, |d, now| d.backspace(now));
+        assert_eq!(e.text(), "ab");
+        // Cmd+D selects the word, then each next one.
+        let mut f = doc("cat dog cat\ncat");
+        f.place(Pos::new(0, 1), false);
+        f.select_next_occurrence();
+        assert_eq!(f.selected_text(), "cat");
+        f.select_next_occurrence();
+        f.select_next_occurrence();
+        assert_eq!(f.carets().len(), 3);
+        f.each_caret(0, |d, now| d.insert("emu", now));
+        assert_eq!(f.text(), "emu dog emu\nemu");
+        let mut g = doc("aaa\nbbb\nccc");
+        g.place(Pos::new(0, 2), false);
+        g.add_caret_vertical(true);
+        g.add_caret_vertical(true);
+        assert_eq!(g.carets().len(), 3);
+    }
+
+    #[test]
+    fn links_find_headings_and_blocks() {
+        let mut d = doc("# Top\ntext\n## Part *two*\nmore\nA line ^ref1\n");
+        assert_eq!(d.anchor_line("part two"), Some(2));
+        assert_eq!(d.anchor_line("Top#Part two"), Some(2));
+        assert_eq!(d.anchor_line("^ref1"), Some(4));
+        assert_eq!(d.anchor_line("nope"), None);
+        d.jump_to(2);
+        assert_eq!((d.cur, d.top), (Pos::new(2, 0), 3));
+        let f = doc("See[^1] and ^[inline].\n\n[^1]: Note.").footnotes();
+        assert_eq!(f.notes.len(), 2);
     }
 }
