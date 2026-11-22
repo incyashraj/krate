@@ -51,6 +51,7 @@ pub mod settings;
 pub mod text;
 pub mod vault;
 pub mod vfs;
+pub mod workspace;
 pub mod yaml;
 
 #[cfg(target_arch = "wasm32")]

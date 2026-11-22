@@ -47,7 +47,7 @@ pub struct Node {
 impl Node {
     /// The dot's radius in graph units.
     pub fn radius(&self, size: f32) -> f32 {
-        (4.0 + 1.6 * (self.degree as f32).sqrt()) * size
+        (3.0 + 1.6 * (self.degree as f32).sqrt()) * size
     }
 }
 
@@ -464,7 +464,7 @@ impl Graph {
         }
         let alpha = self.alpha;
         // Links: pull toward their length, weaker for well-linked notes.
-        let dist = (opt.distance * 0.25).max(10.0);
+        let dist = (opt.distance * 0.4).max(10.0);
         for &(a, b) in &self.edges {
             let (a, b) = (a as usize, b as usize);
             let (Some(na), Some(nb)) = (self.nodes.get(a), self.nodes.get(b)) else {
@@ -490,7 +490,7 @@ impl Graph {
         }
         // Many-body push, through a quadtree.
         let tree = Quad::build(&self.nodes);
-        let k = -30.0 * opt.repel.max(0.0) / 10.0 * 4.0;
+        let k = -40.0 * opt.repel.max(0.0);
         for i in 0..n {
             let (x, y) = (self.nodes[i].x, self.nodes[i].y);
             let (mut fx, mut fy) = (0.0f32, 0.0f32);

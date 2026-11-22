@@ -1,22 +1,31 @@
 //! The guest: draws the [`App`] on one canvas and turns window events into
 //! calls on it. Wasm only; everything it draws comes from the plain modules.
+//!
+//! The window is laid out the way the well-known notes app lays out its
+//! own: the title bar is part of the window's content (the system's window
+//! buttons sit over the top-left corner), a 300 px sidebar on each side
+//! with its tab icons in that top row, tab groups in the middle, each with
+//! a 40 px tab bar and a 40 px view header, and a small status bar in the
+//! bottom-right corner.
 
 mod disk;
 mod editor;
 mod look;
+mod views;
 
 use crate::app::{
-    App, Cmd, Focus, Hit, HostRequest, LeftPane, ListKind, Mods, Overlay, RightPane, RowKind,
+    App, Cmd, Focus, Hit, HostRequest, LeftPane, ListKind, Mods, Overlay, RightPane, RowKind, View,
 };
 use crate::editor::Mode;
 use crate::md::Target;
+use crate::panes::{Area, Divider};
 use crate::text::{count, grouped};
 use crate::vault::Vault;
 use crate::vfs::parent;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
-use editor::{LayCache, Shown, View};
+use editor::{LayCache, Shown, View as EdView};
 use krate::bindings::krate::store::kv as store_kv;
 use krate::gfx::canvas2d;
 use krate::layout::{Look, Rect, Said};
@@ -27,9 +36,11 @@ use look::{fill, fit, icon, r, round, text, width, Icon, Sizes, Theme, DARK, LIG
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
-const START_W: u32 = 1280;
+const START_W: u32 = 1024;
 const START_H: u32 = 800;
 const BLINK_MS: u64 = 600;
+/// The room the system's window buttons take in the top-left corner.
+const LIGHTS: f32 = 80.0;
 
 /// A search result as drawn: name, folder, matches, and its lines with
 /// where the match is in each.
@@ -46,6 +57,16 @@ enum Zone {
     Track,
     TreeRow(usize),
     Tree,
+    /// A tab: its group and place.
+    Tab(usize, usize),
+    /// The body of a tab group (focuses it).
+    Pane(usize),
+    PaneDivider(usize),
+    Graph(usize),
+    GraphPanel,
+    GraphSlider(u8),
+    Canvas(usize),
+    Settings,
 }
 
 #[derive(Clone, PartialEq)]
@@ -63,6 +84,31 @@ enum Drag {
         y: f32,
         moved: bool,
     },
+    Tab {
+        pane: usize,
+        tab: usize,
+        x: f32,
+        y: f32,
+        moved: bool,
+    },
+    Divider(usize),
+    /// Panning a graph, or dragging one of its dots.
+    Graph {
+        x: f32,
+        y: f32,
+        node: Option<usize>,
+        moved: bool,
+    },
+    Slider(u8),
+    /// On a canvas: panning, moving a card, resizing it, or drawing an
+    /// arrow from one of its sides.
+    Canvas {
+        x: f32,
+        y: f32,
+        what: views::CanvasDrag,
+        moved: bool,
+        before: String,
+    },
 }
 
 struct Ui {
@@ -74,11 +120,19 @@ struct Ui {
     hits: Vec<(Rect, Zone)>,
     said: Said,
     sz: Sizes,
-    view: Option<View>,
+    view: Option<EdView>,
     tree_area: Option<Rect>,
     search_area: Option<Rect>,
     right_area: Option<Rect>,
     list_area: Option<Rect>,
+    settings_area: Option<Rect>,
+    /// Each tab group's box and its tab strip, as drawn.
+    pane_areas: Vec<(usize, Rect, Rect)>,
+    dividers: Vec<Divider>,
+    /// Each tab's box, by group and place, for dropping a dragged tab.
+    tab_rects: Vec<(usize, usize, Rect)>,
+    /// The graph or canvas body of each group as drawn.
+    view_areas: Vec<(usize, Rect)>,
     row_h: f32,
     hover: Option<Zone>,
     drag: Drag,
@@ -98,6 +152,7 @@ struct Ui {
     t0: u64,
     first_frame_done: bool,
     index_done_said: bool,
+    graph_img: views::GraphImage,
 }
 
 fn ms() -> u64 {
@@ -136,6 +191,14 @@ fn mods(m: types::Modifiers) -> Mods {
     }
 }
 
+fn area(rc: Rect) -> Area {
+    Area::new(rc.x, rc.y, rc.w, rc.h)
+}
+
+fn rect(a: Area) -> Rect {
+    r(a.x, a.y, a.w, a.h)
+}
+
 impl Ui {
     fn t(&self) -> &'static Theme {
         if self.app.dark {
@@ -171,6 +234,24 @@ impl Ui {
         self.hit(rc, Zone::App(h));
     }
 
+    /// A clickable icon in a 26 px box, with the hover square behind it.
+    fn icon_button(&mut self, ic: Icon, cx: f32, cy: f32, label: &str, h: Hit, on: bool) {
+        let t = self.t();
+        let k = self.sz.scale;
+        let b = r(cx - 13.0 * k, cy - 12.0 * k, 26.0 * k, 24.0 * k);
+        let z = Zone::App(h.clone());
+        if on || self.hovered(&z) {
+            round(self.c, b, 4.0, t.hover);
+        }
+        let col = if on || self.hovered(&z) {
+            t.text
+        } else {
+            t.muted
+        };
+        icon(self.c, ic, cx, cy, k, col);
+        self.button(b, label, h);
+    }
+
     fn zone_at(&self, x: f32, y: f32) -> Option<Zone> {
         self.hits
             .iter()
@@ -186,6 +267,21 @@ impl Ui {
     // ---- the frame ---------------------------------------------------------
 
     fn draw(&mut self) {
+        // A graph or canvas seen for the first time is fitted to its view,
+        // which needs the view's size: lay the frame out once unseen first.
+        let unfitted = match self.app.view() {
+            Some(View::Graph(g)) => !g.fitted && g.graph.is_some(),
+            Some(View::Canvas(c)) => !c.fitted,
+            _ => false,
+        };
+        if unfitted {
+            self.draw_frame(false);
+            self.after_draw();
+        }
+        self.draw_frame(true);
+    }
+
+    fn draw_frame(&mut self, show: bool) {
         let size = canvas2d::canvas_size(self.c).unwrap_or(krate::gfx::types::Size {
             width: START_W as f32,
             height: START_H as f32,
@@ -194,7 +290,9 @@ impl Ui {
         self.w = w;
         self.h = h;
         let look = Look::now();
-        self.sz = Sizes::new(look.text_scale);
+        self.app.system_dark = look.dark;
+        let font = self.app.settings.font_size();
+        self.sz = Sizes::with_body(look.text_scale, font);
         let t = self.t();
         self.hits.clear();
         self.said = Said::new();
@@ -203,13 +301,28 @@ impl Ui {
         self.search_area = None;
         self.right_area = None;
         self.list_area = None;
-        let _ = canvas2d::clear(self.c, t.bg);
+        self.settings_area = None;
+        self.pane_areas.clear();
+        self.dividers.clear();
+        self.tab_rects.clear();
+        self.view_areas.clear();
+        let _ = canvas2d::clear(
+            self.c,
+            if self.app.vault.is_none() {
+                t.bg
+            } else {
+                t.side
+            },
+        );
         if self.app.vault.is_none() {
             self.draw_welcome(w, h);
         } else {
             self.draw_workspace(w, h);
         }
         self.draw_overlay(w, h);
+        if !show {
+            return;
+        }
         let _ = canvas2d::present(self.c);
         self.said.send(self.win);
         self.frames += 1;
@@ -222,8 +335,8 @@ impl Ui {
 
     fn set_title(&mut self) {
         let mut want = String::new();
-        if let Some(d) = self.app.doc() {
-            want.push_str(&d.title);
+        if let Some(tb) = self.app.tab() {
+            want.push_str(tb.title());
             want.push_str(" - ");
         }
         if let Some(v) = &self.app.vault {
@@ -252,14 +365,14 @@ impl Ui {
             fill(self.c, r(0.0, 0.0, left_w, h), t.side);
             fill(self.c, r(left_w - 1.0, 0.0, 1.0, h), t.border);
             let mx = 28.0 * k;
-            let my = 40.0 * k;
+            let my = 60.0 * k;
             for i in 0..3 {
                 let o = i as f32 * 5.0 * k;
                 round(
                     self.c,
                     r(mx + o, my - o, 24.0 * k, 30.0 * k),
                     4.0,
-                    if i == 2 { t.accent } else { t.active },
+                    if i == 2 { t.accent } else { t.border_hover },
                 );
             }
             text(
@@ -331,25 +444,25 @@ impl Ui {
                 col_w - 130.0 * k,
             );
             let bw = 100.0 * k;
-            let b = r(x + col_w - bw, ry + (row_h - 34.0 * k) * 0.5, bw, 34.0 * k);
+            let b = r(x + col_w - bw, ry + (row_h - 32.0 * k) * 0.5, bw, 32.0 * k);
             let z = Zone::App(Hit::Welcome(i as u8));
             let primary = i == 1;
             let fillc = if primary {
                 t.accent
             } else if self.hovered(&z) {
-                t.hover
+                t.border_hover
             } else {
-                t.active
+                t.button
             };
             round(self.c, b, 6.0, fillc);
-            let bt = width(self.c, btn, self.sz.ui, 600);
+            let bt = width(self.c, btn, self.sz.ui, 500);
             text(
                 self.c,
                 btn,
                 b.x + (b.w - bt) * 0.5,
                 b.y + b.h * 0.5 + self.sz.ui * 0.36,
                 self.sz.ui,
-                600,
+                500,
                 if primary { t.on_accent } else { t.text },
             );
             self.button(b, label, Hit::Welcome(i as u8));
@@ -372,152 +485,269 @@ impl Ui {
     fn draw_workspace(&mut self, w: f32, h: f32) {
         let t = self.t();
         let sz = self.sz;
-        let ribbon = sz.ribbon;
-        let narrow = w < 640.0;
-        let left_open = self.app.left_open && w >= 600.0;
-        let right_open = self.app.right_open && w >= 900.0;
+        let k = sz.scale;
+        let head = sz.head;
+        let phone = w < 600.0;
+        let ribbon = if self.app.settings.show_ribbon() && !phone {
+            sz.ribbon
+        } else {
+            0.0
+        };
+        let left_open = self.app.left_open && !phone;
+        let right_open = self.app.right_open && w >= 760.0;
         let left_w = if left_open {
-            self.app.left_w.clamp(180.0, (w * 0.4).max(180.0))
+            self.app.left_w.clamp(200.0, (w * 0.4).max(200.0))
         } else {
             0.0
         };
         let right_w = if right_open {
-            self.app.right_w.clamp(200.0, (w * 0.35).max(200.0))
+            self.app.right_w.clamp(200.0, (w * 0.4).max(200.0))
         } else {
             0.0
         };
-        let _ = narrow;
-        // The ribbon.
-        fill(self.c, r(0.0, 0.0, ribbon, h), t.chrome);
-        fill(self.c, r(ribbon - 1.0, 0.0, 1.0, h), t.border);
-        let ribbon_items: [(Icon, Cmd, &str); 5] = [
-            (Icon::SidebarLeft, Cmd::ToggleLeft, "Toggle left sidebar"),
-            (Icon::Switcher, Cmd::QuickSwitcher, "Open quick switcher"),
-            (Icon::Search, Cmd::SearchVault, "Search all notes"),
-            (Icon::Palette, Cmd::Palette, "Open command palette"),
-            (Icon::NewNote, Cmd::NewNote, "Create new note"),
-        ];
-        for (i, (ic, cmd, label)) in ribbon_items.iter().enumerate() {
-            let cy = 20.0 * sz.scale + i as f32 * 36.0 * sz.scale + if i > 0 { 8.0 } else { 0.0 };
-            let b = r(6.0, cy - 15.0 * sz.scale, ribbon - 12.0, 30.0 * sz.scale);
-            let z = Zone::App(Hit::Ribbon(*cmd));
-            if self.hovered(&z) {
-                round(self.c, b, 5.0, t.hover);
+        // The ribbon, under the top row on the far left.
+        if ribbon > 0.0 {
+            fill(self.c, r(0.0, head, ribbon, h - head), t.side);
+            fill(self.c, r(ribbon - 1.0, head, 1.0, h - head), t.border);
+            let items: [(Icon, Cmd, &str, &str); 7] = [
+                (
+                    Icon::Switcher,
+                    Cmd::QuickSwitcher,
+                    "Open quick switcher",
+                    "switcher",
+                ),
+                (Icon::Graph, Cmd::Graph, "Open graph view", "graph"),
+                (Icon::Canvas, Cmd::NewCanvas, "Create new canvas", "canvas"),
+                (
+                    Icon::Calendar,
+                    Cmd::DailyNote,
+                    "Open today's daily note",
+                    "daily-notes",
+                ),
+                (
+                    Icon::Template,
+                    Cmd::InsertTemplate,
+                    "Insert template",
+                    "templates",
+                ),
+                (
+                    Icon::Terminal,
+                    Cmd::Palette,
+                    "Open command palette",
+                    "command-palette",
+                ),
+                (Icon::Table, Cmd::NewBase, "Create new base", "bases"),
+            ];
+            let mut y = head + 22.0 * k;
+            for (ic, cmd, label, plugin) in items {
+                if !self.app.settings.plugin_on(plugin) {
+                    continue;
+                }
+                self.icon_button(ic, ribbon * 0.5, y, label, Hit::Ribbon(cmd), false);
+                y += 34.0 * k;
             }
-            icon(self.c, *ic, ribbon * 0.5, cy, sz.scale, t.muted);
-            self.button(b, label, Hit::Ribbon(*cmd));
         }
-        {
-            let cy = h - 24.0 * sz.scale;
-            let b = r(6.0, cy - 15.0 * sz.scale, ribbon - 12.0, 30.0 * sz.scale);
-            icon(self.c, Icon::Theme, ribbon * 0.5, cy, sz.scale, t.muted);
-            self.button(b, "Switch between dark and light", Hit::Ribbon(Cmd::Theme));
-        }
-        let mut x = ribbon;
+        // The left sidebar.
+        let lx = ribbon;
         if left_open {
-            let area = r(x, 0.0, left_w, h);
-            self.draw_left(area);
-            x += left_w;
-            fill(self.c, r(x - 1.0, 0.0, 1.0, h), t.border);
-            self.hit(r(x - 4.0, 0.0, 8.0, h), Zone::LeftDivider);
+            let a = r(lx, 0.0, left_w, h);
+            self.draw_left(a, ribbon > 0.0);
+            fill(self.c, r(lx + left_w - 1.0, 0.0, 1.0, h), t.border);
+            self.hit(r(lx + left_w - 4.0, head, 8.0, h - head), Zone::LeftDivider);
         }
-        let main_w = (w - x - right_w).max(120.0);
-        let main = r(x, 0.0, main_w, h);
-        if w < 600.0 && self.sheet {
-            // A phone: the file tree or search is a sheet over the note.
-            self.draw_left(main);
+        // The top row's left end when the sidebar is closed: the window
+        // buttons, then the sidebar toggle.
+        let main_x = lx + left_w;
+        let main_w = (w - main_x - right_w).max(160.0);
+        let lead = if left_open {
+            0.0
         } else {
-            self.draw_main(main, right_open);
+            (LIGHTS + 44.0 * k).max(ribbon)
+        };
+        if !left_open && !phone {
+            fill(self.c, r(0.0, 0.0, lead.max(ribbon), head), t.side);
+            self.icon_button(
+                Icon::SidebarLeft,
+                LIGHTS + 22.0 * k,
+                head * 0.5,
+                "Expand",
+                Hit::Ribbon(Cmd::ToggleLeft),
+                false,
+            );
+        }
+        let main = r(main_x, 0.0, main_w, h);
+        if phone && self.sheet {
+            self.draw_left(r(0.0, 0.0, w, h), false);
+        } else {
+            self.draw_panes(main, lead.max(if left_open { 0.0 } else { ribbon }));
+        }
+        // The right end of the top row: the tab list and the right sidebar's
+        // toggle when it is closed.
+        let top_right = main.right();
+        if !right_open {
+            self.icon_button(
+                Icon::SidebarRight,
+                top_right - 22.0 * k,
+                head * 0.5,
+                "Expand",
+                Hit::Ribbon(Cmd::ToggleRight),
+                false,
+            );
         }
         if right_open {
-            let rx = x + main_w;
+            let rx = main_x + main_w;
             fill(self.c, r(rx, 0.0, 1.0, h), t.border);
             self.draw_right(r(rx + 1.0, 0.0, right_w - 1.0, h));
-            self.hit(r(rx - 4.0, 0.0, 8.0, h), Zone::RightDivider);
+            self.hit(r(rx - 4.0, head, 8.0, h - head), Zone::RightDivider);
         }
-        self.draw_status(w, h);
+        self.draw_status(w, h, main_x);
     }
 
     // ---- the left sidebar ------------------------------------------------------
 
-    fn draw_left(&mut self, area: Rect) {
+    fn draw_left(&mut self, area: Rect, after_ribbon: bool) {
         let t = self.t();
         let sz = self.sz;
+        let k = sz.scale;
         fill(self.c, area, t.side);
-        let head = r(area.x, 0.0, area.w, sz.head);
-        let tabs: [(Icon, LeftPane, &str); 2] = [
-            (Icon::Files, LeftPane::Files, "Files"),
-            (Icon::Search, LeftPane::Search, "Search"),
+        let head = sz.head;
+        let tabs: [(Icon, LeftPane, &str, &str); 3] = [
+            (Icon::Folder, LeftPane::Files, "Files", "file-explorer"),
+            (Icon::Search, LeftPane::Search, "Search", "global-search"),
+            (
+                Icon::Bookmark,
+                LeftPane::Bookmarks,
+                "Bookmarks",
+                "bookmarks",
+            ),
         ];
-        for (i, (ic, pane, label)) in tabs.iter().enumerate() {
-            let b = r(
-                head.x + 8.0 + i as f32 * 34.0 * sz.scale,
-                6.0 * sz.scale,
-                30.0 * sz.scale,
-                28.0 * sz.scale,
-            );
-            if self.app.left == *pane {
-                round(self.c, b, 5.0, t.active);
+        let start = if after_ribbon {
+            area.x + 22.0 * k
+        } else {
+            area.x + LIGHTS + 22.0 * k
+        };
+        let mut x = start;
+        for (ic, pane, label, plugin) in tabs {
+            if !self.app.settings.plugin_on(plugin) {
+                continue;
             }
-            icon(
-                self.c,
-                *ic,
-                b.x + b.w * 0.5,
-                b.y + b.h * 0.5,
-                sz.scale,
-                if self.app.left == *pane {
-                    t.text
-                } else {
-                    t.muted
-                },
-            );
-            self.button(b, label, Hit::LeftTab(*pane));
+            let on = self.app.left == pane;
+            self.icon_button(ic, x, head * 0.5, label, Hit::LeftTab(pane), on);
+            x += 31.0 * k;
         }
-        fill(
-            self.c,
-            r(area.x, head.bottom() - 1.0, area.w, 1.0),
-            t.border,
+        self.icon_button(
+            Icon::SidebarLeft,
+            area.right() - 22.0 * k,
+            head * 0.5,
+            "Collapse",
+            Hit::Ribbon(Cmd::ToggleLeft),
+            false,
         );
-        let body = r(area.x, head.bottom(), area.w, area.h - head.h);
+        fill(self.c, r(area.x, head - 1.0, area.w, 1.0), t.border);
+        // The vault's name, help and settings at the bottom.
+        let foot = 42.0 * k;
+        let fy = area.bottom() - foot;
+        fill(self.c, r(area.x, fy, area.w, 1.0), t.border);
+        let name = self
+            .app
+            .vault
+            .as_ref()
+            .map(|v| v.name.clone())
+            .unwrap_or_default();
+        let vb = r(
+            area.x + 10.0 * k,
+            fy + 7.0 * k,
+            (area.w * 0.6).min(200.0),
+            foot - 14.0 * k,
+        );
+        let vz = Zone::App(Hit::VaultMenu);
+        if self.hovered(&vz) {
+            round(self.c, vb, 8.0, t.hover);
+        }
+        icon(
+            self.c,
+            Icon::ChevronsUpDown,
+            area.x + 24.0 * k,
+            fy + foot * 0.5,
+            k,
+            t.muted,
+        );
+        fit(
+            self.c,
+            &name,
+            area.x + 40.0 * k,
+            fy + foot * 0.5 + sz.ui * 0.36,
+            sz.ui,
+            600,
+            t.text,
+            vb.right() - area.x - 44.0 * k,
+        );
+        self.button(vb, &name, Hit::VaultMenu);
+        self.icon_button(
+            Icon::Help,
+            area.right() - 50.0 * k,
+            fy + foot * 0.5,
+            "Help",
+            Hit::Command(Cmd::Help),
+            false,
+        );
+        self.icon_button(
+            Icon::Gear,
+            area.right() - 22.0 * k,
+            fy + foot * 0.5,
+            "Settings",
+            Hit::Command(Cmd::Settings),
+            false,
+        );
+        let body = r(area.x, head, area.w, fy - head);
         match self.app.left {
             LeftPane::Files => self.draw_files(body),
             LeftPane::Search => self.draw_search(body),
+            LeftPane::Bookmarks => self.draw_bookmarks(body),
+        }
+    }
+
+    /// A row of small icon buttons, centred, under a sidebar's top row.
+    fn nav_buttons(&mut self, area: Rect, acts: &[(Icon, Hit, &str)]) {
+        let k = self.sz.scale;
+        let step = 30.0 * k;
+        let total = acts.len() as f32 * step;
+        let mut x = area.x + (area.w - total) * 0.5 + step * 0.5;
+        let cy = area.y + 20.0 * k;
+        for (ic, hit, label) in acts {
+            self.icon_button(*ic, x, cy, label, hit.clone(), false);
+            x += step;
         }
     }
 
     fn draw_files(&mut self, area: Rect) {
         let t = self.t();
         let sz = self.sz;
-        // The tree's own buttons.
-        let bar = r(area.x, area.y, area.w, 34.0 * sz.scale);
-        let acts: [(Icon, Cmd, &str); 3] = [
-            (Icon::NewNote, Cmd::NewNote, "New note"),
-            (Icon::NewFolder, Cmd::NewFolder, "New folder"),
-            (Icon::Collapse, Cmd::CollapseAll, "Collapse all"),
-        ];
-        let total_w = acts.len() as f32 * 30.0 * sz.scale;
-        for (i, (ic, cmd, label)) in acts.iter().enumerate() {
-            let b = r(
-                bar.x + (bar.w - total_w) * 0.5 + i as f32 * 30.0 * sz.scale,
-                bar.y + 3.0,
-                28.0 * sz.scale,
-                28.0 * sz.scale,
-            );
-            let z = Zone::App(Hit::Command(*cmd));
-            if self.hovered(&z) {
-                round(self.c, b, 5.0, t.hover);
-            }
-            icon(
-                self.c,
-                *ic,
-                b.x + b.w * 0.5,
-                b.y + b.h * 0.5,
-                sz.scale * 0.95,
-                t.muted,
-            );
-            self.button(b, label, Hit::Command(*cmd));
-        }
-        let list = r(area.x, bar.bottom(), area.w, area.bottom() - bar.bottom());
+        let k = sz.scale;
+        self.nav_buttons(
+            area,
+            &[
+                (Icon::SquarePen, Hit::Command(Cmd::NewNote), "New note"),
+                (Icon::FolderPlus, Hit::Command(Cmd::NewFolder), "New folder"),
+                (
+                    Icon::Sort,
+                    Hit::Command(Cmd::CollapseAll),
+                    "Change sort order",
+                ),
+                (
+                    Icon::Reveal,
+                    Hit::Command(Cmd::Reveal),
+                    "Auto-reveal current file",
+                ),
+                (
+                    Icon::ChevronsUpDown,
+                    Hit::Command(Cmd::CollapseAll),
+                    "Collapse all",
+                ),
+            ],
+        );
+        let top = area.y + 42.0 * k;
+        let list = r(area.x, top, area.w, area.bottom() - top);
         self.tree_area = Some(list);
         self.hit(list, Zone::Tree);
         let row_h = sz.row;
@@ -528,7 +758,7 @@ impl Ui {
         self.app.explorer.scroll = self.app.explorer.scroll.clamp(0.0, max);
         let scroll = self.app.explorer.scroll;
         let first = ((scroll / row_h) as usize).min(rows.len());
-        let active_path = self.app.doc().map(|d| d.path.clone());
+        let active_path = self.app.active_path();
         let selected = self.app.explorer.selected.clone();
         let rename = self.app.explorer.rename.clone();
         let drag_row = match self.drag {
@@ -543,7 +773,7 @@ impl Ui {
             None
         };
         let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
-        let mut y = list.y + 4.0 + first as f32 * row_h - scroll;
+        let mut y = list.y + first as f32 * row_h - scroll;
         let names: Vec<(String, String, bool)> = {
             let v = self.app.vault.as_ref();
             rows.iter()
@@ -566,8 +796,9 @@ impl Ui {
                 })
                 .collect()
         };
-        for (k, (name, path, is_folder)) in names.iter().enumerate() {
-            let i = first + k;
+        let indent = 17.0 * k;
+        for (n, (name, path, is_folder)) in names.iter().enumerate() {
+            let i = first + n;
             if y > list.bottom() {
                 break;
             }
@@ -575,68 +806,68 @@ impl Ui {
                 break;
             };
             let depth = row.depth as f32;
-            let rr = r(list.x + 6.0, y, list.w - 12.0, row_h);
+            let rr = r(list.x + 12.0 * k, y + 1.0, list.w - 24.0 * k, row_h - 2.0);
             let z = Zone::TreeRow(i);
             let is_active = active_path.as_deref() == Some(path.as_str());
             let is_sel = selected.as_deref() == Some(path.as_str());
             let is_drop = drop_row == Some(i) && *is_folder;
             if is_active || is_drop {
-                round(self.c, rr, 4.0, t.active);
+                round(self.c, rr, 6.0, t.active);
             } else if self.hovered(&z) || (is_sel && self.app.focus == Focus::Tree) {
-                round(self.c, rr, 4.0, t.hover);
+                round(self.c, rr, 6.0, t.hover);
             }
             // Indent guides.
             for d in 0..row.depth {
                 fill(
                     self.c,
-                    r(
-                        list.x + 18.0 * sz.scale + d as f32 * 16.0 * sz.scale,
-                        y,
-                        1.0,
-                        row_h,
-                    ),
-                    t.border,
+                    r(list.x + 24.0 * k + d as f32 * indent, y, 1.0, row_h),
+                    look::alpha(t.text, 0.12),
                 );
             }
-            let tx = list.x + 14.0 * sz.scale + depth * 16.0 * sz.scale;
+            let tx = list.x + 36.0 * k + depth * indent;
             let base = y + row_h * 0.5 + sz.ui * 0.36;
             if *is_folder {
                 let open = self.app.explorer.expanded.contains(path);
-                look::chevron(
+                look::chevron(self.c, tx - 12.0 * k, y + row_h * 0.5, open, k, t.faint);
+            }
+            let mut room = rr.right() - tx - 8.0 * k;
+            // A canvas or a base says so on the right.
+            let tag = if *is_folder {
+                None
+            } else if path.ends_with(".canvas") {
+                Some("CANVAS")
+            } else if path.ends_with(".base") {
+                Some("BASE")
+            } else {
+                None
+            };
+            if let Some(tag) = tag {
+                let tw = look::caps_width(self.c, tag, 10.0 * k);
+                look::caps(
                     self.c,
-                    tx + 4.0 * sz.scale,
-                    y + row_h * 0.5,
-                    open,
-                    sz.scale,
+                    tag,
+                    rr.right() - 12.0 * k - tw,
+                    base - 0.5,
+                    10.0 * k,
                     t.faint,
                 );
+                room -= tw + 12.0 * k;
             }
-            let nx = tx + 15.0 * sz.scale;
-            let room = rr.right() - nx - 6.0;
             if rename.as_ref().is_some_and(|rn| rn.path == *path) {
                 if let Some(rn) = rename.as_ref() {
-                    let fbox = r(nx - 4.0, y + 2.0, room + 4.0, row_h - 4.0);
+                    let fbox = r(tx - 4.0, y + 2.0, rr.right() - tx, row_h - 4.0);
                     round(self.c, fbox, 4.0, t.field);
                     look::outline(self.c, fbox, 4.0, 1.0, t.accent);
-                    self.draw_input(&rn.input, nx, base, sz.ui, t.text, fbox.right() - 4.0, true);
+                    self.draw_input(&rn.input, tx, base, sz.ui, t.text, fbox.right() - 4.0, true);
                     self.said.field(fbox, "Name", &rn.input.text);
                 }
             } else {
-                let col = if is_active || *is_folder {
+                let col = if is_active || self.hovered(&z) {
                     t.text
                 } else {
                     t.muted
                 };
-                fit(
-                    self.c,
-                    name,
-                    nx,
-                    base,
-                    sz.ui,
-                    if *is_folder { 500 } else { 400 },
-                    col,
-                    room,
-                );
+                fit(self.c, name, tx, base, sz.ui, 400, col, room);
                 self.said.button(rr, name);
             }
             self.hit(rr, z);
@@ -657,13 +888,13 @@ impl Ui {
             text(
                 self.c,
                 msg,
-                list.x + 20.0,
-                list.y + 30.0,
+                list.x + 24.0,
+                list.y + 20.0,
                 sz.ui,
                 400,
                 t.faint,
             );
-            self.said.text(r(list.x, list.y + 14.0, list.w, 22.0), msg);
+            self.said.text(r(list.x, list.y + 4.0, list.w, 22.0), msg);
         }
     }
 
@@ -671,7 +902,7 @@ impl Ui {
         if !list.contains(px, py) {
             return None;
         }
-        let i = ((py - list.y - 4.0 + self.app.explorer.scroll) / self.row_h.max(1.0)) as usize;
+        let i = ((py - list.y + self.app.explorer.scroll) / self.row_h.max(1.0)) as usize;
         (i < self.app.explorer.rows.len()).then_some(i)
     }
 
@@ -723,22 +954,40 @@ impl Ui {
     fn draw_search(&mut self, area: Rect) {
         let t = self.t();
         let sz = self.sz;
-        let boxr = r(area.x + 10.0, area.y + 10.0, area.w - 20.0, 30.0 * sz.scale);
-        round(self.c, boxr, 6.0, t.field);
+        let k = sz.scale;
+        self.nav_buttons(
+            area,
+            &[
+                (Icon::Filter, Hit::SearchBox, "Search settings"),
+                (Icon::ChevronsUpDown, Hit::SearchBox, "Collapse results"),
+                (
+                    Icon::Bookmark,
+                    Hit::Command(Cmd::BookmarkSearch),
+                    "Bookmark current search",
+                ),
+            ],
+        );
+        let boxr = r(
+            area.x + 12.0 * k,
+            area.y + 44.0 * k,
+            area.w - 24.0 * k,
+            30.0 * k,
+        );
+        round(self.c, boxr, 5.0, t.field);
         let focused = self.app.focus == Focus::Search;
         look::outline(
             self.c,
             boxr,
-            6.0,
+            5.0,
             1.0,
-            if focused { t.accent } else { t.border },
+            if focused { t.border_focus } else { t.border },
         );
         icon(
             self.c,
             Icon::Search,
-            boxr.x + 14.0,
+            boxr.x + 14.0 * k,
             boxr.y + boxr.h * 0.5,
-            sz.scale * 0.8,
+            k * 0.85,
             t.faint,
         );
         let base = boxr.y + boxr.h * 0.5 + sz.ui * 0.36;
@@ -746,8 +995,8 @@ impl Ui {
         if inp.text.is_empty() && !focused {
             text(
                 self.c,
-                "Search all notes...",
-                boxr.x + 28.0,
+                "Search...",
+                boxr.x + 28.0 * k,
                 base,
                 sz.ui,
                 400,
@@ -756,7 +1005,7 @@ impl Ui {
         }
         self.draw_input(
             &inp,
-            boxr.x + 28.0,
+            boxr.x + 28.0 * k,
             base,
             sz.ui,
             t.text,
@@ -767,21 +1016,10 @@ impl Ui {
         self.hit(boxr, Zone::App(Hit::SearchBox));
         let mut y = boxr.bottom() + 8.0;
         let Some(job) = self.app.job.as_ref() else {
-            let hint = "Words, \"exact phrases\", tag:#name, path:, file:";
-            fit(
-                self.c,
-                hint,
-                area.x + 14.0,
-                y + 16.0,
-                sz.small,
-                400,
-                t.faint,
-                area.w - 28.0,
-            );
             return;
         };
         let summary = if job.done {
-            let mut s = count(job.notes_matched, "note", "notes");
+            let mut s = count(job.notes_matched, "result", "results");
             s.push_str(" \u{b7} ");
             s.push_str(&count(job.matches, "match", "matches"));
             s
@@ -791,25 +1029,23 @@ impl Ui {
             s.push_str(" of ");
             s.push_str(&grouped(job.total));
             s.push_str("\u{2026}  ");
-            s.push_str(&count(job.notes_matched, "note", "notes"));
+            s.push_str(&count(job.notes_matched, "result", "results"));
             s
         };
         text(
             self.c,
             &summary,
-            area.x + 14.0,
+            area.x + 16.0 * k,
             y + 14.0,
             sz.small,
             400,
-            t.muted,
+            t.faint,
         );
         self.said.text(r(area.x, y, area.w, 20.0), &summary);
         y += 24.0;
         let list = r(area.x, y, area.w, area.bottom() - y);
         self.search_area = Some(list);
         let row_h = sz.row;
-        let line_h = (sz.row * 0.95).round();
-        // Every result's height, so the list scrolls as one.
         let results: Vec<ShownResult> = job
             .results
             .iter()
@@ -823,6 +1059,7 @@ impl Ui {
             })
             .collect();
         let paths: Vec<String> = job.results.iter().map(|r| r.path.clone()).collect();
+        let line_h = (sz.small * 1.5 + 12.0).round();
         let mut total = 0.0;
         for (i, res) in results.iter().enumerate() {
             total += row_h;
@@ -830,14 +1067,14 @@ impl Ui {
                 .get(i)
                 .is_some_and(|p| self.app.search_collapsed.contains(p))
             {
-                total += res.3.len() as f32 * line_h + 6.0;
+                total += res.3.len() as f32 * (line_h + 4.0) + 6.0;
             }
         }
         let max = (total - list.h + 12.0).max(0.0);
         self.app.search_scroll = self.app.search_scroll.clamp(0.0, max);
         let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
         let mut yy = list.y - self.app.search_scroll;
-        for (i, (name, folder, n, lines)) in results.iter().enumerate() {
+        for (i, (name, _folder, n, lines)) in results.iter().enumerate() {
             if yy > list.bottom() {
                 break;
             }
@@ -848,87 +1085,82 @@ impl Ui {
                 + if collapsed {
                     0.0
                 } else {
-                    lines.len() as f32 * line_h + 6.0
+                    lines.len() as f32 * (line_h + 4.0) + 6.0
                 };
             if yy + block_h < list.y {
                 yy += block_h;
                 continue;
             }
-            let hr = r(list.x + 6.0, yy, list.w - 12.0, row_h);
+            let hr = r(list.x + 12.0 * k, yy, list.w - 24.0 * k, row_h);
             let z = Zone::App(Hit::SearchFile(i));
             if self.hovered(&z) {
-                round(self.c, hr, 4.0, t.hover);
+                round(self.c, hr, 6.0, t.hover);
             }
             let base = yy + row_h * 0.5 + sz.ui * 0.36;
             look::chevron(
                 self.c,
-                hr.x + 10.0,
+                hr.x + 12.0 * k,
                 yy + row_h * 0.5,
                 !collapsed,
-                sz.scale,
+                k,
                 t.faint,
             );
             let badge = grouped(*n);
-            let bw = width(self.c, &badge, sz.small, 500) + 12.0;
-            let _ = folder;
+            let bw = width(self.c, &badge, sz.small, 400);
             fit(
                 self.c,
                 name,
-                hr.x + 20.0,
+                hr.x + 24.0 * k,
                 base,
                 sz.ui,
-                600,
+                400,
                 t.text,
-                hr.w - 32.0 - bw,
-            );
-            round(
-                self.c,
-                r(hr.right() - bw - 4.0, yy + (row_h - 18.0) * 0.5, bw, 18.0),
-                9.0,
-                t.active,
+                hr.w - 40.0 * k - bw,
             );
             text(
                 self.c,
                 &badge,
-                hr.right() - bw + 2.0,
+                hr.right() - bw - 6.0 * k,
                 yy + row_h * 0.5 + sz.small * 0.36,
                 sz.small,
-                500,
-                t.muted,
+                400,
+                t.faint,
             );
             self.said.button(hr, name);
             self.hit(hr, z);
             yy += row_h;
             if !collapsed {
                 for (l, (line, at)) in lines.iter().enumerate() {
-                    let lr = r(list.x + 14.0, yy, list.w - 22.0, line_h);
+                    let lr = r(list.x + 12.0 * k, yy, list.w - 24.0 * k, line_h);
                     let lz = Zone::App(Hit::SearchLine(i, l));
-                    if self.hovered(&lz) {
-                        round(self.c, lr, 4.0, t.hover);
-                    }
+                    round(
+                        self.c,
+                        lr,
+                        4.0,
+                        if self.hovered(&lz) {
+                            look::over(t.hover, t.bg)
+                        } else {
+                            t.bg
+                        },
+                    );
                     let lb = yy + line_h * 0.5 + sz.small * 0.36;
-                    let lx = lr.x + 8.0;
+                    let lx = lr.x + 12.0 * k;
                     let pre = line.get(..at.0).unwrap_or("");
                     let mid = line.get(at.0..at.1).unwrap_or("");
-                    let room = lr.w - 14.0;
+                    let room = lr.w - 24.0 * k;
                     let pw = width(self.c, pre, sz.small, 400);
                     if pw < room {
-                        let mw = width(self.c, mid, sz.small, 600);
+                        let mw = width(self.c, mid, sz.small, 400);
                         fill(
                             self.c,
-                            r(
-                                lx + pw - 1.0,
-                                yy + 3.0,
-                                (mw + 2.0).min(room - pw),
-                                line_h - 6.0,
-                            ),
+                            r(lx + pw, lb - sz.small, mw.min(room - pw), sz.small * 1.3),
                             t.find,
                         );
                     }
-                    fit(self.c, line, lx, lb, sz.small, 400, t.muted, room);
+                    fit(self.c, line, lx, lb, sz.small, 400, t.text, room);
                     self.said.button(lr, line);
                     self.hit(lr, lz);
-                    yy += line_h;
+                    yy += line_h + 4.0;
                 }
                 yy += 6.0;
             }
@@ -936,76 +1168,278 @@ impl Ui {
         let _ = canvas2d::clear_clip(self.c);
     }
 
-    // ---- the middle: tabs, the view header, the note ------------------------------
-
-    fn draw_main(&mut self, area: Rect, right_open: bool) {
+    fn draw_bookmarks(&mut self, area: Rect) {
         let t = self.t();
         let sz = self.sz;
-        let strip = r(area.x, 0.0, area.w, sz.tab);
-        fill(self.c, strip, t.chrome);
-        fill(
-            self.c,
-            r(area.x, strip.bottom() - 1.0, area.w, 1.0),
-            t.border,
+        let k = sz.scale;
+        self.nav_buttons(
+            area,
+            &[
+                (
+                    Icon::Plus,
+                    Hit::Command(Cmd::BookmarkFile),
+                    "Bookmark the active tab",
+                ),
+                (
+                    Icon::FolderPlus,
+                    Hit::Command(Cmd::BookmarkGroup),
+                    "New group",
+                ),
+                (
+                    Icon::ChevronsUpDown,
+                    Hit::Command(Cmd::ShowBookmarks),
+                    "Collapse all",
+                ),
+            ],
         );
-        let n = self.app.tabs.len().max(1);
-        let right_btn = 40.0 * sz.scale;
-        let avail = area.w - 16.0 - 36.0 * sz.scale - right_btn;
-        let tab_w = (avail / n as f32).clamp(60.0, 210.0 * sz.scale);
-        let titles: Vec<String> = self
-            .app
-            .tabs
+        let rows = self.app.bookmark_rows();
+        let top = area.y + 42.0 * k;
+        let list = r(area.x, top, area.w, area.bottom() - top);
+        self.tree_area = None;
+        if rows.is_empty() {
+            let lines = self.wrap(
+                "No bookmarks yet. Bookmark a note, heading, folder or search to keep it here.",
+                sz.ui,
+                list.w - 48.0 * k,
+            );
+            let mut y = list.y + 20.0 * k;
+            for l in &lines {
+                text(self.c, l, list.x + 24.0 * k, y, sz.ui, 400, t.faint);
+                self.said.text(r(list.x, y - 14.0, list.w, 18.0), l);
+                y += sz.ui * 1.5;
+            }
+            return;
+        }
+        let mut y = list.y;
+        let row_h = sz.row;
+        for (place, depth, label, kind) in rows {
+            if y > list.bottom() {
+                break;
+            }
+            let rr = r(list.x + 12.0 * k, y + 1.0, list.w - 24.0 * k, row_h - 2.0);
+            let hit = Hit::Bookmark(place.clone());
+            let z = Zone::App(hit.clone());
+            if self.hovered(&z) {
+                round(self.c, rr, 6.0, t.hover);
+            }
+            let tx = list.x + 36.0 * k + depth as f32 * 17.0 * k;
+            let cy = y + row_h * 0.5;
+            let ic = match kind {
+                0 => Icon::File,
+                1 => Icon::Hash,
+                2 => Icon::Folder,
+                3 => Icon::Search,
+                _ => Icon::Folder,
+            };
+            if kind == 4 {
+                let open = !self.app.bookmarks_closed.contains(&place);
+                look::chevron(self.c, tx - 12.0 * k, cy, open, k, t.faint);
+            } else {
+                icon(self.c, ic, tx - 12.0 * k, cy, k * 0.85, t.faint);
+            }
+            fit(
+                self.c,
+                &label,
+                tx + 4.0 * k,
+                cy + sz.ui * 0.36,
+                sz.ui,
+                if kind == 4 { 600 } else { 400 },
+                if self.hovered(&z) { t.text } else { t.muted },
+                rr.right() - tx - 8.0,
+            );
+            self.button(rr, &label, hit);
+            y += row_h;
+        }
+    }
+
+    // ---- the middle: tab groups -------------------------------------------------
+
+    fn draw_panes(&mut self, main: Rect, lead: f32) {
+        let t = self.t();
+        let mut placed = Vec::new();
+        let mut divs = Vec::new();
+        self.app.layout.place(area(main), &mut placed, &mut divs);
+        let top_right = placed
             .iter()
-            .map(|tb| String::from(tb.title()))
-            .collect();
-        let mut x = area.x + 8.0;
+            .filter(|(_, a)| a.y <= main.y + 0.5)
+            .map(|(p, a)| (*p, a.x + a.w))
+            .fold(None, |best: Option<(usize, f32)>, (p, x)| match best {
+                Some((_, bx)) if bx >= x => best,
+                _ => Some((p, x)),
+            })
+            .map(|(p, _)| p);
+        for (p, a) in placed.iter() {
+            let rc = rect(*a);
+            let lead_here = if (a.x - main.x).abs() < 0.5 && a.y <= main.y + 0.5 {
+                lead
+            } else {
+                0.0
+            };
+            let reserve = if Some(*p) == top_right && !self.app.right_open {
+                44.0 * self.sz.scale
+            } else {
+                0.0
+            };
+            self.draw_pane(*p, rc, lead_here, reserve);
+        }
+        for (i, d) in divs.iter().enumerate() {
+            let a = d.area;
+            if d.down {
+                fill(self.c, r(a.x, a.y + a.h * 0.5, a.w, 1.0), t.border);
+            } else {
+                fill(self.c, r(a.x + a.w * 0.5, a.y, 1.0, a.h), t.border);
+            }
+            self.hit(rect(a), Zone::PaneDivider(i));
+        }
+        self.dividers = divs;
+    }
+
+    /// One tab group: its tab bar, the view header, and what the tab shows.
+    fn draw_pane(&mut self, pane: usize, a: Rect, lead: f32, reserve: f32) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let focused = pane == self.app.pane;
+        let strip = r(a.x, a.y, a.w, sz.tab);
+        fill(self.c, strip, t.side);
+        fill(self.c, r(a.x, strip.bottom() - 1.0, a.w, 1.0), t.border);
+        self.pane_areas.push((pane, a, strip));
+        self.hit(a, Zone::Pane(pane));
+        // The tabs.
+        let (titles, active, pins, links, kinds): (
+            Vec<String>,
+            usize,
+            Vec<bool>,
+            Vec<bool>,
+            Vec<u8>,
+        ) = {
+            let (tabs, act) = self.app.pane_tabs(pane);
+            (
+                tabs.iter().map(|tb| String::from(tb.title())).collect(),
+                act,
+                tabs.iter().map(|tb| tb.pinned).collect(),
+                tabs.iter().map(|tb| tb.group.is_some()).collect(),
+                tabs.iter()
+                    .map(|tb| match &tb.view {
+                        Some(View::Graph(_)) => 1,
+                        Some(View::Canvas(_)) => 2,
+                        Some(View::Base(_)) => 3,
+                        Some(View::Recovery(_)) => 4,
+                        None => 0,
+                    })
+                    .collect(),
+            )
+        };
+        let n = titles.len().max(1);
+        let x0 = a.x + 8.0 * k + lead;
+        let avail = a.w - lead - 16.0 * k - 36.0 * k - reserve - 30.0 * k;
+        let tab_w = (avail / n as f32).clamp(48.0 * k, 200.0 * k);
+        let mut x = x0;
+        let ty = a.y + 5.0 * k;
+        let th = strip.h - 5.0 * k;
+        let dragging = match self.drag {
+            Drag::Tab {
+                pane: dp,
+                tab,
+                moved: true,
+                ..
+            } if dp == pane => Some(tab),
+            _ => None,
+        };
         for (i, title) in titles.iter().enumerate() {
-            let tr = r(x, 6.0 * sz.scale, tab_w - 2.0, strip.h - 6.0 * sz.scale);
-            let active = i == self.app.active;
-            let z = Zone::App(Hit::Tab(i));
-            if active {
-                let _ = canvas2d::fill_round_rect(
+            let tr = r(x, ty, tab_w, th);
+            let is_active = i == active;
+            let z = Zone::Tab(pane, i);
+            self.tab_rects.push((pane, i, tr));
+            if is_active {
+                look::round_top(
                     self.c,
-                    look::g(r(tr.x, tr.y, tr.w, tr.h + 1.0)),
-                    krate::gfx::types::CornerRadii {
-                        top_left: 7.0,
-                        top_right: 7.0,
-                        bottom_right: 0.0,
-                        bottom_left: 0.0,
-                    },
-                    t.bg,
-                );
-            } else if self.hovered(&z) {
-                round(self.c, r(tr.x, tr.y + 2.0, tr.w, tr.h - 6.0), 6.0, t.hover);
-            } else if i + 1 != self.app.active && i + 1 < n {
-                fill(
-                    self.c,
-                    r(tr.right(), tr.y + 8.0, 1.0, tr.h - 16.0),
+                    r(tr.x - 1.0, tr.y - 1.0, tr.w + 2.0, tr.h + 1.0),
+                    10.0,
                     t.border,
                 );
+                look::round_top(self.c, r(tr.x, tr.y, tr.w, tr.h + 1.0), 10.0, t.bg);
+            } else if self.hovered(&z) && dragging.is_none() {
+                round(
+                    self.c,
+                    r(tr.x + 2.0, tr.y + 3.0, tr.w - 4.0, tr.h - 9.0),
+                    6.0,
+                    t.hover,
+                );
+            } else if i + 1 != active && i + 1 < n {
+                fill(
+                    self.c,
+                    r(tr.right(), tr.y + 9.0 * k, 1.0, tr.h - 18.0 * k),
+                    t.border_hover,
+                );
             }
-            let base = tr.y + tr.h * 0.5 + sz.ui * 0.36;
-            let close_w = 22.0 * sz.scale;
+            if dragging == Some(i) {
+                round(
+                    self.c,
+                    r(tr.x + 2.0, tr.y + 3.0, tr.w - 4.0, tr.h - 9.0),
+                    6.0,
+                    look::alpha(t.accent, 0.2),
+                );
+            }
+            let mut tx = tr.x + 10.0 * k;
+            let cy = tr.y + tr.h * 0.5;
+            let tic = match kinds.get(i).copied().unwrap_or(0) {
+                1 => Some(Icon::Graph),
+                2 => Some(Icon::Canvas),
+                3 => Some(Icon::Table),
+                4 => Some(Icon::History),
+                _ => None,
+            };
+            let tcol = if is_active && focused {
+                t.text
+            } else if is_active {
+                t.muted
+            } else {
+                t.faint
+            };
+            if let Some(ic) = tic {
+                icon(self.c, ic, tx + 7.0 * k, cy, k * 0.95, tcol);
+                tx += 20.0 * k;
+            }
+            if links.get(i).copied().unwrap_or(false) {
+                icon(self.c, Icon::Link, tx + 6.0 * k, cy, k * 0.75, t.faint);
+                tx += 16.0 * k;
+            }
+            let close_w = 22.0 * k;
             fit(
                 self.c,
                 title,
-                tr.x + 12.0,
-                base,
+                tx,
+                cy + sz.ui * 0.36,
                 sz.ui,
-                if active { 500 } else { 400 },
-                if active { t.text } else { t.muted },
-                tr.w - 24.0 - close_w,
+                400,
+                tcol,
+                tr.right() - tx - close_w - 6.0 * k,
             );
             self.said.button(tr, title);
             self.hit(tr, z.clone());
-            if active || self.hovered(&z) || self.hovered(&Zone::App(Hit::TabClose(i))) {
-                let cb = r(
-                    tr.right() - close_w - 4.0,
-                    tr.y + (tr.h - close_w) * 0.5,
-                    close_w,
-                    close_w,
+            let cb = r(
+                tr.right() - close_w - 4.0 * k,
+                cy - close_w * 0.5,
+                close_w,
+                close_w,
+            );
+            if pins.get(i).copied().unwrap_or(false) {
+                icon(
+                    self.c,
+                    Icon::Pin,
+                    cb.x + cb.w * 0.5,
+                    cb.y + cb.h * 0.5,
+                    k * 0.8,
+                    t.muted,
                 );
-                if self.hovered(&Zone::App(Hit::TabClose(i))) {
+                let mut lbl = String::from("Unpin ");
+                lbl.push_str(title);
+                if focused {
+                    self.button(cb, &lbl, Hit::Pin(i));
+                }
+            } else if is_active || self.hovered(&z) || self.hovered(&Zone::App(Hit::TabClose(i))) {
+                if focused && self.hovered(&Zone::App(Hit::TabClose(i))) {
                     round(self.c, cb, 4.0, t.hover);
                 }
                 icon(
@@ -1013,161 +1447,219 @@ impl Ui {
                     Icon::Close,
                     cb.x + cb.w * 0.5,
                     cb.y + cb.h * 0.5,
-                    sz.scale * 0.8,
+                    k * 0.9,
                     t.muted,
                 );
-                let mut lbl = String::from("Close ");
-                lbl.push_str(title);
-                self.button(cb, &lbl, Hit::TabClose(i));
+                if focused {
+                    let mut lbl = String::from("Close ");
+                    lbl.push_str(title);
+                    self.button(cb, &lbl, Hit::TabClose(i));
+                }
             }
             x += tab_w;
         }
-        let pb = r(x + 4.0, 9.0 * sz.scale, 28.0 * sz.scale, 26.0 * sz.scale);
-        if self.hovered(&Zone::App(Hit::NewTab)) {
-            round(self.c, pb, 5.0, t.hover);
+        // New tab, and the list of tabs at the end of the bar.
+        let plus_x = x + 20.0 * k;
+        if focused {
+            self.icon_button(
+                Icon::Plus,
+                plus_x,
+                a.y + sz.tab * 0.5,
+                "New tab",
+                Hit::NewTab,
+                false,
+            );
+        } else {
+            icon(self.c, Icon::Plus, plus_x, a.y + sz.tab * 0.5, k, t.muted);
         }
         icon(
             self.c,
-            Icon::Plus,
-            pb.x + pb.w * 0.5,
-            pb.y + pb.h * 0.5,
-            sz.scale * 0.9,
+            Icon::ChevronDown,
+            a.right() - reserve - 22.0 * k,
+            a.y + sz.tab * 0.5,
+            k,
             t.muted,
         );
-        self.button(pb, "New tab", Hit::NewTab);
-        let rb = r(
-            area.right() - right_btn + 4.0,
-            8.0 * sz.scale,
-            30.0 * sz.scale,
-            28.0 * sz.scale,
-        );
-        icon(
-            self.c,
-            Icon::SidebarRight,
-            rb.x + rb.w * 0.5,
-            rb.y + rb.h * 0.5,
-            sz.scale,
-            if right_open { t.text } else { t.muted },
-        );
-        self.button(rb, "Toggle right sidebar", Hit::Ribbon(Cmd::ToggleRight));
-
-        // The status bar has its own strip, so it never covers the note.
-        let status_h = 24.0 * sz.scale;
-        let body = r(area.x, strip.bottom(), area.w, area.h - strip.h - status_h);
-        if self.app.doc().is_none() {
-            self.view = None;
-            self.shown.area = None;
-            self.draw_empty(body);
+        // The view.
+        let body = r(a.x, strip.bottom(), a.w, a.bottom() - strip.bottom());
+        fill(self.c, body, t.bg);
+        if !focused {
+            // Drawn from the group's own tab, read-only until it is pressed.
+            self.draw_pane_body(pane, body, false);
             return;
         }
-        // The view header: back and forward, where the note lives, its mode.
-        let vh = r(body.x, body.y, body.w, sz.view_head);
-        let can_back = self.app.can_navigate(false);
-        let can_fwd = self.app.can_navigate(true);
-        for (j, (fwd, ic, can, label)) in [
-            (false, Icon::Back, can_back, "Navigate back"),
-            (true, Icon::Forward, can_fwd, "Navigate forward"),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let b = r(
-                vh.x + 8.0 + j as f32 * 30.0 * sz.scale,
-                vh.y + 5.0,
-                28.0 * sz.scale,
-                vh.h - 10.0,
-            );
-            if *can && self.hovered(&Zone::App(Hit::Nav(*fwd))) {
-                round(self.c, b, 5.0, t.hover);
-            }
-            icon(
-                self.c,
-                *ic,
-                b.x + b.w * 0.5,
-                b.y + b.h * 0.5,
-                sz.scale * 0.9,
-                if *can { t.muted } else { t.faint },
-            );
-            self.button(b, label, Hit::Nav(*fwd));
-        }
-        let (title, folder, mode) = {
-            let d = self.app.doc();
+        self.draw_pane_body(pane, body, true);
+    }
+
+    fn draw_pane_body(&mut self, pane: usize, body: Rect, focused: bool) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let (title, path, kind, has_doc, mode, can_back, can_fwd) = {
+            let (tabs, act) = self.app.pane_tabs(pane);
+            let tb = tabs.get(act);
             (
-                d.map(|d| d.title.clone()).unwrap_or_default(),
-                d.map(|d| String::from(parent(&d.path))).unwrap_or_default(),
-                d.map_or(Mode::Live, |d| d.mode),
+                tb.map(|x| String::from(x.title())).unwrap_or_default(),
+                tb.and_then(|x| x.path()).map(String::from),
+                tb.map_or(0u8, |x| match &x.view {
+                    Some(View::Graph(_)) => 1,
+                    Some(View::Canvas(_)) => 2,
+                    Some(View::Base(_)) => 3,
+                    Some(View::Recovery(_)) => 4,
+                    None => 0,
+                }),
+                tb.is_some_and(|x| x.doc.is_some()),
+                tb.and_then(|x| x.doc.as_ref())
+                    .map_or(Mode::Live, |d| d.mode),
+                focused && self.app.can_navigate(false),
+                focused && self.app.can_navigate(true),
             )
         };
-        let mut crumb = String::new();
-        if !folder.is_empty() {
-            crumb.push_str(&folder.replace('/', " / "));
-            crumb.push_str(" / ");
-        }
-        let fw = width(self.c, &crumb, sz.ui, 400);
-        let tw = width(self.c, &title, sz.ui, 500);
-        let room = vh.w - 160.0 * sz.scale;
-        let cx = vh.x + ((vh.w - (fw + tw).min(room)) * 0.5).max(70.0 * sz.scale);
-        let base = vh.y + vh.h * 0.5 + sz.ui * 0.36;
-        let used = fit(self.c, &crumb, cx, base, sz.ui, 400, t.faint, room * 0.6);
-        fit(
-            self.c,
-            &title,
-            cx + used,
-            base,
-            sz.ui,
-            500,
-            t.muted,
-            room - used,
+        let header = self.app.settings.show_view_header();
+        let vh = r(
+            body.x,
+            body.y,
+            body.w,
+            if header { sz.view_head } else { 0.0 },
         );
-        self.said.text(r(cx, vh.y, fw + tw, vh.h), &title);
-        let mb = r(
-            vh.right() - 40.0 * sz.scale,
-            vh.y + 5.0,
-            30.0 * sz.scale,
-            vh.h - 10.0,
-        );
-        if self.hovered(&Zone::App(Hit::ModeToggle)) {
-            round(self.c, mb, 5.0, t.hover);
-        }
-        let reading = mode == Mode::Reading;
-        icon(
-            self.c,
-            if reading {
-                Icon::Editing
+        if header {
+            // Back and forward, where the file is, and its actions.
+            for (j, (fwd, ic, can, label)) in [
+                (false, Icon::ArrowLeft, can_back, "Navigate back"),
+                (true, Icon::ArrowRight, can_fwd, "Navigate forward"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let cx = vh.x + 26.0 * k + j as f32 * 28.0 * k;
+                let cy = vh.y + vh.h * 0.5;
+                if focused && can {
+                    self.icon_button(ic, cx, cy, label, Hit::Nav(fwd), false);
+                } else {
+                    icon(self.c, ic, cx, cy, k, if can { t.muted } else { t.faint });
+                }
+            }
+            let mut crumb = String::new();
+            if let Some(p) = &path {
+                let folder = parent(p);
+                if !folder.is_empty() {
+                    crumb.push_str(&folder.replace('/', " / "));
+                    crumb.push_str(" / ");
+                }
+            }
+            let tx = vh.x + 76.0 * k;
+            let base = vh.y + vh.h * 0.5 + sz.ui * 0.36;
+            let room = vh.w - 76.0 * k - 70.0 * k;
+            let used = fit(self.c, &crumb, tx, base, sz.ui, 400, t.faint, room * 0.6);
+            fit(
+                self.c,
+                &title,
+                tx + used,
+                base,
+                sz.ui,
+                400,
+                t.text,
+                room - used,
+            );
+            self.said.text(r(tx, vh.y, room, vh.h), &title);
+            if focused {
+                self.icon_button(
+                    Icon::More,
+                    vh.right() - 26.0 * k,
+                    vh.y + vh.h * 0.5,
+                    "More options",
+                    Hit::Command(Cmd::TogglePin),
+                    false,
+                );
+                // The pin command is the menu's first item; the button opens
+                // the tab's menu instead (see press()).
+                if has_doc {
+                    let reading = mode == Mode::Reading;
+                    self.icon_button(
+                        if reading {
+                            Icon::Pencil
+                        } else {
+                            Icon::BookOpen
+                        },
+                        vh.right() - 54.0 * k,
+                        vh.y + vh.h * 0.5,
+                        if reading {
+                            "Current view: reading. Click to edit"
+                        } else {
+                            "Current view: editing. Click to read"
+                        },
+                        Hit::ModeToggle,
+                        false,
+                    );
+                }
             } else {
-                Icon::Reading
-            },
-            mb.x + mb.w * 0.5,
-            mb.y + mb.h * 0.5,
-            sz.scale,
-            t.muted,
+                icon(
+                    self.c,
+                    Icon::More,
+                    vh.right() - 26.0 * k,
+                    vh.y + vh.h * 0.5,
+                    k,
+                    t.muted,
+                );
+            }
+        }
+        // The status bar sits in the bottom-right corner: a note's text
+        // stops above it rather than running under it.
+        let foot = if (body.bottom() - self.h).abs() < 1.0 && kind == 0 {
+            26.0 * k
+        } else {
+            0.0
+        };
+        let content = r(
+            body.x,
+            vh.bottom(),
+            body.w,
+            body.bottom() - vh.bottom() - foot,
         );
-        self.button(
-            mb,
-            if reading {
-                "Editing view"
-            } else {
-                "Reading view"
-            },
-            Hit::ModeToggle,
-        );
+        match kind {
+            1 => self.draw_graph(pane, content, focused),
+            2 => self.draw_canvas(pane, content, focused),
+            3 => self.draw_base(pane, content, focused),
+            4 => self.draw_recovery(pane, content, focused),
+            _ if has_doc => self.draw_note(pane, content, focused),
+            _ => {
+                if focused {
+                    self.view = None;
+                    self.shown.area = None;
+                }
+                self.draw_empty(content, focused);
+            }
+        }
+    }
 
-        // The note.
-        let ed = r(body.x, vh.bottom(), body.w, body.bottom() - vh.bottom());
-        let pad = (28.0 * sz.scale).min(ed.w * 0.06);
-        let col_w = sz.measure.min(ed.w - pad * 2.0).max(80.0);
+    fn draw_note(&mut self, pane: usize, ed: Rect, focused: bool) {
+        let sz = self.sz;
+        let t = self.t();
+        let readable = self.app.settings.readable_line_length();
+        let pad = (32.0 * sz.scale).min(ed.w * 0.06);
+        let col_w = if readable {
+            sz.measure.min(ed.w - pad * 2.0).max(80.0)
+        } else {
+            (ed.w - pad * 2.0).max(80.0)
+        };
         let col_x = ed.x + (ed.w - col_w) * 0.5;
-        let view = View {
+        let view = EdView {
             area: ed,
             x: col_x,
             width: col_w,
             sz,
         };
-        self.hit(ed, Zone::Editor);
-        let caret_on = self.caret_visible();
+        if focused {
+            self.hit(ed, Zone::Editor);
+        }
+        let caret_on = focused && self.caret_visible();
         let app = &self.app;
         let resolved = |name: &str| -> bool { app.resolved(name) };
-        if let Some(doc) = app.tabs.get(app.active).and_then(|tb| tb.doc.as_ref()) {
+        let (tabs, act) = app.pane_tabs(pane);
+        let Some(doc) = tabs.get(act).and_then(|tb| tb.doc.as_ref()) else {
+            return;
+        };
+        if focused {
             editor::draw(
                 &mut self.cache,
                 self.c,
@@ -1187,12 +1679,25 @@ impl Ui {
                     self.caret_xy = Some((col_x + x, y + rl.top + rl.h));
                 }
             }
+            if let Some(thumb) = self.shown.thumb {
+                self.hit(self.shown.track.unwrap_or(thumb), Zone::Track);
+                self.hit(thumb, Zone::Thumb);
+            }
+            self.view = Some(view);
+        } else {
+            let mut other = Shown::default();
+            editor::draw(
+                &mut self.cache,
+                self.c,
+                doc,
+                &view,
+                t,
+                &mut other,
+                &resolved,
+                false,
+                &mut self.said,
+            );
         }
-        if let Some(thumb) = self.shown.thumb {
-            self.hit(self.shown.track.unwrap_or(thumb), Zone::Track);
-            self.hit(thumb, Zone::Thumb);
-        }
-        self.view = Some(view);
     }
 
     fn caret_visible(&self) -> bool {
@@ -1206,45 +1711,74 @@ impl Ui {
         (since / BLINK_MS).is_multiple_of(2)
     }
 
-    fn draw_empty(&mut self, area: Rect) {
+    /// A new tab: what can be done from here, as round buttons.
+    fn draw_empty(&mut self, area: Rect, focused: bool) {
         let t = self.t();
         let sz = self.sz;
-        let lines: [(&str, Option<Cmd>); 4] = [
-            ("No note is open", None),
-            ("Create new note (Cmd+N)", Some(Cmd::NewNote)),
-            ("Go to a note (Cmd+O)", Some(Cmd::QuickSwitcher)),
-            ("Close this tab", Some(Cmd::CloseTab)),
-        ];
-        let mut y = area.y + area.h * 0.38;
-        for (i, (s, cmd)) in lines.iter().enumerate() {
-            let size = if i == 0 {
-                22.0 * sz.scale
-            } else {
-                sz.body * 0.95
-            };
-            let w = width(self.c, s, size, if i == 0 { 600 } else { 400 });
-            let x = area.x + (area.w - w) * 0.5;
+        let k = sz.scale;
+        let mut items: Vec<(Icon, &str, &str, Cmd)> =
+            alloc::vec![(Icon::SquarePen, "New note", "\u{2318} N", Cmd::NewNote)];
+        if self.app.settings.plugin_on("bases") {
+            items.push((Icon::LayoutList, "New base", "", Cmd::NewBase));
+        }
+        if self.app.settings.plugin_on("canvas") {
+            items.push((Icon::Canvas, "New canvas", "", Cmd::NewCanvas));
+        }
+        items.push((Icon::Search, "Go to file", "\u{2318} O", Cmd::QuickSwitcher));
+        let pill_h = 37.0 * k;
+        let step = 46.0 * k;
+        let pw = 145.0 * k;
+        let block = step * (items.len() as f32 - 1.0) + pill_h;
+        let x = area.x + (area.w - pw) * 0.5;
+        let mut y = area.y + (area.h - block) * 0.5;
+        for (ic, label, keys, cmd) in items {
+            let b = r(x, y, pw, pill_h);
+            let z = Zone::App(Hit::Command(cmd));
+            if focused && self.hovered(&z) {
+                round(self.c, b, pill_h * 0.5, t.hover);
+            }
+            look::outline(self.c, b, pill_h * 0.5, 1.0, t.border);
+            icon(
+                self.c,
+                ic,
+                b.x + 20.0 * k,
+                b.y + pill_h * 0.5,
+                k * 1.05,
+                t.text,
+            );
+            let ps = 14.0 * k;
             text(
                 self.c,
-                s,
-                x,
-                y,
-                size,
-                if i == 0 { 600 } else { 400 },
-                if cmd.is_some() { t.link } else { t.muted },
+                label,
+                b.x + 37.0 * k,
+                b.y + pill_h * 0.5 + ps * 0.36,
+                ps,
+                400,
+                t.text,
             );
-            let rc = r(x - 4.0, y - size, w + 8.0, size * 1.4);
-            match cmd {
-                Some(c) => self.button(rc, s, Hit::Command(*c)),
-                None => {
-                    self.said.heading(rc, s);
-                }
+            if !keys.is_empty() {
+                let kw = width(self.c, keys, sz.ui, 400) + 14.0 * k;
+                let kb = r(
+                    b.right() - kw - 6.0 * k,
+                    b.y + (pill_h - 24.0 * k) * 0.5,
+                    kw,
+                    24.0 * k,
+                );
+                round(self.c, kb, 12.0 * k, t.hover);
+                text(
+                    self.c,
+                    keys,
+                    kb.x + 7.0 * k,
+                    kb.y + kb.h * 0.5 + sz.ui * 0.36,
+                    sz.ui,
+                    400,
+                    t.text,
+                );
             }
-            y += if i == 0 {
-                44.0 * sz.scale
-            } else {
-                30.0 * sz.scale
-            };
+            if focused {
+                self.button(b, label, Hit::Command(cmd));
+            }
+            y += step;
         }
     }
 
@@ -1253,297 +1787,622 @@ impl Ui {
     fn draw_right(&mut self, area: Rect) {
         let t = self.t();
         let sz = self.sz;
+        let k = sz.scale;
         fill(self.c, area, t.side);
-        let panes: [(Icon, RightPane, &str); 4] = [
-            (Icon::Backlinks, RightPane::Backlinks, "Backlinks"),
-            (Icon::Outgoing, RightPane::Outgoing, "Outgoing links"),
-            (Icon::Tags, RightPane::Tags, "Tags"),
-            (Icon::Outline, RightPane::Outline, "Outline"),
+        let head = sz.head;
+        let panes: [(Icon, RightPane, &str, &str); 5] = [
+            (
+                Icon::Backlinks,
+                RightPane::Backlinks,
+                "Backlinks",
+                "backlink",
+            ),
+            (
+                Icon::Outgoing,
+                RightPane::Outgoing,
+                "Outgoing links",
+                "outgoing-link",
+            ),
+            (Icon::Tags, RightPane::Tags, "Tags", "tag-pane"),
+            (
+                Icon::Archive,
+                RightPane::Properties,
+                "All properties",
+                "properties",
+            ),
+            (Icon::List, RightPane::Outline, "Outline", "outline"),
         ];
-        for (i, (ic, pane, label)) in panes.iter().enumerate() {
-            let b = r(
-                area.x + 8.0 + i as f32 * 34.0 * sz.scale,
-                6.0 * sz.scale,
-                30.0 * sz.scale,
-                28.0 * sz.scale,
-            );
-            let on = self.app.right == *pane;
-            if on {
-                round(self.c, b, 5.0, t.active);
+        let mut x = area.x + 21.0 * k;
+        for (ic, pane, label, plugin) in panes {
+            if !self.app.settings.plugin_on(plugin) {
+                continue;
             }
-            icon(
-                self.c,
-                *ic,
-                b.x + b.w * 0.5,
-                b.y + b.h * 0.5,
-                sz.scale,
-                if on { t.text } else { t.muted },
-            );
-            self.button(b, label, Hit::RightTab(*pane));
+            let on = self.app.right == pane;
+            self.icon_button(ic, x, head * 0.5, label, Hit::RightTab(pane), on);
+            x += 31.0 * k;
         }
-        fill(self.c, r(area.x, sz.head - 1.0, area.w, 1.0), t.border);
-        let body = r(area.x, sz.head, area.w, area.h - sz.head);
-        self.right_area = Some(body);
-        let title = match self.app.right {
-            RightPane::Backlinks => "Backlinks",
-            RightPane::Outgoing => "Outgoing links",
-            RightPane::Tags => "Tags",
-            RightPane::Outline => "Outline",
-        };
-        let mut head = String::from(title);
-        if let Some(d) = self.app.doc() {
-            if self.app.right != RightPane::Tags {
-                head.push_str(" for ");
-                head.push_str(&d.title);
-            }
-        }
-        fit(
-            self.c,
-            &head,
-            body.x + 14.0,
-            body.y + 22.0,
-            sz.ui,
-            600,
-            t.text,
-            body.w - 28.0,
+        self.icon_button(
+            Icon::SidebarRight,
+            area.right() - 22.0 * k,
+            head * 0.5,
+            "Collapse",
+            Hit::Ribbon(Cmd::ToggleRight),
+            false,
         );
-        self.said.heading(r(body.x, body.y, body.w, 30.0), &head);
-        let list = r(body.x, body.y + 34.0, body.w, body.h - 34.0);
+        fill(self.c, r(area.x, head - 1.0, area.w, 1.0), t.border);
+        let body = r(area.x, head, area.w, area.h - head);
+        self.nav_buttons(
+            body,
+            &[
+                (Icon::List, Hit::Section(0), "Collapse results"),
+                (Icon::ChevronsUpDown, Hit::Section(0), "Show more context"),
+                (Icon::Sort, Hit::Section(0), "Change sort order"),
+                (Icon::Search, Hit::Section(0), "Show search filter"),
+            ],
+        );
+        let list = r(body.x, body.y + 42.0 * k, body.w, body.h - 42.0 * k);
+        self.right_area = Some(list);
         let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
-        let mut y = list.y - self.app.right_scroll;
-        let row_h = sz.row;
-        let pending = self.app.vault.as_ref().map_or(0, |v| v.index_pending());
         match self.app.right {
-            RightPane::Backlinks => {
-                let data: Vec<(String, Vec<String>)> = self
-                    .app
-                    .backlinks()
-                    .iter()
-                    .map(|b| {
-                        let name =
-                            String::from(crate::vfs::file_name(&b.path).trim_end_matches(".md"));
-                        let ctx = if b.context.is_empty() {
-                            b.lines.iter().map(|_| String::new()).collect()
-                        } else {
-                            b.context.clone()
-                        };
-                        (name, ctx)
-                    })
-                    .collect();
-                let mut s = String::from("Linked mentions  ");
-                s.push_str(&grouped(data.len()));
-                text(self.c, &s, list.x + 14.0, y + 16.0, sz.small, 500, t.muted);
-                self.said.text(r(list.x, y, list.w, 22.0), &s);
-                y += 28.0;
-                if data.is_empty() {
-                    let msg = if pending > 0 {
-                        "Still reading the vault\u{2026}"
-                    } else {
-                        "No backlinks found."
-                    };
-                    text(self.c, msg, list.x + 14.0, y + 14.0, sz.ui, 400, t.faint);
-                    self.said.text(r(list.x, y, list.w, 22.0), msg);
-                }
-                for (i, (name, ctx)) in data.iter().enumerate() {
-                    if y > list.bottom() {
-                        break;
-                    }
-                    let nr = r(list.x + 6.0, y, list.w - 12.0, row_h);
-                    let z = Zone::App(Hit::Backlink(i, 0));
-                    if self.hovered(&z) {
-                        round(self.c, nr, 4.0, t.hover);
-                    }
-                    fit(
-                        self.c,
-                        name,
-                        nr.x + 8.0,
-                        y + row_h * 0.5 + sz.ui * 0.36,
-                        sz.ui,
-                        600,
-                        t.text,
-                        nr.w - 16.0,
-                    );
-                    self.said.button(nr, name);
-                    self.hit(nr, z);
-                    y += row_h;
-                    for (l, line) in ctx.iter().enumerate().take(4) {
-                        if line.is_empty() {
-                            continue;
-                        }
-                        let lr = r(list.x + 14.0, y, list.w - 22.0, row_h * 0.9);
-                        let shown = crate::md::plain(line, 0);
-                        round(
-                            self.c,
-                            lr,
-                            4.0,
-                            if self.hovered(&Zone::App(Hit::Backlink(i, l))) {
-                                t.hover
-                            } else {
-                                t.bg
-                            },
-                        );
-                        fit(
-                            self.c,
-                            &shown,
-                            lr.x + 8.0,
-                            y + lr.h * 0.5 + sz.small * 0.36,
-                            sz.small,
-                            400,
-                            t.muted,
-                            lr.w - 16.0,
-                        );
-                        self.said.button(lr, &shown);
-                        self.hit(lr, Zone::App(Hit::Backlink(i, l)));
-                        y += lr.h + 3.0;
-                    }
-                    y += 4.0;
-                }
-            }
-            RightPane::Outgoing => {
-                let data: Vec<(String, bool)> = self.app.outgoing().to_vec();
-                if data.is_empty() {
-                    text(
-                        self.c,
-                        "No links in this note.",
-                        list.x + 14.0,
-                        y + 16.0,
-                        sz.ui,
-                        400,
-                        t.faint,
-                    );
-                }
-                for (i, (name, ok)) in data.iter().enumerate() {
-                    if y > list.bottom() {
-                        break;
-                    }
-                    let nr = r(list.x + 6.0, y, list.w - 12.0, row_h);
-                    let z = Zone::App(Hit::Outgoing(i));
-                    if self.hovered(&z) {
-                        round(self.c, nr, 4.0, t.hover);
-                    }
-                    fit(
-                        self.c,
-                        name,
-                        nr.x + 8.0,
-                        y + row_h * 0.5 + sz.ui * 0.36,
-                        sz.ui,
-                        400,
-                        if *ok { t.text } else { t.faint },
-                        nr.w - 16.0,
-                    );
-                    self.said.button(nr, name);
-                    self.hit(nr, z);
-                    y += row_h;
-                }
-            }
-            RightPane::Tags => {
-                let data: Vec<(String, usize)> = self.app.tags().to_vec();
-                if data.is_empty() {
-                    let msg = if pending > 0 {
-                        "Still reading the vault\u{2026}"
-                    } else {
-                        "No tags found."
-                    };
-                    text(self.c, msg, list.x + 14.0, y + 16.0, sz.ui, 400, t.faint);
-                }
-                for (i, (tag, n)) in data.iter().enumerate() {
-                    if y > list.bottom() {
-                        break;
-                    }
-                    if y + row_h < list.y {
-                        y += row_h;
-                        continue;
-                    }
-                    let nr = r(list.x + 6.0, y, list.w - 12.0, row_h);
-                    let z = Zone::App(Hit::Tag(i));
-                    if self.hovered(&z) {
-                        round(self.c, nr, 4.0, t.hover);
-                    }
-                    let mut s = String::from("#");
-                    s.push_str(tag);
-                    let num = grouped(*n);
-                    let nw = width(self.c, &num, sz.small, 400);
-                    fit(
-                        self.c,
-                        &s,
-                        nr.x + 8.0,
-                        y + row_h * 0.5 + sz.ui * 0.36,
-                        sz.ui,
-                        400,
-                        t.text,
-                        nr.w - nw - 24.0,
-                    );
-                    text(
-                        self.c,
-                        &num,
-                        nr.right() - nw - 8.0,
-                        y + row_h * 0.5 + sz.small * 0.36,
-                        sz.small,
-                        400,
-                        t.faint,
-                    );
-                    self.said.button(nr, &s);
-                    self.hit(nr, z);
-                    y += row_h;
-                }
-            }
-            RightPane::Outline => {
-                let data: Vec<(u8, String)> = self
-                    .app
-                    .outline()
-                    .iter()
-                    .map(|h| (h.level, h.text.clone()))
-                    .collect();
-                if data.is_empty() {
-                    text(
-                        self.c,
-                        "No headings in this note.",
-                        list.x + 14.0,
-                        y + 16.0,
-                        sz.ui,
-                        400,
-                        t.faint,
-                    );
-                }
-                for (i, (level, name)) in data.iter().enumerate() {
-                    if y > list.bottom() {
-                        break;
-                    }
-                    if y + row_h < list.y {
-                        y += row_h;
-                        continue;
-                    }
-                    let nr = r(list.x + 6.0, y, list.w - 12.0, row_h);
-                    let z = Zone::App(Hit::Outline(i));
-                    if self.hovered(&z) {
-                        round(self.c, nr, 4.0, t.hover);
-                    }
-                    let ind = (level.saturating_sub(1)) as f32 * 14.0 * sz.scale;
-                    fit(
-                        self.c,
-                        name,
-                        nr.x + 8.0 + ind,
-                        y + row_h * 0.5 + sz.ui * 0.36,
-                        sz.ui,
-                        400,
-                        t.text,
-                        nr.w - 16.0 - ind,
-                    );
-                    self.said.button(nr, name);
-                    self.hit(nr, z);
-                    y += row_h;
-                }
-            }
+            RightPane::Backlinks => self.draw_backlinks(list),
+            RightPane::Outgoing => self.draw_outgoing(list),
+            RightPane::Tags => self.draw_tags(list),
+            RightPane::Properties => self.draw_properties(list),
+            RightPane::Outline => self.draw_outline(list),
         }
         let _ = canvas2d::clear_clip(self.c);
     }
 
-    // ---- the status bar ---------------------------------------------------------------
-
-    fn draw_status(&mut self, w: f32, h: f32) {
+    /// A section heading in a side pane ("Linked mentions  5").
+    fn section(
+        &mut self,
+        list: Rect,
+        y: f32,
+        title: &str,
+        n: Option<usize>,
+        hit: Hit,
+        open: bool,
+    ) -> f32 {
         let t = self.t();
         let sz = self.sz;
+        let k = sz.scale;
+        let hr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+        if self.hovered(&Zone::App(hit.clone())) {
+            round(self.c, hr, 6.0, t.hover);
+        }
+        let base = y + sz.row * 0.5 + sz.ui * 0.36;
+        text(
+            self.c,
+            title,
+            list.x + 19.0 * k,
+            base,
+            sz.ui,
+            600,
+            if open { t.text } else { t.faint },
+        );
+        if let Some(n) = n {
+            let s = grouped(n);
+            let nw = width(self.c, &s, sz.small, 400);
+            text(
+                self.c,
+                &s,
+                hr.right() - nw - 8.0 * k,
+                base,
+                sz.small,
+                400,
+                t.faint,
+            );
+        }
+        self.button(hr, title, hit);
+        y + sz.row + 4.0 * k
+    }
+
+    /// A note's name with its chevron and count, then its lines in boxes.
+    #[allow(clippy::too_many_arguments)]
+    fn result_block(
+        &mut self,
+        list: Rect,
+        mut y: f32,
+        name: &str,
+        lines: &[String],
+        key: &str,
+        open_hit: Hit,
+        line_hit: &dyn Fn(usize) -> Hit,
+    ) -> f32 {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let nr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+        let z = Zone::App(open_hit.clone());
+        if self.hovered(&z) {
+            round(self.c, nr, 6.0, t.hover);
+        }
+        let cy = y + sz.row * 0.5;
+        look::chevron(self.c, list.x + 24.0 * k, cy, true, k, t.faint);
+        let n = lines.iter().filter(|l| !l.is_empty()).count();
+        let ns = grouped(n.max(1));
+        let nw = width(self.c, &ns, sz.small, 400);
+        fit(
+            self.c,
+            name,
+            list.x + 36.0 * k,
+            cy + sz.ui * 0.36,
+            sz.ui,
+            400,
+            t.text,
+            nr.w - 40.0 * k - nw,
+        );
+        text(
+            self.c,
+            &ns,
+            nr.right() - nw - 8.0 * k,
+            cy + sz.small * 0.36,
+            sz.small,
+            400,
+            t.faint,
+        );
+        self.button(nr, name, open_hit);
+        y += sz.row + 2.0 * k;
+        for (l, line) in lines.iter().enumerate().take(6) {
+            if line.is_empty() {
+                continue;
+            }
+            let shown = crate::md::plain(line, 0);
+            let room = list.w - 24.0 * k - 26.0 * k;
+            let wrapped = self.wrap(&shown, sz.ui, room);
+            let wrapped: Vec<String> = wrapped.into_iter().take(4).collect();
+            let lh = sz.ui * 1.5;
+            let bh = wrapped.len().max(1) as f32 * lh + 16.0 * k;
+            let lr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, bh);
+            let lz = Zone::App(line_hit(l));
+            round(
+                self.c,
+                lr,
+                4.0,
+                if self.hovered(&lz) {
+                    look::over(t.hover, t.bg)
+                } else {
+                    t.bg
+                },
+            );
+            let mut ly = y + 8.0 * k + lh * 0.5 + sz.ui * 0.36;
+            for wl in &wrapped {
+                // The name, marked where it appears.
+                if !key.is_empty() {
+                    let low = crate::text::lower(wl);
+                    if let Some(i) = low.find(key) {
+                        if wl.is_char_boundary(i) && wl.is_char_boundary(i + key.len()) {
+                            let pre = width(self.c, &wl[..i], sz.ui, 400);
+                            let mw = width(self.c, &wl[i..i + key.len()], sz.ui, 400);
+                            fill(
+                                self.c,
+                                r(lr.x + 13.0 * k + pre, ly - sz.ui, mw, sz.ui * 1.3),
+                                t.find,
+                            );
+                        }
+                    }
+                }
+                text(self.c, wl, lr.x + 13.0 * k, ly, sz.ui, 400, t.text);
+                ly += lh;
+            }
+            self.said.button(lr, &shown);
+            self.hit(lr, lz);
+            y += bh + 6.0 * k;
+        }
+        y + 6.0 * k
+    }
+
+    fn draw_backlinks(&mut self, list: Rect) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let mut y = list.y - self.app.right_scroll;
+        if self.app.doc().is_none() {
+            text(
+                self.c,
+                "No backlinks found.",
+                list.x + 19.0 * k,
+                y + 16.0,
+                sz.ui,
+                400,
+                t.faint,
+            );
+            return;
+        }
+        let pending = self.app.vault.as_ref().map_or(0, |v| v.index_pending());
+        let key = self
+            .app
+            .doc()
+            .map(|d| crate::text::lower(&d.title))
+            .unwrap_or_default();
+        let data: Vec<(String, Vec<String>)> = self
+            .app
+            .backlinks()
+            .iter()
+            .map(|b| {
+                let name = String::from(crate::app::strip_ext(crate::vfs::file_name(&b.path)));
+                let ctx = if b.context.is_empty() {
+                    b.lines.iter().map(|_| String::new()).collect()
+                } else {
+                    b.context.clone()
+                };
+                (name, ctx)
+            })
+            .collect();
+        let open = self.app.linked_open;
+        y = self.section(
+            list,
+            y,
+            "Linked mentions",
+            Some(data.len()),
+            Hit::Section(0),
+            open,
+        );
+        if open {
+            if data.is_empty() {
+                let msg = if pending > 0 {
+                    "Still reading the vault\u{2026}"
+                } else {
+                    "No backlinks found."
+                };
+                text(
+                    self.c,
+                    msg,
+                    list.x + 19.0 * k,
+                    y + 14.0,
+                    sz.ui,
+                    400,
+                    t.faint,
+                );
+                self.said.text(r(list.x, y, list.w, 22.0), msg);
+                y += 30.0 * k;
+            }
+            for (i, (name, ctx)) in data.iter().enumerate() {
+                if y > list.bottom() {
+                    break;
+                }
+                y = self.result_block(list, y, name, ctx, &key, Hit::Backlink(i, 0), &|l| {
+                    Hit::Backlink(i, l)
+                });
+            }
+        }
+        y += 14.0 * k;
+        // Unlinked mentions: found between frames once the section is open.
+        let unl: Option<Vec<(String, Vec<String>)>> = self.app.unlinked.as_ref().map(|u| {
+            u.found
+                .iter()
+                .map(|(p, ls)| {
+                    (
+                        String::from(crate::app::strip_ext(crate::vfs::file_name(p))),
+                        ls.iter().map(|(_, s)| s.clone()).collect(),
+                    )
+                })
+                .collect()
+        });
+        let busy = self
+            .app
+            .unlinked
+            .as_ref()
+            .is_some_and(|u| !u.queue.is_empty());
+        let uopen = self.app.unlinked_open;
+        y = self.section(
+            list,
+            y,
+            "Unlinked mentions",
+            unl.as_ref().map(Vec::len).filter(|_| uopen),
+            Hit::Section(1),
+            uopen,
+        );
+        if uopen {
+            let found = unl.unwrap_or_default();
+            if found.is_empty() {
+                let msg = if busy {
+                    "Searching\u{2026}"
+                } else {
+                    "No unlinked mentions found."
+                };
+                text(
+                    self.c,
+                    msg,
+                    list.x + 19.0 * k,
+                    y + 14.0,
+                    sz.ui,
+                    400,
+                    t.faint,
+                );
+            }
+            for (i, (name, lines)) in found.iter().enumerate() {
+                if y > list.bottom() {
+                    break;
+                }
+                let top = y;
+                y = self.result_block(list, y, name, lines, &key, Hit::Unlinked(i, 0), &|l| {
+                    Hit::Unlinked(i, l)
+                });
+                // "Link" turns these mentions into links.
+                let bw = 44.0 * k;
+                let b = r(
+                    list.right() - 12.0 * k - bw - 34.0 * k,
+                    top + 3.0 * k,
+                    bw,
+                    sz.row - 6.0 * k,
+                );
+                let z = Zone::App(Hit::LinkMention(i));
+                round(
+                    self.c,
+                    b,
+                    4.0,
+                    if self.hovered(&z) {
+                        t.border_hover
+                    } else {
+                        t.button
+                    },
+                );
+                let lw = width(self.c, "Link", sz.small, 500);
+                text(
+                    self.c,
+                    "Link",
+                    b.x + (b.w - lw) * 0.5,
+                    b.y + b.h * 0.5 + sz.small * 0.36,
+                    sz.small,
+                    500,
+                    t.text,
+                );
+                self.button(b, "Link", Hit::LinkMention(i));
+            }
+        }
+    }
+
+    fn draw_outgoing(&mut self, list: Rect) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let mut y = list.y - self.app.right_scroll;
+        let data: Vec<(String, bool)> = self.app.outgoing().to_vec();
+        y = self.section(list, y, "Links", Some(data.len()), Hit::Section(0), true);
+        if data.is_empty() {
+            text(
+                self.c,
+                "No links found.",
+                list.x + 19.0 * k,
+                y + 14.0,
+                sz.ui,
+                400,
+                t.faint,
+            );
+        }
+        for (i, (name, ok)) in data.iter().enumerate() {
+            if y > list.bottom() {
+                break;
+            }
+            let nr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+            let z = Zone::App(Hit::Outgoing(i));
+            if self.hovered(&z) {
+                round(self.c, nr, 6.0, t.hover);
+            }
+            icon(
+                self.c,
+                Icon::File,
+                list.x + 26.0 * k,
+                y + sz.row * 0.5,
+                k * 0.85,
+                t.faint,
+            );
+            fit(
+                self.c,
+                name,
+                list.x + 40.0 * k,
+                y + sz.row * 0.5 + sz.ui * 0.36,
+                sz.ui,
+                400,
+                if *ok { t.text } else { t.faint },
+                nr.w - 40.0 * k,
+            );
+            self.said.button(nr, name);
+            self.hit(nr, z);
+            y += sz.row;
+        }
+    }
+
+    fn draw_tags(&mut self, list: Rect) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let mut y = list.y - self.app.right_scroll;
+        let rows = self.app.tag_rows();
+        let pending = self.app.vault.as_ref().map_or(0, |v| v.index_pending());
+        if rows.is_empty() {
+            let msg = if pending > 0 {
+                "Still reading the vault\u{2026}"
+            } else {
+                "No tags found."
+            };
+            text(
+                self.c,
+                msg,
+                list.x + 19.0 * k,
+                y + 16.0,
+                sz.ui,
+                400,
+                t.faint,
+            );
+        }
+        for (i, (full, label, n, depth, has)) in rows.iter().enumerate() {
+            if y > list.bottom() {
+                break;
+            }
+            if y + sz.row < list.y {
+                y += sz.row;
+                continue;
+            }
+            let nr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+            let z = Zone::App(Hit::TagRow(i));
+            if self.hovered(&z) {
+                round(self.c, nr, 6.0, t.hover);
+            }
+            let tx = list.x + 36.0 * k + *depth as f32 * 17.0 * k;
+            let cy = y + sz.row * 0.5;
+            let num = grouped(*n);
+            let nw = width(self.c, &num, sz.small, 400);
+            fit(
+                self.c,
+                label,
+                tx,
+                cy + sz.ui * 0.36,
+                sz.ui,
+                400,
+                t.text,
+                nr.right() - tx - nw - 16.0 * k,
+            );
+            text(
+                self.c,
+                &num,
+                nr.right() - nw - 8.0 * k,
+                cy + sz.small * 0.36,
+                sz.small,
+                400,
+                t.faint,
+            );
+            let mut s = String::from("#");
+            s.push_str(full);
+            self.said.button(nr, &s);
+            self.hit(nr, z);
+            if *has {
+                let lower = crate::text::lower(full);
+                let open = !self.app.tags_closed.contains(&lower);
+                let cb = r(tx - 20.0 * k, y, 16.0 * k, sz.row);
+                look::chevron(self.c, tx - 12.0 * k, cy, open, k, t.faint);
+                self.button(cb, "Fold", Hit::TagFold(lower));
+            }
+            y += sz.row;
+        }
+    }
+
+    fn draw_properties(&mut self, list: Rect) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let mut y = list.y - self.app.right_scroll;
+        let props = self.app.all_properties();
+        if props.is_empty() {
+            text(
+                self.c,
+                "No properties found.",
+                list.x + 19.0 * k,
+                y + 16.0,
+                sz.ui,
+                400,
+                t.faint,
+            );
+        }
+        for (i, (name, n)) in props.iter().enumerate() {
+            if y > list.bottom() {
+                break;
+            }
+            let nr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+            let z = Zone::App(Hit::Property(i));
+            if self.hovered(&z) {
+                round(self.c, nr, 6.0, t.hover);
+            }
+            let cy = y + sz.row * 0.5;
+            icon(self.c, Icon::Text, list.x + 26.0 * k, cy, k * 0.85, t.faint);
+            let num = grouped(*n);
+            let nw = width(self.c, &num, sz.small, 400);
+            fit(
+                self.c,
+                name,
+                list.x + 40.0 * k,
+                cy + sz.ui * 0.36,
+                sz.ui,
+                400,
+                t.text,
+                nr.w - 56.0 * k - nw,
+            );
+            text(
+                self.c,
+                &num,
+                nr.right() - nw - 8.0 * k,
+                cy + sz.small * 0.36,
+                sz.small,
+                400,
+                t.faint,
+            );
+            self.said.button(nr, name);
+            self.hit(nr, z);
+            y += sz.row;
+        }
+    }
+
+    fn draw_outline(&mut self, list: Rect) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
+        let mut y = list.y - self.app.right_scroll;
+        let data: Vec<(u8, String)> = self
+            .app
+            .outline()
+            .iter()
+            .map(|h| (h.level, h.text.clone()))
+            .collect();
+        if data.is_empty() {
+            text(
+                self.c,
+                "No headings found.",
+                list.x + 19.0 * k,
+                y + 16.0,
+                sz.ui,
+                400,
+                t.faint,
+            );
+        }
+        let min = data.iter().map(|(l, _)| *l).min().unwrap_or(1);
+        for (i, (level, name)) in data.iter().enumerate() {
+            if y > list.bottom() {
+                break;
+            }
+            if y + sz.row < list.y {
+                y += sz.row;
+                continue;
+            }
+            let nr = r(list.x + 12.0 * k, y, list.w - 24.0 * k, sz.row);
+            let z = Zone::App(Hit::Outline(i));
+            if self.hovered(&z) {
+                round(self.c, nr, 6.0, t.hover);
+            }
+            let ind = (level.saturating_sub(min)) as f32 * 17.0 * k;
+            for d in 0..level.saturating_sub(min) {
+                fill(
+                    self.c,
+                    r(list.x + 24.0 * k + d as f32 * 17.0 * k, y, 1.0, sz.row),
+                    look::alpha(t.text, 0.12),
+                );
+            }
+            fit(
+                self.c,
+                name,
+                list.x + 36.0 * k + ind,
+                y + sz.row * 0.5 + sz.ui * 0.36,
+                sz.ui,
+                400,
+                t.muted,
+                nr.w - 30.0 * k - ind,
+            );
+            self.said.button(nr, name);
+            self.hit(nr, z);
+            y += sz.row;
+        }
+    }
+
+    // ---- the status bar ---------------------------------------------------------------
+
+    fn draw_status(&mut self, w: f32, h: f32, _left: f32) {
+        let t = self.t();
+        let sz = self.sz;
+        let k = sz.scale;
         let mut parts: Vec<String> = Vec::new();
+        if let Some((msg, _)) = self.app.status.as_ref() {
+            parts.push(msg.clone());
+        }
         if let Some(v) = self.app.vault.as_ref() {
             let pending = v.index_pending();
             if pending > 0 {
@@ -1555,39 +2414,59 @@ impl Ui {
             }
         }
         let has_doc = self.app.doc().is_some();
-        if has_doc {
+        let has_file = self.app.active_path().is_some();
+        let mut mode_icon = false;
+        // The editing-mode pencil goes after this part (the backlinks).
+        let mut backlink_at = usize::MAX;
+        if has_file && self.app.settings.plugin_on("backlink") {
             let n = self.app.backlinks().len();
             parts.push(count(n, "backlink", "backlinks"));
+            backlink_at = parts.len() - 1;
+        }
+        if has_doc {
+            mode_icon = true;
             if let Some(d) = self.app.doc() {
-                parts.push(count(d.words, "word", "words"));
-                parts.push(count(d.chars, "character", "characters"));
+                if self.app.settings.plugin_on("word-count") {
+                    parts.push(count(d.words, "word", "words"));
+                    parts.push(count(d.chars, "character", "characters"));
+                }
                 if d.save_error.is_some() {
                     parts.push(String::from("Not saved"));
                 }
             }
         }
-        if let Some((msg, _)) = self.app.status.as_ref() {
-            parts.insert(0, msg.clone());
-        }
         if parts.is_empty() {
             return;
         }
-        let gap = 18.0 * sz.scale;
+        let gap = 16.0 * k;
         let mut widths: Vec<f32> = parts
             .iter()
             .map(|p| width(self.c, p, sz.small, 400))
             .collect();
-        let room = w - sz.ribbon - 8.0;
-        let mut total: f32 = widths.iter().sum::<f32>() + gap * (parts.len() as f32 - 1.0) + 24.0;
-        // A narrow window keeps the parts that fit, the first ones first.
+        let icon_w = if mode_icon { 30.0 * k } else { 0.0 };
+        let room = w - 8.0;
+        let total_of =
+            |ws: &[f32]| ws.iter().sum::<f32>() + gap * (ws.len() as f32 - 1.0) + 24.0 * k + icon_w;
+        let mut total = total_of(&widths);
         while total > room && parts.len() > 1 {
             parts.pop();
             widths.pop();
-            total = widths.iter().sum::<f32>() + gap * (parts.len() as f32 - 1.0) + 24.0;
+            total = total_of(&widths);
         }
-        let bh = 24.0 * sz.scale;
+        let bh = 26.0 * k;
         let bx = w - total;
         let by = h - bh;
+        let _ = canvas2d::fill_round_rect(
+            self.c,
+            look::g(r(bx - 1.0, by - 1.0, total + 1.0, bh + 1.0)),
+            krate::gfx::types::CornerRadii {
+                top_left: 8.0,
+                top_right: 0.0,
+                bottom_right: 0.0,
+                bottom_left: 0.0,
+            },
+            t.border,
+        );
         let _ = canvas2d::fill_round_rect(
             self.c,
             look::g(r(bx, by, total, bh)),
@@ -1599,20 +2478,29 @@ impl Ui {
             },
             t.side,
         );
-        fill(self.c, r(bx + 8.0, by, total - 8.0, 1.0), t.border);
-        let mut x = bx + 12.0;
-        for (p, pw) in parts.iter().zip(widths) {
-            text(
-                self.c,
-                p,
-                x,
-                by + bh * 0.5 + sz.small * 0.36,
-                sz.small,
-                400,
-                t.muted,
-            );
+        let mut x = bx + 12.0 * k;
+        let base = by + bh * 0.5 + sz.small * 0.36;
+        for (i, (p, pw)) in parts.iter().zip(widths).enumerate() {
+            text(self.c, p, x, base, sz.small, 400, t.muted);
             self.said.text(r(x, by, pw, bh), p);
             x += pw + gap;
+            if mode_icon && i == backlink_at && has_file {
+                let reading = self.app.doc().is_some_and(|d| d.mode == Mode::Reading);
+                icon(
+                    self.c,
+                    if reading {
+                        Icon::BookOpen
+                    } else {
+                        Icon::Pencil
+                    },
+                    x + 4.0 * k,
+                    by + bh * 0.5,
+                    k * 0.85,
+                    t.muted,
+                );
+                self.hit(r(x - 6.0, by, 22.0 * k, bh), Zone::App(Hit::ModeToggle));
+                x += icon_w - gap * 0.5;
+            }
         }
     }
 
@@ -1621,15 +2509,16 @@ impl Ui {
     fn draw_overlay(&mut self, w: f32, h: f32) {
         let t = self.t();
         let sz = self.sz;
+        let k = sz.scale;
         // Link completion under the caret.
         if self.app.overlay.is_none() {
             if let (Some((cx, cy)), Some(comp)) = (self.caret_xy, self.app.completion.as_ref()) {
                 let items: Vec<(String, String)> = comp.items.clone();
                 let sel = comp.sel;
-                let rh = 30.0 * sz.scale;
-                let cw = 320.0 * sz.scale;
+                let rh = 30.0 * k;
+                let cw = 320.0 * k;
                 let shown = items.len().min(8);
-                let ch = if shown == 0 { rh } else { rh * shown as f32 } + 8.0;
+                let ch = if shown == 0 { rh } else { rh * shown as f32 } + 12.0;
                 let x = cx.min(w - cw - 8.0).max(8.0);
                 let y = if cy + ch + 8.0 > h {
                     (cy - ch - 30.0).max(8.0)
@@ -1644,24 +2533,24 @@ impl Ui {
                     16.0,
                     look::alpha(look::hex(0), 0.4),
                 );
-                round(self.c, card, 8.0, t.modal);
-                look::outline(self.c, card, 8.0, 1.0, t.border);
+                round(self.c, card, 8.0, t.side);
+                look::outline(self.c, card, 8.0, 1.0, t.border_hover);
                 if items.is_empty() {
                     text(
                         self.c,
-                        "No notes match. Keep typing to link a new one.",
+                        "No match found",
                         x + 12.0,
-                        y + 4.0 + rh * 0.5 + sz.small * 0.36,
+                        y + 6.0 + rh * 0.5 + sz.small * 0.36,
                         sz.small,
                         400,
                         t.faint,
                     );
                 }
                 let first = sel.saturating_sub(shown.saturating_sub(1));
-                for (k, (name, path)) in items.iter().enumerate().skip(first).take(shown) {
-                    let ir = r(x + 4.0, y + 4.0 + (k - first) as f32 * rh, cw - 8.0, rh);
-                    if k == sel {
-                        round(self.c, ir, 5.0, t.active);
+                for (n, (name, path)) in items.iter().enumerate().skip(first).take(shown) {
+                    let ir = r(x + 6.0, y + 6.0 + (n - first) as f32 * rh, cw - 12.0, rh);
+                    if n == sel {
+                        round(self.c, ir, 5.0, t.hover);
                     }
                     let nw = fit(
                         self.c,
@@ -1669,7 +2558,7 @@ impl Ui {
                         ir.x + 10.0,
                         ir.y + rh * 0.5 + sz.ui * 0.36,
                         sz.ui,
-                        500,
+                        400,
                         t.text,
                         ir.w * 0.6,
                     );
@@ -1686,31 +2575,39 @@ impl Ui {
                             ir.w - nw - 32.0,
                         );
                     }
-                    self.button(ir, name, Hit::Completion(k));
+                    self.button(ir, name, Hit::Completion(n));
                 }
             }
             return;
         }
-        // Everything else dims the window behind it.
-        fill(self.c, r(0.0, 0.0, w, h), t.scrim);
+        let is_menu = matches!(self.app.overlay, Some(Overlay::Menu(_)));
+        if !is_menu {
+            fill(self.c, r(0.0, 0.0, w, h), t.scrim);
+        }
         self.hit(r(0.0, 0.0, w, h), Zone::App(Hit::Scrim));
+        if matches!(self.app.overlay, Some(Overlay::Settings(_))) {
+            self.draw_settings(w, h);
+            return;
+        }
         let Some(ov) = self.app.overlay.as_mut() else {
             return;
         };
         match ov {
             Overlay::List(p) => {
-                let pw = (700.0 * sz.scale).min(w - 24.0);
+                let pw = (700.0 * k).min(w * 0.8).min(w - 24.0);
                 let x = (w - pw) * 0.5;
-                let y = (h * 0.12).min(90.0);
-                let two_line = p.kind == ListKind::Switcher;
-                let rh = if two_line {
-                    44.0 * sz.scale
-                } else {
-                    36.0 * sz.scale
-                };
-                let in_h = 50.0 * sz.scale;
-                let foot = 34.0 * sz.scale;
-                let max_rows = (((h - y - in_h - foot - 24.0) / rh) as usize).clamp(1, 12);
+                let y = (h * 0.12).min(80.0 * k);
+                let two_line = matches!(
+                    p.kind,
+                    ListKind::Switcher
+                        | ListKind::MergeInto(_)
+                        | ListKind::ExtractTo(_)
+                        | ListKind::CanvasNote
+                );
+                let rh = if two_line { 46.0 * k } else { 36.0 * k };
+                let in_h = 48.0 * k;
+                let foot = 36.0 * k;
+                let max_rows = (((h * 0.7 - in_h - foot - 16.0) / rh) as usize).clamp(1, 12);
                 let shown = p.items.len().min(max_rows);
                 if p.sel < p.first {
                     p.first = p.sel;
@@ -1718,61 +2615,81 @@ impl Ui {
                 if p.sel >= p.first + max_rows {
                     p.first = p.sel + 1 - max_rows;
                 }
-                let card = r(x, y, pw, in_h + shown as f32 * rh + foot + 10.0);
+                let card = r(x, y, pw, in_h + shown as f32 * rh + foot + 12.0);
                 let items = p.items.clone();
                 let (sel, first) = (p.sel, p.first);
                 let input = p.input.clone();
                 let placeholder = match &p.kind {
                     ListKind::Switcher => "Find or create a note...",
                     ListKind::Palette => "Select a command...",
-                    ListKind::MoveTo(_) => "Choose a folder...",
+                    ListKind::MoveTo(_) => "Type a folder",
+                    ListKind::Template => "Find a template...",
+                    ListKind::MergeInto(_) => "Find a note to merge into...",
+                    ListKind::ExtractTo(_) => "Find a note, or type the new note's name...",
+                    ListKind::CanvasNote => "Find a note to add...",
                 };
                 let footer = match &p.kind {
-                    ListKind::Switcher => "\u{2191}\u{2193} to navigate    Enter to open    Cmd+Enter in a new tab    Shift+Enter to create    esc to dismiss",
-                    ListKind::Palette => "\u{2191}\u{2193} to navigate    Enter to run    esc to dismiss",
-                    ListKind::MoveTo(_) => "\u{2191}\u{2193} to navigate    Enter to move    esc to dismiss",
+                    ListKind::Switcher => "\u{2191}\u{2193} to navigate    \u{21b5} to open    \u{2318} \u{21b5} to open in new tab    shift \u{21b5} to create    esc to dismiss",
+                    ListKind::Palette => "\u{2191}\u{2193} to navigate    \u{21b5} to use    esc to dismiss",
+                    _ => "\u{2191}\u{2193} to navigate    \u{21b5} to choose    esc to dismiss",
                 };
                 let _ = canvas2d::drop_shadow_round_rect(
                     self.c,
                     look::g(card),
-                    look::radii(10.0),
-                    24.0,
-                    look::alpha(look::hex(0), 0.45),
+                    look::radii(12.0),
+                    30.0,
+                    look::alpha(look::hex(0), 0.35),
                 );
-                round(self.c, card, 10.0, t.modal);
-                look::outline(self.c, card, 10.0, 1.0, t.border);
+                round(self.c, card, 12.0, t.modal);
+                look::outline(self.c, card, 12.0, 1.0, t.border_hover);
                 self.list_area = Some(card);
                 self.hit(card, Zone::App(Hit::ListBox));
-                let base = y + in_h * 0.5 + sz.body * 0.36;
+                let base = y + in_h * 0.5 + sz.medium * 0.36;
                 if input.text.is_empty() {
-                    text(self.c, placeholder, x + 18.0, base, sz.body, 400, t.faint);
+                    text(
+                        self.c,
+                        placeholder,
+                        x + 18.0 * k,
+                        base,
+                        sz.medium,
+                        400,
+                        t.faint,
+                    );
                 }
-                self.draw_input(&input, x + 18.0, base, sz.body, t.text, x + pw - 18.0, true);
+                self.draw_input(
+                    &input,
+                    x + 18.0 * k,
+                    base,
+                    sz.medium,
+                    t.text,
+                    x + pw - 18.0,
+                    true,
+                );
                 self.said.field(r(x, y, pw, in_h), placeholder, &input.text);
                 fill(self.c, r(x, y + in_h, pw, 1.0), t.border);
-                for (k, item) in items.iter().enumerate().skip(first).take(shown) {
+                for (n, item) in items.iter().enumerate().skip(first).take(shown) {
                     let ir = r(
                         x + 6.0,
-                        y + in_h + 5.0 + (k - first) as f32 * rh,
+                        y + in_h + 6.0 + (n - first) as f32 * rh,
                         pw - 12.0,
                         rh,
                     );
-                    if k == sel {
-                        round(self.c, ir, 6.0, t.active);
+                    if n == sel {
+                        round(self.c, ir, 6.0, t.hover);
                     }
                     let hint_w = if item.hint.is_empty() {
                         0.0
                     } else {
-                        width(self.c, &item.hint, sz.small, 500) + 16.0
+                        width(self.c, &item.hint, sz.small, 400) + 14.0
                     };
                     if two_line {
                         fit(
                             self.c,
                             &item.title,
                             ir.x + 12.0,
-                            ir.y + 19.0 * sz.scale,
-                            sz.body * 0.94,
-                            500,
+                            ir.y + 20.0 * k,
+                            sz.medium,
+                            400,
                             t.text,
                             ir.w - 24.0 - hint_w,
                         );
@@ -1781,7 +2698,7 @@ impl Ui {
                                 self.c,
                                 &item.detail,
                                 ir.x + 12.0,
-                                ir.y + 36.0 * sz.scale,
+                                ir.y + 37.0 * k,
                                 sz.small,
                                 400,
                                 t.faint,
@@ -1793,8 +2710,8 @@ impl Ui {
                             self.c,
                             &item.title,
                             ir.x + 12.0,
-                            ir.y + rh * 0.5 + sz.body * 0.33,
-                            sz.body * 0.94,
+                            ir.y + rh * 0.5 + sz.medium * 0.36,
+                            sz.medium,
                             400,
                             t.text,
                             ir.w - 24.0 - hint_w,
@@ -1807,18 +2724,18 @@ impl Ui {
                             hint_w,
                             20.0,
                         );
-                        round(self.c, hb, 4.0, t.hover);
+                        round(self.c, hb, 10.0, t.hover);
                         text(
                             self.c,
                             &item.hint,
-                            hb.x + 8.0,
+                            hb.x + 7.0,
                             hb.y + 10.0 + sz.small * 0.36,
                             sz.small,
-                            500,
+                            400,
                             t.muted,
                         );
                     }
-                    self.button(ir, &item.title, Hit::ListItem(k));
+                    self.button(ir, &item.title, Hit::ListItem(n));
                 }
                 let fy = card.bottom() - foot;
                 fill(self.c, r(x, fy, pw, 1.0), t.border);
@@ -1829,15 +2746,15 @@ impl Ui {
                     fy + foot * 0.5 + sz.small * 0.36,
                     sz.small,
                     400,
-                    t.faint,
+                    t.muted,
                     pw - 32.0,
                 );
             }
             Overlay::Menu(m) => {
                 let items: Vec<String> = m.items.iter().map(|(l, _)| l.clone()).collect();
-                let mw = 200.0 * sz.scale;
-                let rh = 28.0 * sz.scale;
-                let mh = items.len() as f32 * rh + 8.0;
+                let mw = 210.0 * k;
+                let rh = 28.0 * k;
+                let mh = items.len() as f32 * rh + 12.0;
                 let x = m.x.min(w - mw - 4.0).max(4.0);
                 let y = m.y.min(h - mh - 4.0).max(4.0);
                 let card = r(x, y, mw, mh);
@@ -1848,15 +2765,15 @@ impl Ui {
                     16.0,
                     look::alpha(look::hex(0), 0.4),
                 );
-                round(self.c, card, 8.0, t.modal);
-                look::outline(self.c, card, 8.0, 1.0, t.border);
+                round(self.c, card, 8.0, t.side);
+                look::outline(self.c, card, 8.0, 1.0, t.border_hover);
                 for (i, label) in items.iter().enumerate() {
-                    let ir = r(x + 4.0, y + 4.0 + i as f32 * rh, mw - 8.0, rh);
+                    let ir = r(x + 6.0, y + 6.0 + i as f32 * rh, mw - 12.0, rh);
                     let z = Zone::App(Hit::MenuItem(i));
                     if self.hovered(&z) {
-                        round(self.c, ir, 5.0, t.active);
+                        round(self.c, ir, 5.0, t.hover);
                     }
-                    let danger = label == "Delete";
+                    let danger = label == "Delete" || label == "Remove";
                     text(
                         self.c,
                         label,
@@ -1873,53 +2790,58 @@ impl Ui {
                 let title = cf.title.clone();
                 let body = cf.body.clone();
                 let yes = cf.yes;
-                let cw = (440.0 * sz.scale).min(w - 24.0);
-                let lines = self.wrap(&body, sz.ui, cw - 48.0);
-                let ch = 70.0 * sz.scale + lines.len() as f32 * sz.ui * 1.5 + 60.0 * sz.scale;
+                let cw = (460.0 * k).min(w - 24.0);
+                let mut lines = Vec::new();
+                for para in body.split('\n') {
+                    if para.is_empty() {
+                        lines.push(String::new());
+                    } else {
+                        lines.extend(self.wrap(para, sz.ui, cw - 48.0));
+                    }
+                }
+                let ch = 70.0 * k + lines.len() as f32 * sz.ui * 1.5 + 64.0 * k;
                 let x = (w - cw) * 0.5;
                 let y = (h - ch) * 0.35;
                 let card = r(x, y, cw, ch);
-                let _ = canvas2d::drop_shadow_round_rect(
-                    self.c,
-                    look::g(card),
-                    look::radii(10.0),
-                    24.0,
-                    look::alpha(look::hex(0), 0.45),
-                );
-                round(self.c, card, 10.0, t.modal);
-                look::outline(self.c, card, 10.0, 1.0, t.border);
+                round(self.c, card, 12.0, t.modal);
+                look::outline(self.c, card, 12.0, 1.0, t.border_hover);
                 self.hit(card, Zone::App(Hit::ListBox));
                 text(
                     self.c,
                     &title,
                     x + 24.0,
-                    y + 38.0 * sz.scale,
-                    17.0 * sz.scale,
-                    700,
+                    y + 40.0 * k,
+                    18.0 * k,
+                    600,
                     t.text,
                 );
                 self.said.heading(r(x, y, cw, 50.0), &title);
-                let mut ly = y + 70.0 * sz.scale;
+                let mut ly = y + 72.0 * k;
                 for l in &lines {
-                    text(self.c, l, x + 24.0, ly, sz.ui, 400, t.muted);
+                    text(self.c, l, x + 24.0, ly, sz.ui, 400, t.text);
                     ly += sz.ui * 1.5;
                 }
                 self.said.text(r(x, y + 50.0, cw, ly - y - 50.0), &body);
-                let bw = 90.0 * sz.scale;
-                let bh = 32.0 * sz.scale;
-                let by = card.bottom() - bh - 18.0 * sz.scale;
+                let bw = 84.0 * k;
+                let bh = 30.0 * k;
+                let by = card.bottom() - bh - 20.0 * k;
                 let yes_r = r(card.right() - 24.0 - bw, by, bw, bh);
                 let no_r = r(yes_r.x - 10.0 - bw, by, bw, bh);
-                round(self.c, yes_r, 6.0, t.danger);
-                round(self.c, no_r, 6.0, t.active);
-                let yw = width(self.c, yes, sz.ui, 600);
+                round(
+                    self.c,
+                    yes_r,
+                    5.0,
+                    if yes == "Delete" { t.danger } else { t.accent },
+                );
+                round(self.c, no_r, 5.0, t.button);
+                let yw = width(self.c, yes, sz.ui, 500);
                 text(
                     self.c,
                     yes,
                     yes_r.x + (bw - yw) * 0.5,
                     by + bh * 0.5 + sz.ui * 0.36,
                     sz.ui,
-                    600,
+                    500,
                     t.on_accent,
                 );
                 let nw = width(self.c, "Cancel", sz.ui, 500);
@@ -1935,6 +2857,60 @@ impl Ui {
                 self.button(yes_r, yes, Hit::ConfirmYes);
                 self.button(no_r, "Cancel", Hit::ConfirmNo);
             }
+            Overlay::Ask(a) => {
+                let title = a.title.clone();
+                let input = a.input.clone();
+                let cw = (420.0 * k).min(w - 24.0);
+                let ch = 150.0 * k;
+                let x = (w - cw) * 0.5;
+                let y = (h - ch) * 0.3;
+                let card = r(x, y, cw, ch);
+                round(self.c, card, 12.0, t.modal);
+                look::outline(self.c, card, 12.0, 1.0, t.border_hover);
+                self.hit(card, Zone::App(Hit::ListBox));
+                text(
+                    self.c,
+                    &title,
+                    x + 24.0,
+                    y + 38.0 * k,
+                    18.0 * k,
+                    600,
+                    t.text,
+                );
+                let fb = r(x + 24.0, y + 56.0 * k, cw - 48.0, 32.0 * k);
+                round(self.c, fb, 5.0, t.field);
+                look::outline(self.c, fb, 5.0, 1.0, t.border_focus);
+                self.draw_input(
+                    &input,
+                    fb.x + 10.0,
+                    fb.y + fb.h * 0.5 + sz.ui * 0.36,
+                    sz.ui,
+                    t.text,
+                    fb.right() - 8.0,
+                    true,
+                );
+                self.said.field(fb, &title, &input.text);
+                let bw = 84.0 * k;
+                let ok = r(
+                    card.right() - 24.0 - bw,
+                    card.bottom() - 46.0 * k,
+                    bw,
+                    30.0 * k,
+                );
+                round(self.c, ok, 5.0, t.accent);
+                let ow = width(self.c, "Save", sz.ui, 500);
+                text(
+                    self.c,
+                    "Save",
+                    ok.x + (bw - ow) * 0.5,
+                    ok.y + ok.h * 0.5 + sz.ui * 0.36,
+                    sz.ui,
+                    500,
+                    t.on_accent,
+                );
+                self.button(ok, "Save", Hit::AskOk);
+            }
+            Overlay::Settings(_) => {}
         }
     }
 
@@ -1966,7 +2942,7 @@ impl Ui {
         self.last_input = ms();
         self.app.now = krate::time::now_millis();
         if let Some(view) = self.view.as_ref() {
-            let view = View {
+            let view = EdView {
                 area: view.area,
                 x: view.x,
                 width: view.width,
@@ -2113,6 +3089,15 @@ impl Ui {
         self.app.refresh_completion();
     }
 
+    fn ed_view(&self) -> Option<EdView> {
+        self.view.as_ref().map(|v| EdView {
+            area: v.area,
+            x: v.x,
+            width: v.width,
+            sz: v.sz,
+        })
+    }
+
     fn drag_step(&mut self) {
         let Some((px, py)) = pointer::position(self.win) else {
             return;
@@ -2123,13 +3108,7 @@ impl Ui {
         }
         match self.drag.clone() {
             Drag::Select => {
-                let view = self.view.as_ref().map(|v| View {
-                    area: v.area,
-                    x: v.x,
-                    width: v.width,
-                    sz: v.sz,
-                });
-                if let Some(view) = view {
+                if let Some(view) = self.ed_view() {
                     let c = self.c;
                     let edge = if py < view.area.y {
                         py - view.area.y
@@ -2156,13 +3135,7 @@ impl Ui {
                 }
             }
             Drag::Thumb { grab } => {
-                let view = self.view.as_ref().map(|v| View {
-                    area: v.area,
-                    x: v.x,
-                    width: v.width,
-                    sz: v.sz,
-                });
-                if let (Some(view), Some(track)) = (view, self.shown.track) {
+                if let (Some(view), Some(track)) = (self.ed_view(), self.shown.track) {
                     let th = self.shown.thumb.map_or(30.0, |t| t.h);
                     let f = ((py - grab - track.y) / (track.h - th).max(1.0)).clamp(0.0, 1.0);
                     let c = self.c;
@@ -2180,10 +3153,15 @@ impl Ui {
                 }
             }
             Drag::Left => {
-                self.app.left_w = (px - self.sz.ribbon).clamp(180.0, self.w * 0.45);
+                let rib = if self.app.settings.show_ribbon() {
+                    self.sz.ribbon
+                } else {
+                    0.0
+                };
+                self.app.left_w = (px - rib).clamp(200.0, self.w * 0.45);
             }
             Drag::Right => {
-                self.app.right_w = (self.w - px).clamp(200.0, self.w * 0.4);
+                self.app.right_w = (self.w - px).clamp(200.0, self.w * 0.45);
             }
             Drag::Row { row, x, y, moved } => {
                 if !moved && ((px - x).abs() > 4.0 || (py - y).abs() > 4.0) {
@@ -2195,27 +3173,108 @@ impl Ui {
                     };
                 }
             }
+            Drag::Tab {
+                pane,
+                tab,
+                x,
+                y,
+                moved,
+            } => {
+                if !moved && ((px - x).abs() > 5.0 || (py - y).abs() > 5.0) {
+                    self.drag = Drag::Tab {
+                        pane,
+                        tab,
+                        x,
+                        y,
+                        moved: true,
+                    };
+                }
+            }
+            Drag::Divider(i) => {
+                if let Some(d) = self.dividers.get(i).cloned() {
+                    let pos = if d.down { py } else { px };
+                    self.app.layout.drag(&d.path, d.after, d.whole, pos);
+                }
+            }
+            Drag::Graph { .. } | Drag::Slider(_) | Drag::Canvas { .. } => self.view_drag(px, py),
             Drag::None => {}
         }
     }
 
     fn release(&mut self, px: f32, py: f32) {
         let drag = core::mem::replace(&mut self.drag, Drag::None);
-        if let Drag::Row { row, moved, .. } = drag {
-            if moved {
-                let onto = self
-                    .tree_area
-                    .and_then(|list| self.zone_at_rows(list, px, py));
-                let inside = self.tree_area.is_some_and(|l| l.contains(px, py));
-                if inside {
-                    self.app.drop_on(row, onto);
+        match drag {
+            Drag::Row { row, moved, .. } => {
+                if moved {
+                    let onto = self
+                        .tree_area
+                        .and_then(|list| self.zone_at_rows(list, px, py));
+                    let inside = self.tree_area.is_some_and(|l| l.contains(px, py));
+                    if inside {
+                        self.app.drop_on(row, onto);
+                    }
+                } else {
+                    let before = self.app.active_path();
+                    self.app.click(Hit::TreeRow(row), self.drag_mods);
+                    if self.app.active_path() != before {
+                        self.sheet = false;
+                    }
                 }
-            } else {
-                let before = self.app.doc().map(|d| d.path.clone());
-                self.app.click(Hit::TreeRow(row), self.drag_mods);
-                if self.app.doc().map(|d| d.path.clone()) != before {
-                    self.sheet = false;
+            }
+            Drag::Tab {
+                pane, tab, moved, ..
+            } => {
+                if !moved {
+                    self.app.focus_pane(pane);
+                    self.app.click(Hit::Tab(tab), self.drag_mods);
+                    return;
                 }
+                self.drop_tab(pane, tab, px, py);
+            }
+            Drag::Graph { .. } | Drag::Canvas { .. } | Drag::Slider(_) => {
+                self.view_release(drag, px, py);
+            }
+            _ => {}
+        }
+    }
+
+    /// A tab let go: onto a tab bar (to that place), or onto the edge of a
+    /// group (a new group there).
+    fn drop_tab(&mut self, from_pane: usize, tab: usize, px: f32, py: f32) {
+        // Onto a tab bar.
+        if let Some((p, _, strip)) = self
+            .pane_areas
+            .iter()
+            .find(|(_, _, s)| s.contains(px, py))
+            .cloned()
+        {
+            let mut at = self
+                .tab_rects
+                .iter()
+                .filter(|(tp, _, _)| *tp == p)
+                .filter(|(_, _, rc)| px > rc.x + rc.w * 0.5)
+                .count();
+            if p == from_pane && at > tab {
+                at -= 1;
+            }
+            let _ = strip;
+            self.app.move_tab(from_pane, tab, p, at);
+            return;
+        }
+        // Onto the right or bottom part of a group's body: split there.
+        if let Some((p, a, _)) = self
+            .pane_areas
+            .iter()
+            .find(|(_, a, _)| a.contains(px, py))
+            .cloned()
+        {
+            let right = px > a.x + a.w * 0.66;
+            let down = py > a.y + a.h * 0.66;
+            if right || down {
+                self.app.split_with_tab(from_pane, tab, p, down && !right);
+            } else if p != from_pane {
+                let n = self.app.pane_tabs(p).0.len();
+                self.app.move_tab(from_pane, tab, p, n);
             }
         }
     }
@@ -2234,6 +3293,7 @@ impl Ui {
             }
             Zone::LeftDivider => self.drag = Drag::Left,
             Zone::RightDivider => self.drag = Drag::Right,
+            Zone::PaneDivider(i) => self.drag = Drag::Divider(i),
             Zone::Thumb => {
                 let grab = self.shown.thumb.map_or(0.0, |t| py - t.y);
                 self.drag = Drag::Thumb { grab };
@@ -2256,6 +3316,26 @@ impl Ui {
                 };
             }
             Zone::Tree => self.app.click(Hit::TreeBlank, m),
+            Zone::Tab(p, i) => {
+                self.drag = Drag::Tab {
+                    pane: p,
+                    tab: i,
+                    x: px,
+                    y: py,
+                    moved: false,
+                };
+            }
+            Zone::Pane(p) => {
+                self.app.focus_pane(p);
+                self.app.focus = Focus::Editor;
+            }
+            Zone::Graph(_)
+            | Zone::GraphPanel
+            | Zone::GraphSlider(_)
+            | Zone::Canvas(_)
+            | Zone::Settings => {
+                self.view_press(z, px, py, m);
+            }
             Zone::App(h) => {
                 let phone = self.w < 600.0;
                 if phone && matches!(h, Hit::Ribbon(Cmd::ToggleLeft)) {
@@ -2265,16 +3345,22 @@ impl Ui {
                 if phone && matches!(h, Hit::LeftTab(_) | Hit::Ribbon(Cmd::SearchVault)) {
                     self.sheet = true;
                 }
-                let before = self.app.doc().map(|d| d.path.clone());
+                // The "..." in a view header opens the tab's menu.
+                if h == Hit::Command(Cmd::TogglePin) {
+                    let i = self.app.active;
+                    self.app.tab_menu(i, px - 180.0, py + 14.0);
+                    return;
+                }
+                let before = self.app.active_path();
                 self.app.click(h, m);
-                if phone && self.app.doc().map(|d| d.path.clone()) != before {
+                if phone && self.app.active_path() != before {
                     self.sheet = false;
                 }
             }
         }
     }
 
-    fn wheel(&mut self, x: f32, y: f32, dy: f32) {
+    fn wheel(&mut self, x: f32, y: f32, dx: f32, dy: f32, m: Mods) {
         if let Some(Overlay::List(p)) = self.app.overlay.as_mut() {
             let n = p.items.len();
             if dy > 0.0 && p.sel + 1 < n {
@@ -2284,7 +3370,20 @@ impl Ui {
             }
             return;
         }
+        if matches!(self.app.overlay, Some(Overlay::Settings(_))) {
+            self.app.settings_scroll = (self.app.settings_scroll + dy).max(0.0);
+            return;
+        }
         if self.app.overlay.is_some() {
+            return;
+        }
+        if let Some((p, a)) = self
+            .view_areas
+            .iter()
+            .find(|(_, a)| a.contains(x, y))
+            .copied()
+        {
+            self.view_wheel(p, a, x, y, dx, dy, m);
             return;
         }
         if self.tree_area.is_some_and(|a| a.contains(x, y)) {
@@ -2294,17 +3393,21 @@ impl Ui {
         } else if self.right_area.is_some_and(|a| a.contains(x, y)) {
             self.app.right_scroll = (self.app.right_scroll + dy).max(0.0);
         } else if self.shown.area.is_some_and(|a| a.contains(x, y)) {
-            let view = self.view.as_ref().map(|v| View {
-                area: v.area,
-                x: v.x,
-                width: v.width,
-                sz: v.sz,
-            });
-            if let Some(view) = view {
+            if let Some(view) = self.ed_view() {
                 let c = self.c;
                 if let Some(d) = self.app.doc_mut() {
                     editor::scroll_by(&mut self.cache, c, d, &view, dy);
                 }
+            }
+        } else if let Some((p, _, _)) = self
+            .pane_areas
+            .iter()
+            .find(|(_, a, _)| a.contains(x, y))
+            .copied()
+        {
+            let focused = p == self.app.pane;
+            if let Some(View::Base(b)) = self.app.view_mut().filter(|_| focused) {
+                b.scroll = (b.scroll + dy).max(0.0);
             }
         }
     }
@@ -2320,12 +3423,7 @@ impl Ui {
         {
             return false;
         }
-        let Some(view) = self.view.as_ref().map(|v| View {
-            area: v.area,
-            x: v.x,
-            width: v.width,
-            sz: v.sz,
-        }) else {
+        let Some(view) = self.ed_view() else {
             return false;
         };
         let c = self.c;
@@ -2400,6 +3498,7 @@ impl Ui {
                             }
                             self.cache.clear();
                             self.app.open_vault(v);
+                            self.after_vault();
                             if create {
                                 self.app.open("Welcome.md", false);
                             }
@@ -2413,6 +3512,7 @@ impl Ui {
                 HostRequest::Sample => {
                     self.cache.clear();
                     self.app.open_vault(crate::sample::vault());
+                    self.after_vault();
                     self.app.open("Start here.md", false);
                     self.app
                         .say("The sample vault is kept in memory: changes go when Vault closes");
@@ -2424,6 +3524,18 @@ impl Ui {
         }
         any
     }
+
+    /// A vault was opened: its saved snapshots come in, and today's daily
+    /// note opens if the vault asks for that.
+    fn after_vault(&mut self) {
+        self.app.local = local_now();
+        load_recovery(&mut self.app);
+        if self.app.settings.plugin_on("daily-notes")
+            && self.app.settings.daily.bool_or("autorun", false)
+        {
+            self.app.run(Cmd::DailyNote);
+        }
+    }
 }
 
 const WELCOME: &str = "# Welcome\n\nThis is your new vault. Every note is a Markdown file in this folder.\n\n- Press Cmd+N for a new note, Cmd+O to find one.\n- Link notes with [[double brackets]].\n";
@@ -2432,6 +3544,101 @@ const WELCOME: &str = "# Welcome\n\nThis is your new vault. Every note is a Mark
 fn arg<'a>(raw: &'a str, key: &str) -> Option<&'a str> {
     raw.split('\n')
         .find_map(|a| a.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
+}
+
+/// The local date and time, when Krate tells this app the time zone.
+fn local_now() -> crate::dates::When {
+    let l = krate::locale::local_now();
+    crate::dates::When {
+        year: l.year,
+        month: l.month,
+        day: l.day,
+        hour: l.hour,
+        minute: l.minute,
+        second: l.second,
+    }
+}
+
+/// Snapshots are kept in the app's own store, one key per note, never in
+/// the vault.
+fn recovery_key(vault: &str, path: &str) -> String {
+    let mut k = String::from("recovery/");
+    k.push_str(vault);
+    k.push('/');
+    k.push_str(path);
+    k
+}
+
+fn load_recovery(app: &mut App) {
+    let Some(name) = app.vault.as_ref().map(|v| v.name.clone()) else {
+        return;
+    };
+    let Some(paths) = app
+        .vault
+        .as_ref()
+        .map(|v| v.notes.iter().map(|n| n.path.clone()).collect::<Vec<_>>())
+    else {
+        return;
+    };
+    let mut index = recovery_key(&name, "");
+    index.push_str("\u{0}index");
+    let listed: Vec<String> = store_kv::get(&index)
+        .ok()
+        .flatten()
+        .and_then(|b| String::from_utf8(b).ok())
+        .map(|s| {
+            s.split('\n')
+                .filter(|p| !p.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    for p in listed.iter().filter(|p| paths.contains(p)) {
+        if let Some(text) = store_kv::get(&recovery_key(&name, p))
+            .ok()
+            .flatten()
+            .and_then(|b| String::from_utf8(b).ok())
+        {
+            app.recovery.load(p, &text);
+        }
+    }
+    let now = app.now;
+    let keep = app.settings.recovery_keep_days();
+    app.recovery.prune(now, keep);
+}
+
+fn save_recovery(app: &mut App) {
+    if app.recovery.dirty.is_empty() {
+        return;
+    }
+    let Some(name) = app.vault.as_ref().map(|v| v.name.clone()) else {
+        return;
+    };
+    let dirty = core::mem::take(&mut app.recovery.dirty);
+    for p in &dirty {
+        let key = recovery_key(&name, p);
+        if app.recovery.snapshots(p).is_empty() {
+            let _ = store_kv::delete(&key);
+            continue;
+        }
+        // A value holds 1 MiB: the oldest copies go first if a note's
+        // history grows past that.
+        let mut text = app.recovery.to_text(p);
+        while text.len() > 900_000 {
+            match app.recovery.files.get_mut(p) {
+                Some(list) if list.len() > 1 => {
+                    list.remove(0);
+                    text = app.recovery.to_text(p);
+                }
+                _ => break,
+            }
+        }
+        let _ = store_kv::set(&key, text.as_bytes());
+    }
+    let mut index = recovery_key(&name, "");
+    index.push_str("\u{0}index");
+    let all: Vec<&str> = app.recovery.files.keys().map(String::as_str).collect();
+    let _ = store_kv::set(&index, all.join("\n").as_bytes());
 }
 
 struct Component;
@@ -2451,6 +3658,8 @@ impl krate::Guest for Component {
         ) else {
             return 30;
         };
+        // The title bar is the app's own top row, as in the notes app.
+        let _ = window::set_full_bleed(win, true);
         if window::show(win).is_err() {
             return 31;
         }
@@ -2483,7 +3692,12 @@ impl krate::Guest for Component {
             search_area: None,
             right_area: None,
             list_area: None,
-            row_h: 26.0,
+            settings_area: None,
+            pane_areas: Vec::new(),
+            dividers: Vec::new(),
+            tab_rects: Vec::new(),
+            view_areas: Vec::new(),
+            row_h: 27.0,
             hover: None,
             drag: Drag::None,
             drag_mods: Mods::default(),
@@ -2501,8 +3715,11 @@ impl krate::Guest for Component {
             t0,
             first_frame_done: false,
             index_done_said: false,
+            graph_img: views::GraphImage::default(),
         };
         ui.app.now = krate::time::now_millis();
+        ui.app.local = local_now();
+        ui.app.system_dark = Look::now().dark;
         ui.mark("t_window_ms");
         if raw.split('\n').next() == Some("quick") {
             let out = crate::sample::quick(&mut ui.app);
@@ -2526,17 +3743,20 @@ impl krate::Guest for Component {
             );
             ui.mark("t_vault_listed_ms");
             ui.app.open_vault(v);
+            ui.after_vault();
         } else if raw.split('\n').any(|a| a == "sample") {
             ui.app.open_vault(crate::sample::vault());
+            ui.after_vault();
         } else if let Some((token, name)) = last_vault() {
             // Reopen the vault from last time, as a notes app does.
             let v = Vault::open(&name, Box::new(disk::DiskFs::picked(&token)));
             ui.mark("t_vault_listed_ms");
             ui.app.open_vault(v);
+            ui.after_vault();
         }
         if let Some(note) = arg(&raw, "open") {
             if ui.app.vault.is_some() {
-                ui.app.open(note, false);
+                ui.app.open_file(note, false);
                 ui.mark("t_note_open_ms");
             }
         }
@@ -2548,19 +3768,69 @@ impl krate::Guest for Component {
         if raw.split('\n').any(|a| a == "reading") {
             ui.app.run(Cmd::ToggleReading);
         }
+        if raw.split('\n').any(|a| a == "light") {
+            ui.app.dark = false;
+        }
+        if raw.split('\n').any(|a| a == "right") {
+            ui.app.right_open = true;
+        }
         if let Some(cmd) = arg(&raw, "show") {
-            match cmd {
-                "switcher" => ui.app.run(Cmd::QuickSwitcher),
-                "palette" => ui.app.run(Cmd::Palette),
-                "outline" => ui.app.run(Cmd::ShowOutline),
-                "tags" => ui.app.run(Cmd::ShowTags),
-                "outgoing" => ui.app.run(Cmd::ShowOutgoing),
-                _ => {}
+            for one in cmd.split(',') {
+                match one {
+                    "switcher" => ui.app.run(Cmd::QuickSwitcher),
+                    "palette" => ui.app.run(Cmd::Palette),
+                    "outline" => ui.app.run(Cmd::ShowOutline),
+                    "tags" => ui.app.run(Cmd::ShowTags),
+                    "outgoing" => ui.app.run(Cmd::ShowOutgoing),
+                    "backlinks" => ui.app.run(Cmd::ShowBacklinks),
+                    "unlinked" => {
+                        ui.app.run(Cmd::ShowBacklinks);
+                        ui.app.unlinked_open = true;
+                    }
+                    "properties" => ui.app.run(Cmd::ShowProperties),
+                    "bookmarks" => ui.app.run(Cmd::ShowBookmarks),
+                    "graph" => ui.app.run(Cmd::Graph),
+                    "localgraph" => ui.app.run(Cmd::LocalGraph),
+                    "settings" => ui.app.run(Cmd::Settings),
+                    "plugins" => {
+                        ui.app.run(Cmd::Settings);
+                        ui.app.click(
+                            Hit::SettingsNav(crate::app::SettingsPage::CorePlugins),
+                            Mods::default(),
+                        );
+                    }
+                    "appearance" => {
+                        ui.app.run(Cmd::Settings);
+                        ui.app.click(
+                            Hit::SettingsNav(crate::app::SettingsPage::Appearance),
+                            Mods::default(),
+                        );
+                    }
+                    "splitright" => ui.app.run(Cmd::SplitRight),
+                    "splitdown" => ui.app.run(Cmd::SplitDown),
+                    "daily" => ui.app.run(Cmd::DailyNote),
+                    "recovery" => ui.app.run(Cmd::Recovery),
+                    "ribbon" => ui.app.run(Cmd::ToggleRibbon),
+                    "newtab" => ui.app.run(Cmd::NewTab),
+                    "pin" => ui.app.run(Cmd::TogglePin),
+                    _ => {}
+                }
             }
         }
         let _ = krate::ui::text_entry::start(win);
+        // A headless picture of a graph waits for its layout to settle.
+        if raw.split('\n').any(|a| a == "settle") {
+            for _ in 0..400 {
+                let start = krate::time::monotonic_nanos();
+                let mut more = || krate::time::monotonic_nanos().saturating_sub(start) < 50_000_000;
+                if !ui.app.tick(&mut more) && !ui.app.busy() {
+                    break;
+                }
+            }
+        }
         ui.draw();
         let mut last_watch = ms();
+        let mut last_clock = ms();
         loop {
             // How long to sleep: not at all while there is work, until the
             // next thing that is due otherwise, forever when nothing is.
@@ -2570,7 +3840,7 @@ impl krate::Guest for Component {
             if ui.drag != Drag::None {
                 due(16);
             }
-            if ui.app.busy() {
+            if ui.app.busy() || ui.views_busy() {
                 due(0);
             }
             if ui.app.focus == Focus::Editor
@@ -2673,12 +3943,30 @@ impl krate::Guest for Component {
                                 match ui.zone_at(p.x, p.y) {
                                     Some(Zone::TreeRow(i)) => ui.app.context(Some(i), p.x, p.y),
                                     Some(Zone::Tree) => ui.app.context(None, p.x, p.y),
+                                    Some(Zone::Tab(pane, i)) => {
+                                        ui.app.focus_pane(pane);
+                                        ui.app.tab_menu(i, p.x, p.y);
+                                    }
+                                    Some(Zone::App(Hit::Bookmark(place))) => {
+                                        ui.app.overlay = Some(Overlay::Menu(crate::app::Menu {
+                                            x: p.x,
+                                            y: p.y,
+                                            items: alloc::vec![(
+                                                String::from("Remove"),
+                                                crate::app::MenuAction::RemoveBookmark(place)
+                                            )],
+                                        }));
+                                    }
+                                    Some(Zone::Canvas(_)) => ui.canvas_context(p.x, p.y),
                                     _ => {}
                                 }
                                 changed = true;
                             }
                             (None, _) => {
                                 let z = ui.zone_at(p.x, p.y);
+                                if ui.graph_hover(p.x, p.y) {
+                                    changed = true;
+                                }
                                 if z != ui.hover {
                                     ui.hover = z;
                                     changed = true;
@@ -2688,7 +3976,7 @@ impl krate::Guest for Component {
                         }
                     }
                     types::Event::Wheel(wh) => {
-                        ui.wheel(wh.x, wh.y, wh.dy);
+                        ui.wheel(wh.x, wh.y, wh.dx, wh.dy, mods(wh.modifiers));
                         changed = true;
                     }
                     _ => {}
@@ -2699,6 +3987,10 @@ impl krate::Guest for Component {
                 break;
             }
             ui.app.now = krate::time::now_millis();
+            if ms() >= last_clock + 30_000 {
+                last_clock = ms();
+                ui.app.local = local_now();
+            }
             if ui.drag != Drag::None {
                 ui.drag_step();
                 changed = true;
@@ -2712,6 +4004,7 @@ impl krate::Guest for Component {
             if ui.app.tick(&mut more) {
                 changed = true;
             }
+            save_recovery(&mut ui.app);
             if !ui.index_done_said
                 && ui
                     .app
@@ -2739,6 +4032,7 @@ impl krate::Guest for Component {
             }
         }
         ui.app.close();
+        save_recovery(&mut ui.app);
         let _ = window::close(win);
         let mut out = ui.app.report();
         out.push_str("frames:");

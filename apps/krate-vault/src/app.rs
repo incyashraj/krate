@@ -6,11 +6,17 @@
 //! That keeps every behaviour a person relies on -- opening, renaming,
 //! linking, searching, switching -- provable with `cargo test`.
 
+use crate::bases::Base;
 use crate::buffer::Pos;
+use crate::canvas::Canvas;
 use crate::editor::{Doc, Mode};
+use crate::graph::{self, Graph};
+use crate::panes::Layout;
+use crate::recovery::Recovery;
 use crate::search::Job;
+use crate::settings::Settings;
 use crate::text::{fuzzy, lower};
-use crate::vault::{Backlink, Vault};
+use crate::vault::{kind_of, Backlink, FileKind, Vault};
 use crate::vfs::{file_name, join, parent};
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
@@ -52,6 +58,11 @@ impl Input {
     pub fn select_all(&mut self) {
         self.anchor = Some(0);
         self.caret = self.text.len();
+    }
+
+    /// Take out the selected text, if any.
+    pub fn cut_selection(&mut self) -> bool {
+        self.cut()
     }
 
     fn cut(&mut self) -> bool {
@@ -159,6 +170,7 @@ impl Input {
 pub enum LeftPane {
     Files,
     Search,
+    Bookmarks,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +178,7 @@ pub enum RightPane {
     Backlinks,
     Outgoing,
     Tags,
+    Properties,
     Outline,
 }
 
@@ -201,24 +214,159 @@ pub struct Explorer {
     pub expanded: BTreeSet<String>,
     pub rows: Vec<Row>,
     rows_for: u64,
-    rows_dirty: bool,
+    pub(crate) rows_dirty: bool,
     pub scroll: f32,
     /// The row picked with the keyboard or a click (a path).
     pub selected: Option<String>,
     pub rename: Option<Rename>,
 }
 
-/// One open tab: a note, or the empty "New tab" page.
+/// One open tab: a note, a graph, a canvas, a base, or the empty "New
+/// tab" page.
 pub struct Tab {
     pub doc: Option<Doc>,
+    pub view: Option<View>,
     back: Vec<String>,
     fwd: Vec<String>,
+    /// A pinned tab stays: links open beside it and close leaves it.
+    pub pinned: bool,
+    /// Tabs linked together follow each other's note.
+    pub group: Option<u32>,
 }
 
 impl Tab {
+    pub fn empty() -> Tab {
+        Tab {
+            doc: None,
+            view: None,
+            back: Vec::new(),
+            fwd: Vec::new(),
+            pinned: false,
+            group: None,
+        }
+    }
+
     pub fn title(&self) -> &str {
+        if let Some(v) = &self.view {
+            return v.title();
+        }
         self.doc.as_ref().map_or("New tab", |d| d.title.as_str())
     }
+
+    /// The file this tab shows, if it shows one.
+    pub fn path(&self) -> Option<&str> {
+        match (&self.doc, &self.view) {
+            (Some(d), _) => Some(d.path.as_str()),
+            (None, Some(v)) => v.path(),
+            _ => None,
+        }
+    }
+}
+
+/// A view that is not a note.
+pub enum View {
+    Graph(Box<GraphTab>),
+    Canvas(Box<CanvasTab>),
+    Base(Box<BaseTab>),
+    Recovery(Box<RecoveryTab>),
+}
+
+impl View {
+    pub fn title(&self) -> &str {
+        match self {
+            View::Graph(g) => {
+                if g.local.is_some() {
+                    "Local graph"
+                } else {
+                    "Graph view"
+                }
+            }
+            View::Canvas(c) => &c.title,
+            View::Base(b) => &b.title,
+            View::Recovery(_) => "File recovery",
+        }
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        match self {
+            View::Canvas(c) => Some(&c.path),
+            View::Base(b) => Some(&b.path),
+            View::Graph(_) | View::Recovery(_) => None,
+        }
+    }
+
+    fn set_path(&mut self, p: &str) {
+        let name = String::from(strip_ext(file_name(p)));
+        match self {
+            View::Canvas(c) => {
+                c.path = String::from(p);
+                c.title = name;
+            }
+            View::Base(b) => {
+                b.path = String::from(p);
+                b.title = name;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The graph view (of the vault, or local to one note).
+pub struct GraphTab {
+    /// The note a local graph is centred on.
+    pub local: Option<String>,
+    pub depth: u32,
+    pub graph: Option<Graph>,
+    pub opt: graph::Options,
+    /// The graph point at the middle of the view, and the zoom.
+    pub cam: (f32, f32),
+    pub zoom: f32,
+    pub fitted: bool,
+    pub controls: bool,
+    /// The node the pointer is over.
+    pub hover: Option<usize>,
+    /// Ask for a rebuild (filters changed).
+    pub stale: bool,
+}
+
+/// A canvas board being looked at and edited.
+pub struct CanvasTab {
+    pub path: String,
+    pub title: String,
+    pub canvas: Canvas,
+    pub cam: (f32, f32),
+    pub zoom: f32,
+    pub fitted: bool,
+    pub selected: Option<String>,
+    /// A text card being typed into: its id and the text.
+    pub editing: Option<(String, Input)>,
+    pub dirty_since: Option<u64>,
+    pub undo: Vec<String>,
+    pub redo: Vec<String>,
+}
+
+/// A base's table.
+pub struct BaseTab {
+    pub path: String,
+    pub title: String,
+    pub base: Base,
+    pub view: usize,
+    pub rows: Vec<String>,
+    pub generation: u64,
+    pub scroll: f32,
+    pub choosing_view: bool,
+}
+
+/// A note's saved copies, to look through and bring back.
+pub struct RecoveryTab {
+    pub path: String,
+    pub pick: usize,
+}
+
+/// A tab group: tabs side by side, one showing.
+pub struct Pane {
+    pub tabs: Vec<Tab>,
+    pub active: usize,
 }
 
 /// Everything the command palette can do.
@@ -228,9 +376,12 @@ pub enum Cmd {
     Palette,
     SearchVault,
     NewNote,
+    NewNoteRight,
     NewFolder,
     NewTab,
     CloseTab,
+    CloseOthers,
+    UndoCloseTab,
     NextTab,
     PrevTab,
     Save,
@@ -238,11 +389,14 @@ pub enum Cmd {
     ToggleSource,
     ToggleLeft,
     ToggleRight,
+    ToggleRibbon,
     ShowFiles,
     ShowBacklinks,
     ShowOutgoing,
     ShowTags,
+    ShowProperties,
     ShowOutline,
+    ShowBookmarks,
     Rename,
     Delete,
     MoveTo,
@@ -262,64 +416,496 @@ pub enum Cmd {
     OpenVault,
     Reveal,
     CollapseAll,
+    ExpandAll,
     CloseVault,
+    Settings,
+    Help,
+    // Workspace.
+    SplitRight,
+    SplitDown,
+    TogglePin,
+    // Core plugins.
+    Graph,
+    LocalGraph,
+    NewCanvas,
+    NewBase,
+    DailyNote,
+    DailyPrev,
+    DailyNext,
+    InsertTemplate,
+    InsertDate,
+    InsertTime,
+    MergeFile,
+    ExtractSelection,
+    Recovery,
+    BookmarkFile,
+    BookmarkSearch,
+    BookmarkHeading,
+    BookmarkGroup,
 }
 
 pub struct Command {
     pub cmd: Cmd,
+    /// The notes app's id for it, which `hotkeys.json` uses.
+    pub id: &'static str,
     pub title: &'static str,
     pub keys: &'static str,
+    /// The core plugin it belongs to (off: not in the palette).
+    pub plugin: &'static str,
 }
 
-const fn c(cmd: Cmd, title: &'static str, keys: &'static str) -> Command {
-    Command { cmd, title, keys }
+const fn c(
+    cmd: Cmd,
+    id: &'static str,
+    title: &'static str,
+    keys: &'static str,
+    plugin: &'static str,
+) -> Command {
+    Command {
+        cmd,
+        id,
+        title,
+        keys,
+        plugin,
+    }
 }
 
-/// Every command, in the order the palette lists them.
+/// Every command, by the notes app's names, ids and default hotkeys.
 pub const COMMANDS: &[Command] = &[
-    c(Cmd::QuickSwitcher, "Quick switcher: Open a note", "Cmd+O"),
+    c(
+        Cmd::QuickSwitcher,
+        "switcher:open",
+        "Quick switcher: Open quick switcher",
+        "Cmd+O",
+        "switcher",
+    ),
+    c(
+        Cmd::Palette,
+        "command-palette:open",
+        "Command palette: Open command palette",
+        "Cmd+P",
+        "command-palette",
+    ),
     c(
         Cmd::SearchVault,
-        "Search: Search in all notes",
+        "global-search:open",
+        "Search: Search in all files",
         "Cmd+Shift+F",
+        "global-search",
     ),
-    c(Cmd::NewNote, "Create new note", "Cmd+N"),
-    c(Cmd::NewFolder, "Files: Create new folder", ""),
-    c(Cmd::NewTab, "Open a new tab", "Cmd+T"),
-    c(Cmd::CloseTab, "Close current tab", "Cmd+W"),
-    c(Cmd::NextTab, "Go to next tab", "Ctrl+Tab"),
-    c(Cmd::PrevTab, "Go to previous tab", "Ctrl+Shift+Tab"),
-    c(Cmd::Save, "Save current note", "Cmd+S"),
-    c(Cmd::ToggleReading, "Toggle reading view", "Cmd+E"),
-    c(Cmd::ToggleSource, "Toggle live preview and source mode", ""),
-    c(Cmd::ToggleLeft, "Toggle left sidebar", "Cmd+\\"),
-    c(Cmd::ToggleRight, "Toggle right sidebar", "Cmd+Shift+\\"),
-    c(Cmd::ShowFiles, "Files: Show file explorer", "Cmd+Shift+E"),
-    c(Cmd::ShowBacklinks, "Backlinks: Show backlinks", ""),
-    c(Cmd::ShowOutgoing, "Outgoing links: Show outgoing links", ""),
-    c(Cmd::ShowTags, "Tags: Show tags", ""),
-    c(Cmd::ShowOutline, "Outline: Show outline", ""),
-    c(Cmd::Rename, "Rename note", "F2"),
-    c(Cmd::Delete, "Delete current note", ""),
-    c(Cmd::MoveTo, "Move current note to another folder", ""),
-    c(Cmd::Back, "Navigate back", "Cmd+Alt+Left"),
-    c(Cmd::Forward, "Navigate forward", "Cmd+Alt+Right"),
-    c(Cmd::Bold, "Toggle bold", "Cmd+B"),
-    c(Cmd::Italic, "Toggle italic", "Cmd+I"),
-    c(Cmd::Strike, "Toggle strikethrough", ""),
-    c(Cmd::Highlight, "Toggle highlight", ""),
-    c(Cmd::InlineCode, "Toggle code", ""),
-    c(Cmd::ToggleTask, "Toggle checkbox status", "Cmd+L"),
-    c(Cmd::InsertLink, "Add internal link", "Cmd+K"),
-    c(Cmd::Undo, "Undo", "Cmd+Z"),
-    c(Cmd::Redo, "Redo", "Cmd+Shift+Z"),
-    c(Cmd::SelectAll, "Select all", "Cmd+A"),
-    c(Cmd::Theme, "Switch between dark and light", ""),
-    c(Cmd::Reveal, "Files: Reveal current note in the tree", ""),
-    c(Cmd::CollapseAll, "Files: Collapse all folders", ""),
-    c(Cmd::OpenVault, "Open another vault", ""),
-    c(Cmd::CloseVault, "Close this vault", ""),
+    c(
+        Cmd::NewNote,
+        "file-explorer:new-file",
+        "Create new note",
+        "Cmd+N",
+        "",
+    ),
+    c(
+        Cmd::NewNoteRight,
+        "file-explorer:new-file-in-new-pane",
+        "Create note to the right",
+        "Cmd+Shift+N",
+        "",
+    ),
+    c(
+        Cmd::NewFolder,
+        "file-explorer:new-folder",
+        "Files: Create new folder",
+        "",
+        "file-explorer",
+    ),
+    c(Cmd::NewTab, "workspace:new-tab", "New tab", "Cmd+T", ""),
+    c(
+        Cmd::CloseTab,
+        "workspace:close",
+        "Close current tab",
+        "Cmd+W",
+        "",
+    ),
+    c(
+        Cmd::CloseOthers,
+        "workspace:close-others",
+        "Close all other tabs",
+        "",
+        "",
+    ),
+    c(
+        Cmd::UndoCloseTab,
+        "workspace:undo-close-pane",
+        "Undo close tab",
+        "Cmd+Shift+T",
+        "",
+    ),
+    c(
+        Cmd::NextTab,
+        "workspace:next-tab",
+        "Go to next tab",
+        "Ctrl+Tab",
+        "",
+    ),
+    c(
+        Cmd::PrevTab,
+        "workspace:previous-tab",
+        "Go to previous tab",
+        "Ctrl+Shift+Tab",
+        "",
+    ),
+    c(
+        Cmd::SplitRight,
+        "workspace:split-vertical",
+        "Split right",
+        "",
+        "",
+    ),
+    c(
+        Cmd::SplitDown,
+        "workspace:split-horizontal",
+        "Split down",
+        "",
+        "",
+    ),
+    c(Cmd::TogglePin, "workspace:toggle-pin", "Toggle pin", "", ""),
+    c(
+        Cmd::Save,
+        "editor:save-file",
+        "Save current file",
+        "Cmd+S",
+        "",
+    ),
+    c(
+        Cmd::ToggleReading,
+        "markdown:toggle-preview",
+        "Toggle reading view",
+        "Cmd+E",
+        "",
+    ),
+    c(
+        Cmd::ToggleSource,
+        "editor:toggle-source",
+        "Toggle Live Preview/Source mode",
+        "",
+        "",
+    ),
+    c(
+        Cmd::ToggleLeft,
+        "app:toggle-left-sidebar",
+        "Toggle left sidebar",
+        "",
+        "",
+    ),
+    c(
+        Cmd::ToggleRight,
+        "app:toggle-right-sidebar",
+        "Toggle right sidebar",
+        "",
+        "",
+    ),
+    c(
+        Cmd::ToggleRibbon,
+        "app:toggle-ribbon",
+        "Toggle ribbon",
+        "",
+        "",
+    ),
+    c(
+        Cmd::ShowFiles,
+        "file-explorer:open",
+        "Files: Show file explorer",
+        "",
+        "file-explorer",
+    ),
+    c(
+        Cmd::Reveal,
+        "file-explorer:reveal-active-file",
+        "Files: Reveal current file in navigation",
+        "",
+        "file-explorer",
+    ),
+    c(
+        Cmd::CollapseAll,
+        "file-explorer:collapse-all",
+        "Files: Collapse all",
+        "",
+        "file-explorer",
+    ),
+    c(
+        Cmd::ExpandAll,
+        "file-explorer:expand-all",
+        "Files: Expand all",
+        "",
+        "file-explorer",
+    ),
+    c(
+        Cmd::ShowBacklinks,
+        "backlink:open",
+        "Backlinks: Show backlinks",
+        "",
+        "backlink",
+    ),
+    c(
+        Cmd::ShowOutgoing,
+        "outgoing-links:open",
+        "Outgoing links: Show outgoing links",
+        "",
+        "outgoing-link",
+    ),
+    c(
+        Cmd::ShowTags,
+        "tag-pane:open",
+        "Tags view: Show tags",
+        "",
+        "tag-pane",
+    ),
+    c(
+        Cmd::ShowProperties,
+        "properties:open",
+        "Properties view: Show all properties",
+        "",
+        "properties",
+    ),
+    c(
+        Cmd::ShowOutline,
+        "outline:open",
+        "Outline: Show outline",
+        "",
+        "outline",
+    ),
+    c(
+        Cmd::ShowBookmarks,
+        "bookmarks:open",
+        "Bookmarks: Show bookmarks",
+        "",
+        "bookmarks",
+    ),
+    c(
+        Cmd::BookmarkFile,
+        "bookmarks:bookmark-current-view",
+        "Bookmarks: Bookmark...",
+        "",
+        "bookmarks",
+    ),
+    c(
+        Cmd::BookmarkHeading,
+        "bookmarks:bookmark-current-heading",
+        "Bookmarks: Bookmark heading under cursor...",
+        "",
+        "bookmarks",
+    ),
+    c(
+        Cmd::BookmarkSearch,
+        "bookmarks:bookmark-current-search",
+        "Bookmarks: Bookmark current search...",
+        "",
+        "bookmarks",
+    ),
+    c(
+        Cmd::BookmarkGroup,
+        "bookmarks:new-group",
+        "Bookmarks: New group",
+        "",
+        "bookmarks",
+    ),
+    c(
+        Cmd::Graph,
+        "graph:open",
+        "Graph view: Open graph view",
+        "Cmd+G",
+        "graph",
+    ),
+    c(
+        Cmd::LocalGraph,
+        "graph:open-local",
+        "Graph view: Open local graph",
+        "",
+        "graph",
+    ),
+    c(
+        Cmd::NewCanvas,
+        "canvas:new-file",
+        "Canvas: Create new canvas",
+        "",
+        "canvas",
+    ),
+    c(
+        Cmd::NewBase,
+        "bases:new-file",
+        "Bases: Create new base",
+        "",
+        "bases",
+    ),
+    c(
+        Cmd::DailyNote,
+        "daily-notes",
+        "Daily notes: Open today's daily note",
+        "",
+        "daily-notes",
+    ),
+    c(
+        Cmd::DailyPrev,
+        "daily-notes:goto-prev",
+        "Daily notes: Open previous daily note",
+        "",
+        "daily-notes",
+    ),
+    c(
+        Cmd::DailyNext,
+        "daily-notes:goto-next",
+        "Daily notes: Open next daily note",
+        "",
+        "daily-notes",
+    ),
+    c(
+        Cmd::InsertTemplate,
+        "insert-template",
+        "Templates: Insert template",
+        "",
+        "templates",
+    ),
+    c(
+        Cmd::InsertDate,
+        "insert-current-date",
+        "Templates: Insert current date",
+        "",
+        "templates",
+    ),
+    c(
+        Cmd::InsertTime,
+        "insert-current-time",
+        "Templates: Insert current time",
+        "",
+        "templates",
+    ),
+    c(
+        Cmd::MergeFile,
+        "note-composer:merge-file",
+        "Note composer: Merge current file with another file...",
+        "",
+        "note-composer",
+    ),
+    c(
+        Cmd::ExtractSelection,
+        "note-composer:split-file",
+        "Note composer: Extract current selection...",
+        "",
+        "note-composer",
+    ),
+    c(
+        Cmd::Recovery,
+        "file-recovery:open",
+        "File recovery: Open local history",
+        "",
+        "file-recovery",
+    ),
+    c(
+        Cmd::Rename,
+        "workspace:edit-file-title",
+        "Rename file",
+        "F2",
+        "",
+    ),
+    c(
+        Cmd::Delete,
+        "app:delete-file",
+        "Delete current file",
+        "",
+        "",
+    ),
+    c(
+        Cmd::MoveTo,
+        "file-explorer:move-file",
+        "Move current file to another folder",
+        "",
+        "file-explorer",
+    ),
+    c(
+        Cmd::Back,
+        "app:go-back",
+        "Navigate back",
+        "Cmd+Alt+Left",
+        "",
+    ),
+    c(
+        Cmd::Forward,
+        "app:go-forward",
+        "Navigate forward",
+        "Cmd+Alt+Right",
+        "",
+    ),
+    c(Cmd::Bold, "editor:toggle-bold", "Toggle bold", "Cmd+B", ""),
+    c(
+        Cmd::Italic,
+        "editor:toggle-italics",
+        "Toggle italic",
+        "Cmd+I",
+        "",
+    ),
+    c(
+        Cmd::Strike,
+        "editor:toggle-strikethrough",
+        "Toggle strikethrough",
+        "",
+        "",
+    ),
+    c(
+        Cmd::Highlight,
+        "editor:toggle-highlight",
+        "Toggle highlight",
+        "",
+        "",
+    ),
+    c(Cmd::InlineCode, "editor:toggle-code", "Toggle code", "", ""),
+    c(
+        Cmd::ToggleTask,
+        "editor:toggle-checklist-status",
+        "Toggle checkbox status",
+        "Cmd+L",
+        "",
+    ),
+    c(
+        Cmd::InsertLink,
+        "editor:insert-link",
+        "Insert Markdown link",
+        "Cmd+K",
+        "",
+    ),
+    c(Cmd::Undo, "editor:undo", "Undo", "Cmd+Z", ""),
+    c(Cmd::Redo, "editor:redo", "Redo", "Cmd+Shift+Z", ""),
+    c(
+        Cmd::SelectAll,
+        "editor:select-all",
+        "Select all",
+        "Cmd+A",
+        "",
+    ),
+    c(
+        Cmd::Theme,
+        "theme:toggle-light-dark",
+        "Toggle light/dark mode",
+        "",
+        "",
+    ),
+    c(
+        Cmd::Settings,
+        "app:open-settings",
+        "Open settings",
+        "Cmd+,",
+        "",
+    ),
+    c(Cmd::Help, "app:open-help", "Open help", "F1", ""),
+    c(Cmd::OpenVault, "app:open-vault", "Open vault...", "", ""),
+    c(
+        Cmd::CloseVault,
+        "app:close-vault",
+        "Close this vault",
+        "",
+        "",
+    ),
 ];
+
+/// The command's entry, for its title and keys.
+pub fn command(cmd: Cmd) -> Option<&'static Command> {
+    COMMANDS.iter().find(|c| c.cmd == cmd)
+}
 
 /// What a row of a list prompt does when chosen.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,6 +914,8 @@ pub enum Pick {
     Create(String),
     Run(Cmd),
     MoveInto(String),
+    Template(String),
+    Note(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -344,6 +932,14 @@ pub enum ListKind {
     Palette,
     /// Choosing the folder a note or folder (the path) moves into.
     MoveTo(String),
+    /// A template to insert into the open note.
+    Template,
+    /// The note the open one merges into.
+    MergeInto(String),
+    /// The note a selection is moved out into (new or existing).
+    ExtractTo(String),
+    /// A note to open in a canvas card.
+    CanvasNote,
 }
 
 pub struct ListPrompt {
@@ -358,10 +954,29 @@ pub struct ListPrompt {
 pub enum MenuAction {
     NewNote(String),
     NewFolder(String),
+    NewCanvas(String),
+    NewBase(String),
     OpenInNewTab(String),
+    OpenToRight(String),
+    Bookmark(String),
     Rename(String),
     MoveTo(String),
     Delete(String),
+    // Tabs.
+    CloseTab(usize),
+    CloseOthers(usize),
+    TogglePin(usize),
+    SplitRight(usize),
+    SplitDown(usize),
+    LinkTab(usize),
+    UnlinkTab(usize),
+    // Bookmarks.
+    RemoveBookmark(Vec<usize>),
+    Run(Cmd),
+    // Canvas cards.
+    CardColor(String, Option<&'static str>),
+    CardRemove(String),
+    CardOpen(String),
 }
 
 pub struct Menu {
@@ -375,12 +990,54 @@ pub struct Confirm {
     pub body: String,
     pub yes: &'static str,
     pub path: String,
+    /// What saying yes does.
+    pub action: ConfirmAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfirmAction {
+    Delete,
+    Restore(usize),
+}
+
+/// A prompt for one line of text: a group's name, a link card's address.
+pub struct Ask {
+    pub title: String,
+    pub input: Input,
+    pub purpose: AskFor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AskFor {
+    BookmarkGroup,
+    CanvasLink,
+    CanvasGroup,
+    /// The graph's filter search.
+    GraphSearch,
+    /// A new colour group's search.
+    GraphGroup,
 }
 
 pub enum Overlay {
     List(ListPrompt),
     Menu(Menu),
     Confirm(Confirm),
+    Settings(SettingsPage),
+    Ask(Ask),
+}
+
+/// The settings window: which page is showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsPage {
+    General,
+    Editor,
+    Files,
+    Appearance,
+    Hotkeys,
+    CorePlugins,
+    DailyNotes,
+    Templates,
+    FileRecovery,
 }
 
 /// `[[` completion under the caret.
@@ -432,6 +1089,29 @@ pub enum Hit {
     Scrim,
     Command(Cmd),
     LinkNote(String),
+    /// A tab's pin, pressed to unpin it.
+    Pin(usize),
+    Bookmark(Vec<usize>),
+    /// Linked (0) or unlinked (1) mentions folded or opened.
+    Section(u8),
+    Unlinked(usize, usize),
+    /// "Link" on an unlinked mention: make it a link.
+    LinkMention(usize),
+    /// A row of the tags pane (nested tags open and close).
+    TagRow(usize),
+    TagFold(String),
+    Property(usize),
+    SettingsNav(SettingsPage),
+    SettingsRow(usize),
+    SettingsClose,
+    VaultMenu,
+    RecoveryPick(usize),
+    RecoveryRestore,
+    BaseViews,
+    BaseView(usize),
+    BaseRow(usize),
+    BaseSort(usize),
+    AskOk,
 }
 
 /// A pane's answer computed from the open note, recomputed only when the
@@ -446,8 +1126,35 @@ struct Cached<T> {
 
 pub struct App {
     pub vault: Option<Vault>,
+    /// The tab group in focus: its tabs and which one shows. The other
+    /// groups are in `panes`, where this one's place holds nothing.
     pub tabs: Vec<Tab>,
     pub active: usize,
+    pub panes: Vec<Pane>,
+    pub pane: usize,
+    pub layout: Layout,
+    /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
+    pub closed: Vec<String>,
+    pub settings: Settings,
+    pub bookmarks: Vec<crate::bookmarks::Bookmark>,
+    pub bookmarks_closed: BTreeSet<Vec<usize>>,
+    pub recovery: Recovery,
+    /// Unlinked mentions of the open note, found between frames.
+    pub unlinked: Option<Unlinked>,
+    pub unlinked_open: bool,
+    pub linked_open: bool,
+    pub tags_closed: BTreeSet<String>,
+    /// Whether the computer is in dark mode (for the "system" theme).
+    pub system_dark: bool,
+    /// A setting being typed into: its row and text.
+    pub setting_edit: Option<(usize, Input)>,
+    pub settings_scroll: f32,
+    /// The next group number for linked tabs.
+    pub(crate) next_group: u32,
+    /// Counts for ids made here (canvas cards).
+    pub seed: u64,
+    /// The local date and time, as the guest last read the clock.
+    pub local: crate::dates::When,
     pub left: LeftPane,
     pub right: RightPane,
     pub left_open: bool,
@@ -477,6 +1184,17 @@ pub struct App {
     pub closing: bool,
 }
 
+/// The notes that name the open note without linking to it, found a few
+/// files a frame.
+pub struct Unlinked {
+    pub path: String,
+    pub name: String,
+    pub queue: Vec<String>,
+    /// Each note, with each line that names it (line, text).
+    pub found: Vec<(String, Vec<(u32, String)>)>,
+    pub generation: u64,
+}
+
 /// How long a pause in typing is before the note is saved.
 pub const SAVE_AFTER_MS: u64 = 2_000;
 const PANE_SETTLE_MS: u64 = 400;
@@ -493,18 +1211,35 @@ impl App {
     pub fn new() -> App {
         App {
             vault: None,
-            tabs: alloc::vec![Tab {
-                doc: None,
-                back: Vec::new(),
-                fwd: Vec::new()
-            }],
+            tabs: alloc::vec![Tab::empty()],
             active: 0,
+            panes: alloc::vec![Pane {
+                tabs: Vec::new(),
+                active: 0
+            }],
+            pane: 0,
+            layout: Layout::Pane(0),
+            closed: Vec::new(),
+            settings: Settings::new(),
+            bookmarks: Vec::new(),
+            bookmarks_closed: BTreeSet::new(),
+            recovery: Recovery::default(),
+            unlinked: None,
+            unlinked_open: false,
+            linked_open: true,
+            tags_closed: BTreeSet::new(),
+            system_dark: true,
+            setting_edit: None,
+            settings_scroll: 0.0,
+            next_group: 1,
+            seed: 0x5EED,
+            local: crate::dates::When::date(2026, 1, 1),
             left: LeftPane::Files,
             right: RightPane::Backlinks,
             left_open: true,
-            right_open: true,
-            left_w: 260.0,
-            right_w: 280.0,
+            right_open: false,
+            left_w: 300.0,
+            right_w: 300.0,
             focus: Focus::Editor,
             explorer: Explorer {
                 expanded: BTreeSet::new(),
@@ -538,15 +1273,25 @@ impl App {
 
     // ---- the vault -------------------------------------------------------
 
-    pub fn open_vault(&mut self, vault: Vault) {
+    pub fn open_vault(&mut self, mut vault: Vault) {
         self.save_all();
+        self.settings = Settings::load(&mut *vault.fs);
+        // A new vault writes the files a new vault has.
+        let _ = self.settings.save(&mut *vault.fs);
+        self.bookmarks = crate::bookmarks::read(&self.settings.bookmarks.data);
+        self.dark = self.settings.dark(self.system_dark);
         self.vault = Some(vault);
-        self.tabs = alloc::vec![Tab {
-            doc: None,
-            back: Vec::new(),
-            fwd: Vec::new()
-        }];
+        self.tabs = alloc::vec![Tab::empty()];
         self.active = 0;
+        self.panes = alloc::vec![Pane {
+            tabs: Vec::new(),
+            active: 0
+        }];
+        self.pane = 0;
+        self.layout = Layout::Pane(0);
+        self.closed.clear();
+        self.unlinked = None;
+        self.recovery = Recovery::default();
         self.explorer.expanded.clear();
         self.explorer.rows_dirty = true;
         self.explorer.scroll = 0.0;
@@ -577,6 +1322,7 @@ impl App {
         self.save_all();
         *self = App {
             dark: self.dark,
+            system_dark: self.system_dark,
             ..App::new()
         };
     }
@@ -591,6 +1337,10 @@ impl App {
         self.tabs.get(self.active)
     }
 
+    pub fn tab_mut(&mut self) -> Option<&mut Tab> {
+        self.tabs.get_mut(self.active)
+    }
+
     pub fn doc(&self) -> Option<&Doc> {
         self.tabs.get(self.active).and_then(|t| t.doc.as_ref())
     }
@@ -599,18 +1349,126 @@ impl App {
         self.tabs.get_mut(self.active).and_then(|t| t.doc.as_mut())
     }
 
+    pub fn view(&self) -> Option<&View> {
+        self.tabs.get(self.active).and_then(|t| t.view.as_ref())
+    }
+
+    pub fn view_mut(&mut self) -> Option<&mut View> {
+        self.tabs.get_mut(self.active).and_then(|t| t.view.as_mut())
+    }
+
+    /// The file the active tab shows (a note, a canvas, a base).
+    pub fn active_path(&self) -> Option<String> {
+        self.tab().and_then(Tab::path).map(String::from)
+    }
+
     /// The text of a note as a tab holds it (unsaved edits included).
     pub fn open_text(&self, path: &str) -> Option<String> {
-        self.tabs
-            .iter()
+        self.all_tabs()
             .filter_map(|t| t.doc.as_ref())
             .find(|d| d.path == path)
             .map(Doc::text)
     }
 
+    /// Every tab in every group.
+    pub fn all_tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs
+            .iter()
+            .chain(self.panes.iter().flat_map(|p| p.tabs.iter()))
+    }
+
+    /// A group's tabs and which one shows, the group in focus included.
+    pub fn pane_tabs(&self, pane: usize) -> (&[Tab], usize) {
+        if pane == self.pane {
+            (&self.tabs, self.active)
+        } else {
+            self.panes
+                .get(pane)
+                .map_or((&[][..], 0), |p| (p.tabs.as_slice(), p.active))
+        }
+    }
+
+    /// The groups in the order they are laid out.
+    pub fn pane_order(&self) -> Vec<usize> {
+        let mut v = Vec::new();
+        self.layout.panes(&mut v);
+        v
+    }
+
+    /// Move the focus to another tab group.
+    pub fn focus_pane(&mut self, pane: usize) {
+        if pane == self.pane || pane >= self.panes.len() {
+            return;
+        }
+        self.save_active();
+        if let Some(slot) = self.panes.get_mut(self.pane) {
+            slot.tabs = core::mem::take(&mut self.tabs);
+            slot.active = self.active;
+        }
+        if let Some(slot) = self.panes.get_mut(pane) {
+            self.tabs = core::mem::take(&mut slot.tabs);
+            self.active = slot.active;
+        }
+        self.pane = pane;
+        if self.tabs.is_empty() {
+            self.tabs.push(Tab::empty());
+            self.active = 0;
+        }
+        self.completion = None;
+        if let Some(p) = self.active_path() {
+            self.explorer.selected = Some(p);
+        }
+    }
+
+    /// A new group beside the one in focus (to the right, or below), with
+    /// a tab showing the same file, and the focus in it.
+    pub fn split(&mut self, down: bool) {
+        let path = self.active_path();
+        let new = self.panes.len();
+        self.panes.push(Pane {
+            tabs: Vec::new(),
+            active: 0,
+        });
+        let at = self.pane;
+        self.layout.split(at, new, down);
+        self.focus_pane(new);
+        if let Some(p) = path {
+            self.open_file(&p, false);
+        }
+    }
+
+    /// Take away a group that has no tabs left (never the last group).
+    fn drop_pane_if_empty(&mut self) {
+        let only = self.pane_order().len() <= 1;
+        if !self.tabs.is_empty() || only {
+            if self.tabs.is_empty() {
+                self.tabs.push(Tab::empty());
+                self.active = 0;
+            }
+            return;
+        }
+        let gone = self.pane;
+        self.layout.remove(gone);
+        let next = self.pane_order().first().copied().unwrap_or(0);
+        // Focus a neighbour, then delete the empty group's slot.
+        self.pane = usize::MAX;
+        if let Some(slot) = self.panes.get_mut(next) {
+            self.tabs = core::mem::take(&mut slot.tabs);
+            self.active = slot.active;
+        }
+        self.panes.remove(gone);
+        self.layout.renumber_after(gone);
+        self.pane = if next > gone { next - 1 } else { next };
+        if self.tabs.is_empty() {
+            self.tabs.push(Tab::empty());
+        }
+    }
+
     fn load(&mut self, path: &str) -> Option<Doc> {
         // A note open in another tab is read from there, unsaved text and all.
         let held = self.open_text(path);
+        let reading = self.settings.default_view_reading();
+        let source = !self.settings.live_preview();
         let v = self.vault.as_mut()?;
         let title = v.note(path).map(|n| n.name.clone())?;
         let text = match held {
@@ -627,37 +1485,147 @@ impl App {
                 }
             },
         };
-        Some(Doc::new(path, &title, &text))
+        let mut d = Doc::new(path, &title, &text);
+        if reading {
+            d.mode = Mode::Reading;
+        } else if source {
+            d.mode = Mode::Source;
+        }
+        Some(d)
+    }
+
+    /// A view for a file that is not a note.
+    fn load_view(&mut self, path: &str) -> Option<View> {
+        let kind = kind_of(path);
+        if kind == FileKind::Note {
+            return None;
+        }
+        let v = self.vault.as_mut()?;
+        let text = read_note(v, path).unwrap_or_default();
+        let title = String::from(strip_ext(file_name(path)));
+        match kind {
+            FileKind::Canvas => {
+                let Some(canvas) = Canvas::parse(&text) else {
+                    self.say("This canvas could not be read: it is not JSON Canvas");
+                    return None;
+                };
+                Some(View::Canvas(Box::new(CanvasTab {
+                    path: String::from(path),
+                    title,
+                    canvas,
+                    cam: (0.0, 0.0),
+                    zoom: 1.0,
+                    fitted: false,
+                    selected: None,
+                    editing: None,
+                    dirty_since: None,
+                    undo: Vec::new(),
+                    redo: Vec::new(),
+                })))
+            }
+            FileKind::Base => Some(View::Base(Box::new(BaseTab {
+                path: String::from(path),
+                title,
+                base: Base::parse(&text),
+                view: 0,
+                rows: Vec::new(),
+                generation: 0,
+                scroll: 0.0,
+                choosing_view: false,
+            }))),
+            FileKind::Note => None,
+        }
     }
 
     /// Open a note: in this tab (keeping the way back), or in a new one.
     pub fn open(&mut self, path: &str, new_tab: bool) {
-        if !new_tab && self.doc().is_some_and(|d| d.path == path) {
+        self.open_file(path, new_tab);
+    }
+
+    /// Open any file the vault shows: a note, a canvas or a base.
+    pub fn open_file(&mut self, path: &str, new_tab: bool) {
+        if !new_tab && self.tab().and_then(Tab::path) == Some(path) {
             self.focus = Focus::Editor;
             return;
         }
-        let Some(doc) = self.load(path) else {
-            return;
+        // A pinned tab keeps its note: the new one opens beside it.
+        let new_tab = new_tab || self.tab().is_some_and(|t| t.pinned);
+        let (doc, view) = if kind_of(path) == FileKind::Note {
+            match self.load(path) {
+                Some(d) => (Some(d), None),
+                None => return,
+            }
+        } else {
+            match self.load_view(path) {
+                Some(v) => (None, Some(v)),
+                None => return,
+            }
         };
         if new_tab || self.tabs.is_empty() {
-            self.tabs.push(Tab {
-                doc: Some(doc),
-                back: Vec::new(),
-                fwd: Vec::new(),
-            });
-            self.active = self.tabs.len() - 1;
+            let mut t = Tab::empty();
+            t.doc = doc;
+            t.view = view;
+            self.tabs.insert((self.active + 1).min(self.tabs.len()), t);
+            self.active = (self.active + 1).min(self.tabs.len() - 1);
         } else {
             self.save_active();
             let Some(tab) = self.tabs.get_mut(self.active) else {
                 return;
             };
-            if let Some(old) = tab.doc.take() {
-                tab.back.push(old.path);
+            if let Some(old) = tab.path().map(String::from) {
+                tab.back.push(old);
             }
             tab.fwd.clear();
-            tab.doc = Some(doc);
+            tab.doc = doc;
+            tab.view = view;
         }
         self.after_open(path);
+        self.follow_linked(path);
+    }
+
+    /// Tabs linked to the active one show its note too.
+    fn follow_linked(&mut self, path: &str) {
+        let Some(group) = self.tab().and_then(|t| t.group) else {
+            return;
+        };
+        let me = (self.pane, self.active);
+        let mut targets: Vec<usize> = Vec::new();
+        for (pi, pane) in self.panes.iter().enumerate() {
+            if pi == self.pane {
+                continue;
+            }
+            for t in &pane.tabs {
+                if t.group == Some(group) {
+                    targets.push(pi);
+                }
+            }
+        }
+        targets.dedup();
+        for pi in targets {
+            self.focus_pane(pi);
+            let idx = self.tabs.iter().position(|t| t.group == Some(group));
+            if let Some(i) = idx {
+                self.active = i;
+                let is_local = matches!(self.view(), Some(View::Graph(g)) if g.local.is_some());
+                if is_local {
+                    if let Some(View::Graph(g)) = self.view_mut() {
+                        g.local = Some(String::from(path));
+                        g.graph = None;
+                        g.fitted = false;
+                    }
+                } else if self.tab().and_then(Tab::path) != Some(path) {
+                    if let Some(t) = self.tab_mut() {
+                        t.group = None;
+                    }
+                    self.open_file(path, false);
+                    if let Some(t) = self.tab_mut() {
+                        t.group = Some(group);
+                    }
+                }
+            }
+        }
+        self.focus_pane(me.0);
+        self.active = me.1.min(self.tabs.len().saturating_sub(1));
     }
 
     fn after_open(&mut self, path: &str) {
@@ -668,6 +1636,7 @@ impl App {
         self.focus = Focus::Editor;
         self.completion = None;
         self.right_scroll = 0.0;
+        self.unlinked = None;
     }
 
     /// Back (`false`) or forward through this tab's history.
@@ -682,19 +1651,28 @@ impl App {
                 None => return,
             }
         };
-        let Some(doc) = self.load(&target) else {
-            return;
+        let (doc, view) = if kind_of(&target) == FileKind::Note {
+            match self.load(&target) {
+                Some(d) => (Some(d), None),
+                None => return,
+            }
+        } else {
+            match self.load_view(&target) {
+                Some(v) => (None, Some(v)),
+                None => return,
+            }
         };
         self.save_active();
         if let Some(tab) = self.tabs.get_mut(self.active) {
-            if let Some(old) = tab.doc.take() {
+            if let Some(old) = tab.path().map(String::from) {
                 if forward {
-                    tab.back.push(old.path);
+                    tab.back.push(old);
                 } else {
-                    tab.fwd.push(old.path);
+                    tab.fwd.push(old);
                 }
             }
-            tab.doc = Some(doc);
+            tab.doc = doc;
+            tab.view = view;
         }
         self.after_open(&target);
     }
@@ -710,27 +1688,52 @@ impl App {
     }
 
     pub fn new_tab(&mut self) {
-        self.tabs.push(Tab {
-            doc: None,
-            back: Vec::new(),
-            fwd: Vec::new(),
-        });
-        self.active = self.tabs.len() - 1;
+        self.tabs
+            .insert((self.active + 1).min(self.tabs.len()), Tab::empty());
+        self.active = (self.active + 1).min(self.tabs.len() - 1);
         self.completion = None;
     }
 
     pub fn close_tab(&mut self, i: usize) {
         self.save_tab(i);
+        if let Some(p) = self.tabs.get(i).and_then(Tab::path) {
+            self.closed.push(String::from(p));
+        }
         if i < self.tabs.len() {
             self.tabs.remove(i);
         }
-        if self.tabs.is_empty() {
-            self.new_tab();
-        }
         if self.active >= self.tabs.len() || (i < self.active) {
-            self.active = self.active.saturating_sub(1).min(self.tabs.len() - 1);
+            self.active = self.active.saturating_sub(1);
         }
+        if self.tabs.is_empty() {
+            self.drop_pane_if_empty();
+        }
+        self.active = self.active.min(self.tabs.len().saturating_sub(1));
         self.completion = None;
+    }
+
+    /// Close every tab of this group but `keep` (pinned ones stay).
+    pub fn close_others(&mut self, keep: usize) {
+        let mut i = self.tabs.len();
+        while i > 0 {
+            i -= 1;
+            if i != keep && !self.tabs.get(i).is_some_and(|t| t.pinned) {
+                self.save_tab(i);
+                self.tabs.remove(i);
+                if i < self.active {
+                    self.active = self.active.saturating_sub(1);
+                }
+            }
+        }
+        self.active = self
+            .tabs
+            .iter()
+            .position(|t| !t.pinned)
+            .unwrap_or(0)
+            .min(self.tabs.len().saturating_sub(1));
+        if keep < self.tabs.len() {
+            self.active = self.active.min(self.tabs.len() - 1);
+        }
     }
 
     pub fn select_tab(&mut self, i: usize) {
@@ -738,18 +1741,149 @@ impl App {
             self.save_active();
             self.active = i;
             self.completion = None;
-            if let Some(p) = self.doc().map(|d| d.path.clone()) {
+            if let Some(p) = self.active_path() {
                 self.explorer.selected = Some(p);
             }
+        }
+    }
+
+    /// Drag a tab to `to` in this group, or into another group.
+    pub fn move_tab(&mut self, from_pane: usize, from: usize, to_pane: usize, to: usize) {
+        self.focus_pane(from_pane);
+        if from >= self.tabs.len() {
+            return;
+        }
+        if from_pane == to_pane {
+            let t = self.tabs.remove(from);
+            let to = to.min(self.tabs.len());
+            self.tabs.insert(to, t);
+            self.active = to;
+            return;
+        }
+        let t = self.tabs.remove(from);
+        self.active = self.active.min(self.tabs.len().saturating_sub(1));
+        let left_empty = self.tabs.is_empty();
+        let target = to_pane;
+        let after = if left_empty {
+            // The group it left goes; numbers above it shift down.
+            let gone = self.pane;
+            self.drop_pane_if_empty();
+            if target > gone {
+                target - 1
+            } else {
+                target
+            }
+        } else {
+            target
+        };
+        self.focus_pane(after);
+        // A new tab that was left empty in the target goes.
+        if self.tabs.len() == 1 && self.tabs[0].path().is_none() && self.tabs[0].view.is_none() {
+            self.tabs.clear();
+        }
+        let to = to.min(self.tabs.len());
+        self.tabs.insert(to, t);
+        self.active = to;
+    }
+
+    /// Drag a tab out to the edge of a group: a new group there.
+    pub fn split_with_tab(&mut self, from_pane: usize, from: usize, at_pane: usize, down: bool) {
+        self.focus_pane(from_pane);
+        if from >= self.tabs.len() || (from_pane == at_pane && self.tabs.len() <= 1) {
+            return;
+        }
+        let t = self.tabs.remove(from);
+        self.active = self.active.min(self.tabs.len().saturating_sub(1));
+        let new = self.panes.len();
+        self.panes.push(Pane {
+            tabs: alloc::vec![t],
+            active: 0,
+        });
+        self.layout.split(at_pane, new, down);
+        if self.tabs.is_empty() {
+            self.drop_pane_if_empty();
+            let n = self.panes.len() - 1;
+            self.focus_pane(n);
+        } else {
+            self.focus_pane(new);
+        }
+    }
+
+    pub fn toggle_pin(&mut self, i: usize) {
+        if let Some(t) = self.tabs.get_mut(i) {
+            t.pinned = !t.pinned;
+        }
+        // Pinned tabs go first, as the app keeps them.
+        let mut order: Vec<usize> = (0..self.tabs.len()).collect();
+        order.sort_by_key(|&k| !self.tabs[k].pinned);
+        let active = self.active;
+        let mut new = Vec::with_capacity(self.tabs.len());
+        let mut old: Vec<Option<Tab>> = core::mem::take(&mut self.tabs)
+            .into_iter()
+            .map(Some)
+            .collect();
+        for &k in &order {
+            if let Some(t) = old.get_mut(k).and_then(Option::take) {
+                new.push(t);
+            }
+        }
+        self.tabs = new;
+        self.active = order.iter().position(|&k| k == active).unwrap_or(0);
+    }
+
+    /// Link this tab with the tab showing in the next group, so they follow
+    /// each other.
+    pub fn link_tab(&mut self, i: usize) {
+        let group = match self.tabs.get(i).and_then(|t| t.group) {
+            Some(g) => g,
+            None => {
+                let g = self.next_group;
+                self.next_group += 1;
+                g
+            }
+        };
+        if let Some(t) = self.tabs.get_mut(i) {
+            t.group = Some(group);
+        }
+        let me = self.pane;
+        if let Some(other) = self.pane_order().into_iter().find(|p| *p != me) {
+            if let Some(p) = self.panes.get_mut(other) {
+                if let Some(t) = p.tabs.get_mut(p.active) {
+                    t.group = Some(group);
+                }
+            }
+        }
+    }
+
+    pub fn unlink_tab(&mut self, i: usize) {
+        if let Some(t) = self.tabs.get_mut(i) {
+            t.group = None;
         }
     }
 
     // ---- saving ------------------------------------------------------------
 
     fn save_tab(&mut self, i: usize) -> bool {
+        let interval = self.settings.recovery_interval_ms();
+        let recover = self.settings.plugin_on("file-recovery");
+        let now = self.now;
         let Some(v) = self.vault.as_mut() else {
             return false;
         };
+        if let Some(View::Canvas(c)) = self.tabs.get_mut(i).and_then(|t| t.view.as_mut()) {
+            if c.dirty_since.is_some() {
+                let text = c.canvas.to_text();
+                match write_note(v, &c.path, &text) {
+                    Ok(()) => {
+                        c.dirty_since = None;
+                        v.index_text(&c.path, &text);
+                        self.saves += 1;
+                    }
+                    Err(why) => self.status = Some((why, now + 4_000)),
+                }
+            }
+            return true;
+        }
         let Some(doc) = self.tabs.get_mut(i).and_then(|t| t.doc.as_mut()) else {
             return false;
         };
@@ -763,6 +1897,10 @@ impl App {
                 doc.mark_saved();
                 v.index_text(&doc.path, &text);
                 self.saves += 1;
+                if recover && v.fs.real() {
+                    let p = doc.path.clone();
+                    self.recovery.note(&p, &text, now, interval);
+                }
                 true
             }
             Err(why) => {
@@ -778,6 +1916,10 @@ impl App {
         }
     }
 
+    pub(crate) fn save_tab_at(&mut self, i: usize) -> bool {
+        self.save_tab(i)
+    }
+
     pub fn save_active(&mut self) -> bool {
         self.save_tab(self.active)
     }
@@ -786,6 +1928,36 @@ impl App {
         for i in 0..self.tabs.len() {
             self.save_tab(i);
         }
+        self.save_other_panes(true);
+        if let Some(v) = self.vault.as_mut() {
+            let _ = self.settings.save(&mut *v.fs);
+        }
+    }
+
+    /// Save what is due in the groups not in focus (`all`: everything).
+    fn save_other_panes(&mut self, all: bool) -> bool {
+        let mut any = false;
+        for p in 0..self.panes.len() {
+            if p == self.pane {
+                continue;
+            }
+            let due = self.panes[p].tabs.iter().any(|t| {
+                t.doc.as_ref().is_some_and(|d| {
+                    d.modified()
+                        && (all || d.dirty_since.is_some_and(|s| self.now >= s + SAVE_AFTER_MS))
+                }) || matches!(&t.view, Some(View::Canvas(c)) if c.dirty_since.is_some_and(|s| all || self.now >= s + SAVE_AFTER_MS))
+            });
+            if due {
+                // Swap the group in, save it, swap back.
+                core::mem::swap(&mut self.tabs, &mut self.panes[p].tabs);
+                for i in 0..self.tabs.len() {
+                    self.save_tab(i);
+                }
+                core::mem::swap(&mut self.tabs, &mut self.panes[p].tabs);
+                any = true;
+            }
+        }
+        any
     }
 
     // ---- the tree ----------------------------------------------------------
@@ -836,13 +2008,23 @@ impl App {
 
     /// The folder new notes go in: the one picked in the tree, or the one
     /// the picked note is in, or the root.
-    fn target_folder(&self) -> String {
+    pub(crate) fn target_folder(&self) -> String {
         let Some(v) = self.vault.as_ref() else {
             return String::new();
         };
-        match self.explorer.selected.as_deref() {
-            Some(p) if v.folder_id(p).is_some() => String::from(p),
-            Some(p) if v.note(p).is_some() => String::from(parent(p)),
+        match self.settings.new_file_location() {
+            "current" => self
+                .active_path()
+                .map(|p| String::from(parent(&p)))
+                .unwrap_or_default(),
+            "folder" => {
+                let f = self.settings.new_file_folder().trim_matches('/');
+                if v.folder_id(f).is_some() {
+                    String::from(f)
+                } else {
+                    String::new()
+                }
+            }
             _ => String::new(),
         }
     }
@@ -940,7 +2122,11 @@ impl App {
         // Tabs follow what moved.
         let mut prefix = String::from(from);
         prefix.push('/');
-        for t in self.tabs.iter_mut() {
+        for t in self
+            .tabs
+            .iter_mut()
+            .chain(self.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()))
+        {
             for p in t.back.iter_mut().chain(t.fwd.iter_mut()) {
                 if let Some(n) = moved_path(p, from, &prefix, to) {
                     *p = n;
@@ -954,6 +2140,20 @@ impl App {
                     }
                 }
             }
+            if let Some(n) = t
+                .view
+                .as_ref()
+                .and_then(|v| v.path())
+                .and_then(|vp| moved_path(vp, from, &prefix, to))
+            {
+                if let Some(v) = t.view.as_mut() {
+                    v.set_path(&n);
+                }
+            }
+        }
+        self.recovery.moved(from, to);
+        if crate::bookmarks::moved(&mut self.bookmarks, from, to) {
+            self.save_bookmarks();
         }
         for p in self.recent.iter_mut() {
             if let Some(n) = moved_path(p, from, &prefix, to) {
@@ -988,10 +2188,14 @@ impl App {
     }
 
     /// Rewrite `[[old]]` links in one note to `[[new]]`. True if any were.
-    fn rewrite_links_in(&mut self, path: &str, old_key: &str, new_name: &str) -> bool {
+    pub(crate) fn rewrite_links_in(&mut self, path: &str, old_key: &str, new_name: &str) -> bool {
         let now = self.now;
         // An open note is edited in its tab, so the change can be undone.
-        for t in self.tabs.iter_mut() {
+        for t in self
+            .tabs
+            .iter_mut()
+            .chain(self.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()))
+        {
             if let Some(d) = t.doc.as_mut().filter(|d| d.path == path) {
                 let mut any = false;
                 for n in 0..d.buf.line_count() {
@@ -1047,7 +2251,11 @@ impl App {
         if folder {
             body.push_str(" and everything in it");
         }
-        body.push_str("? It will be moved to the vault's .trash folder.");
+        body.push_str("?\n\nIt will be moved to your trash, which is located in the \u{201c}.trash\u{201d} hidden folder in your vault.");
+        if !self.settings.prompt_delete() {
+            self.delete(path);
+            return;
+        }
         self.overlay = Some(Overlay::Confirm(Confirm {
             title: String::from(if folder {
                 "Delete folder"
@@ -1057,6 +2265,7 @@ impl App {
             body,
             yes: "Delete",
             path: String::from(path),
+            action: ConfirmAction::Delete,
         }));
     }
 
@@ -1069,9 +2278,16 @@ impl App {
                 let mut prefix = String::from(path);
                 prefix.push('/');
                 let gone = |p: &str| p == path || p.starts_with(prefix.as_str());
-                for t in self.tabs.iter_mut() {
-                    if t.doc.as_ref().is_some_and(|d| gone(&d.path)) {
+                for t in self
+                    .tabs
+                    .iter_mut()
+                    .chain(self.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()))
+                {
+                    if t.doc.as_ref().is_some_and(|d| gone(&d.path))
+                        || t.view.as_ref().and_then(|v| v.path()).is_some_and(gone)
+                    {
                         t.doc = None;
+                        t.view = None;
                     }
                     t.back.retain(|p| !gone(p));
                     t.fwd.retain(|p| !gone(p));
@@ -1411,6 +2627,9 @@ impl App {
             ListKind::Palette => {
                 let mut scored: Vec<(i32, usize)> = Vec::new();
                 for (i, cm) in COMMANDS.iter().enumerate() {
+                    if !cm.plugin.is_empty() && !self.settings.plugin_on(cm.plugin) {
+                        continue;
+                    }
                     if let Some(s) = fuzzy(q, cm.title) {
                         scored.push((if q.is_empty() { -(i as i32) } else { s }, i));
                     }
@@ -1424,6 +2643,100 @@ impl App {
                             hint: String::from(cm.keys),
                             pick: Pick::Run(cm.cmd),
                         });
+                    }
+                }
+            }
+            ListKind::Template => {
+                let folder = String::from(self.settings.templates_folder().trim_matches('/'));
+                let Some(v) = self.vault.as_ref() else {
+                    return;
+                };
+                let mut found = 0;
+                for n in &v.notes {
+                    if !n.path.ends_with(".md")
+                        || folder.is_empty()
+                        || !n.path.starts_with(folder.as_str())
+                    {
+                        continue;
+                    }
+                    if n.path.as_bytes().get(folder.len()) != Some(&b'/') {
+                        continue;
+                    }
+                    found += 1;
+                    if fuzzy(q, &n.name).is_some() {
+                        p.items.push(Item {
+                            title: n.name.clone(),
+                            detail: String::new(),
+                            hint: String::new(),
+                            pick: Pick::Template(n.path.clone()),
+                        });
+                    }
+                }
+                if found == 0 {
+                    p.items.push(Item {
+                        title: String::from(if folder.is_empty() {
+                            "No template folder is set: choose one in Settings, Templates"
+                        } else {
+                            "No templates found in the template folder"
+                        }),
+                        detail: String::new(),
+                        hint: String::new(),
+                        pick: Pick::Run(Cmd::Settings),
+                    });
+                }
+            }
+            ListKind::MergeInto(from) | ListKind::ExtractTo(from) => {
+                let Some(v) = self.vault.as_ref() else {
+                    return;
+                };
+                let mut scored: Vec<(i32, usize)> = Vec::new();
+                for (i, n) in v.notes.iter().enumerate() {
+                    if n.path == *from || !n.path.ends_with(".md") {
+                        continue;
+                    }
+                    if let Some(s) = fuzzy(q, &n.name) {
+                        scored.push((s + 8, i));
+                    } else if let Some(s) = fuzzy(q, &n.path) {
+                        scored.push((s, i));
+                    }
+                }
+                top_by_score(&mut scored, LIST_MAX, |i| {
+                    v.notes.get(i).map_or("", |n| n.name.as_str())
+                });
+                if matches!(p.kind, ListKind::ExtractTo(_)) && !q.is_empty() {
+                    p.items.push(Item {
+                        title: String::from(q),
+                        detail: String::from("New note"),
+                        hint: String::from("Enter to create"),
+                        pick: Pick::Create(String::from(q)),
+                    });
+                }
+                for (_, i) in &scored {
+                    if let Some(n) = v.notes.get(*i) {
+                        let mut it = note_item(&n.name, &n.path);
+                        it.pick = Pick::Note(n.path.clone());
+                        p.items.push(it);
+                    }
+                }
+            }
+            ListKind::CanvasNote => {
+                let Some(v) = self.vault.as_ref() else {
+                    return;
+                };
+                let mut scored: Vec<(i32, usize)> = Vec::new();
+                for (i, n) in v.notes.iter().enumerate() {
+                    if let Some(s) = fuzzy(q, &n.name) {
+                        scored.push((s, i));
+                    }
+                }
+                top_by_score(&mut scored, LIST_MAX, |i| {
+                    v.notes.get(i).map_or("", |n| n.name.as_str())
+                });
+                for (_, i) in &scored {
+                    if let Some(n) = v.notes.get(*i) {
+                        let mut it = note_item(&n.name, &n.path);
+                        it.pick = Pick::Note(n.path.clone());
+                        p.items.push(it);
                     }
                 }
             }
@@ -1496,10 +2809,20 @@ impl App {
                     let q = String::from(p.input.text.trim());
                     self.create_named(&q);
                 } else {
-                    self.open(&path, m.primary);
+                    self.open_file(&path, m.primary);
                 }
             }
-            Pick::Create(name) => self.create_named(&name),
+            Pick::Create(name) => match kind {
+                ListKind::ExtractTo(from) => self.extract_to(&from, &name, true),
+                _ => self.create_named(&name),
+            },
+            Pick::Template(path) => self.insert_template(&path),
+            Pick::Note(path) => match kind {
+                ListKind::MergeInto(from) => self.merge_into(&from, &path),
+                ListKind::ExtractTo(from) => self.extract_to(&from, &path, false),
+                ListKind::CanvasNote => self.canvas_add_note(&path),
+                _ => self.open_file(&path, m.primary),
+            },
             Pick::Run(cmd) => self.run(cmd),
             Pick::MoveInto(folder) => {
                 if let ListKind::MoveTo(path) = kind {
@@ -1551,8 +2874,103 @@ impl App {
                     self.new_folder_in(&f);
                 }
             }
+            Cmd::NewNoteRight => {
+                if self.vault.is_some() {
+                    self.split(false);
+                    let f = self.target_folder();
+                    self.new_note_in(&f);
+                }
+            }
             Cmd::NewTab => self.new_tab(),
-            Cmd::CloseTab => self.close_tab(self.active),
+            Cmd::CloseTab => {
+                // A pinned tab is not closed by the key.
+                if !self.tab().is_some_and(|t| t.pinned) {
+                    self.close_tab(self.active);
+                }
+            }
+            Cmd::CloseOthers => self.close_others(self.active),
+            Cmd::UndoCloseTab => {
+                if let Some(p) = self.closed.pop() {
+                    if self.vault.as_ref().is_some_and(|v| v.note(&p).is_some()) {
+                        self.open_file(&p, true);
+                    }
+                }
+            }
+            Cmd::SplitRight => self.split(false),
+            Cmd::SplitDown => self.split(true),
+            Cmd::TogglePin => self.toggle_pin(self.active),
+            Cmd::ToggleRibbon => {
+                let on = !self.settings.show_ribbon();
+                self.settings
+                    .appearance
+                    .set("showRibbon", crate::json::Value::Bool(on));
+                self.save_settings();
+            }
+            Cmd::ExpandAll => {
+                if let Some(v) = self.vault.as_ref() {
+                    self.explorer.expanded = v.folder_paths().into_iter().filter(|p| !p.is_empty()).collect();
+                    self.explorer.rows_dirty = true;
+                }
+            }
+            Cmd::ShowProperties => self.show_right(RightPane::Properties),
+            Cmd::ShowBookmarks => {
+                self.left = LeftPane::Bookmarks;
+                self.left_open = true;
+            }
+            Cmd::Settings => {
+                self.overlay = Some(Overlay::Settings(SettingsPage::General));
+                self.settings_scroll = 0.0;
+                self.setting_edit = None;
+            }
+            Cmd::Help => self.say("Help is at help.obsidian.md for the app Vault matches; Vault's own notes are in its sample vault"),
+            Cmd::Graph => self.open_graph(None),
+            Cmd::LocalGraph => {
+                if let Some(p) = self.active_path() {
+                    self.open_graph(Some(p));
+                }
+            }
+            Cmd::NewCanvas => self.new_file("Untitled", ".canvas", crate::canvas::Canvas::default().to_text().as_str()),
+            Cmd::NewBase => self.new_file("Untitled", ".base", crate::bases::new_base_text()),
+            Cmd::DailyNote => self.open_daily(0),
+            Cmd::DailyPrev => self.open_daily(-1),
+            Cmd::DailyNext => self.open_daily(1),
+            Cmd::InsertTemplate => {
+                if self.doc().is_some() {
+                    self.open_list(ListKind::Template);
+                }
+            }
+            Cmd::InsertDate => {
+                let s = self.now_local().format(&String::from(self.settings.template_date_format()));
+                self.edit(|d, now| d.insert(&s, now));
+            }
+            Cmd::InsertTime => {
+                let s = self.now_local().format(&String::from(self.settings.template_time_format()));
+                self.edit(|d, now| d.insert(&s, now));
+            }
+            Cmd::MergeFile => {
+                if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                    self.open_list(ListKind::MergeInto(p));
+                }
+            }
+            Cmd::ExtractSelection => {
+                let sel = self.doc().map(Doc::selected_text).unwrap_or_default();
+                if sel.trim().is_empty() {
+                    self.say("Select the text to extract first");
+                } else if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                    self.open_list(ListKind::ExtractTo(p));
+                }
+            }
+            Cmd::Recovery => self.open_recovery(),
+            Cmd::BookmarkFile => self.bookmark_active(),
+            Cmd::BookmarkHeading => self.bookmark_heading(),
+            Cmd::BookmarkSearch => self.bookmark_search(),
+            Cmd::BookmarkGroup => {
+                self.overlay = Some(Overlay::Ask(Ask {
+                    title: String::from("New group"),
+                    input: Input::default(),
+                    purpose: AskFor::BookmarkGroup,
+                }));
+            }
             Cmd::NextTab => {
                 let n = self.tabs.len().max(1);
                 self.select_tab((self.active + 1) % n);
@@ -1597,17 +3015,17 @@ impl App {
             Cmd::ShowTags => self.show_right(RightPane::Tags),
             Cmd::ShowOutline => self.show_right(RightPane::Outline),
             Cmd::Rename => {
-                if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                if let Some(p) = self.active_path() {
                     self.start_rename(&p);
                 }
             }
             Cmd::Delete => {
-                if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                if let Some(p) = self.active_path() {
                     self.ask_delete(&p);
                 }
             }
             Cmd::MoveTo => {
-                if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                if let Some(p) = self.active_path() {
                     self.open_list(ListKind::MoveTo(p));
                 }
             }
@@ -1649,11 +3067,15 @@ impl App {
                     d.select_all();
                 }
             }
-            Cmd::Theme => self.dark = !self.dark,
+            Cmd::Theme => {
+                self.dark = !self.dark;
+                self.settings.set_dark(self.dark);
+                self.save_settings();
+            }
             Cmd::OpenVault => self.host.push(HostRequest::PickVault { create: false }),
             Cmd::CloseVault => self.close_vault(),
             Cmd::Reveal => {
-                if let Some(p) = self.doc().map(|d| d.path.clone()) {
+                if let Some(p) = self.active_path() {
                     self.reveal(&p);
                 }
             }
@@ -1685,41 +3107,65 @@ impl App {
 
     /// A key press. True when the app used it (and should redraw).
     pub fn key(&mut self, key: &str, m: Mods) -> bool {
-        // Chords that work everywhere.
-        if m.primary && !m.alt {
-            let k = lower(key);
-            let cmd = match (k.as_str(), m.shift) {
-                ("o", false) => Some(Cmd::QuickSwitcher),
-                ("p", false) => Some(Cmd::Palette),
-                ("f", true) => Some(Cmd::SearchVault),
-                ("e", true) => Some(Cmd::ShowFiles),
-                ("n", false) => Some(Cmd::NewNote),
-                ("t", false) => Some(Cmd::NewTab),
-                ("w", false) => Some(Cmd::CloseTab),
-                ("s", false) => Some(Cmd::Save),
-                ("\\", false) => Some(Cmd::ToggleLeft),
-                ("\\", true) | ("|", _) => Some(Cmd::ToggleRight),
-                _ => None,
-            };
-            if let Some(cmd) = cmd {
-                if self.vault.is_some() || matches!(cmd, Cmd::Palette) {
-                    if matches!(self.overlay, Some(Overlay::List(_)))
-                        && matches!(cmd, Cmd::QuickSwitcher | Cmd::Palette)
-                    {
-                        self.overlay = None;
-                    }
+        // Hotkeys that work everywhere: the app's defaults, or the ones the
+        // person set in hotkeys.json.
+        if let Some(cmd) = self.hotkey(key, m) {
+            let global = !matches!(
+                cmd,
+                Cmd::Bold
+                    | Cmd::Italic
+                    | Cmd::ToggleTask
+                    | Cmd::InsertLink
+                    | Cmd::Undo
+                    | Cmd::Redo
+                    | Cmd::SelectAll
+                    | Cmd::ToggleReading
+                    | Cmd::Rename
+            );
+            let in_settings = matches!(self.overlay, Some(Overlay::Settings(_)));
+            if global && !in_settings && (self.vault.is_some() || matches!(cmd, Cmd::Palette)) {
+                if matches!(self.overlay, Some(Overlay::List(_)))
+                    && matches!(cmd, Cmd::QuickSwitcher | Cmd::Palette)
+                {
+                    self.overlay = None;
+                }
+                if self.overlay.is_none() || matches!(cmd, Cmd::QuickSwitcher | Cmd::Palette) {
                     self.run(cmd);
                     return true;
                 }
             }
         }
-        if m.ctrl && key == "Tab" {
-            self.run(if m.shift { Cmd::PrevTab } else { Cmd::NextTab });
-            return true;
+        // Cmd+1..8 go to that tab, Cmd+9 to the last.
+        if m.primary && !m.shift && !m.alt && self.overlay.is_none() {
+            if let Some(d) = key
+                .chars()
+                .next()
+                .and_then(|c| c.to_digit(10))
+                .filter(|_| key.len() == 1)
+            {
+                if (1..=9).contains(&d) && !self.tabs.is_empty() {
+                    let i = if d == 9 {
+                        self.tabs.len() - 1
+                    } else {
+                        (d as usize - 1).min(self.tabs.len() - 1)
+                    };
+                    self.select_tab(i);
+                    return true;
+                }
+            }
         }
-        if m.primary && m.alt && matches!(key, "ArrowLeft" | "ArrowRight") {
-            self.navigate(key == "ArrowRight");
-            return true;
+        if matches!(self.overlay, Some(Overlay::Settings(_))) {
+            return self.settings_key(key, m);
+        }
+        if matches!(self.overlay, Some(Overlay::Ask(_))) {
+            return self.ask_key(key, m);
+        }
+        // A canvas has the keyboard while one is showing.
+        if self.overlay.is_none()
+            && self.focus == Focus::Editor
+            && matches!(self.view(), Some(View::Canvas(_)))
+        {
+            return self.canvas_key(key, m);
         }
         // An overlay has the keyboard.
         if let Some(ov) = self.overlay.as_mut() {
@@ -1727,9 +3173,9 @@ impl App {
                 Overlay::Confirm(cf) => {
                     match key {
                         "Enter" => {
-                            let p = cf.path.clone();
+                            let (p, a) = (cf.path.clone(), cf.action.clone());
                             self.overlay = None;
-                            self.delete(&p);
+                            self.confirm(&p, a);
                         }
                         "Escape" => self.overlay = None,
                         _ => {}
@@ -1743,6 +3189,7 @@ impl App {
                     return true;
                 }
                 Overlay::List(_) => return self.list_key(key, m),
+                Overlay::Settings(_) | Overlay::Ask(_) => return true,
             }
         }
         if let Some(r) = self.explorer.rename.as_mut() {
@@ -1870,7 +3317,7 @@ impl App {
                     }
                     RowKind::Note(_) => {
                         if key == "Enter" {
-                            self.open(&p, false);
+                            self.open_file(&p, false);
                         } else if key == "ArrowLeft" {
                             let up = String::from(parent(&p));
                             if !up.is_empty() {
@@ -2045,10 +3492,18 @@ impl App {
     /// Typed text (after the keyboard layout and any input method).
     pub fn text(&mut self, s: &str) {
         if let Some(ov) = self.overlay.as_mut() {
-            if let Overlay::List(p) = ov {
-                p.input.insert(s);
-                self.refill_list();
+            match ov {
+                Overlay::List(p) => {
+                    p.input.insert(s);
+                    self.refill_list();
+                }
+                Overlay::Ask(a) => a.input.insert(s),
+                Overlay::Settings(_) => self.settings_text(s),
+                _ => {}
             }
+            return;
+        }
+        if self.focus == Focus::Editor && self.canvas_text(s) {
             return;
         }
         if let Some(r) = self.explorer.rename.as_mut() {
@@ -2124,7 +3579,7 @@ impl App {
                         self.toggle_folder(&p);
                         self.focus = Focus::Tree;
                     }
-                    RowKind::Note(_) => self.open(&p, m.primary),
+                    RowKind::Note(_) => self.open_file(&p, m.primary),
                 }
             }
             Hit::TreeBlank => {
@@ -2219,12 +3674,111 @@ impl App {
             }
             Hit::ConfirmYes => {
                 if let Some(Overlay::Confirm(cf)) = self.overlay.take() {
-                    self.delete(&cf.path);
+                    self.confirm(&cf.path, cf.action);
                 }
             }
             Hit::ConfirmNo | Hit::Scrim => self.overlay = None,
             Hit::Completion(i) => self.accept_completion(i),
             Hit::LinkNote(name) => self.follow(&name, m.primary),
+            Hit::Pin(i) => self.toggle_pin(i),
+            Hit::Bookmark(place) => self.open_bookmark(&place, m.primary),
+            Hit::Section(0) => self.linked_open = !self.linked_open,
+            Hit::Section(_) => {
+                self.unlinked_open = !self.unlinked_open;
+                if self.unlinked_open {
+                    self.unlinked = None;
+                }
+            }
+            Hit::Unlinked(f, l) => {
+                let found = self.unlinked.as_ref().and_then(|u| {
+                    u.found
+                        .get(f)
+                        .and_then(|(p, ls)| ls.get(l).map(|(n, _)| (p.clone(), *n as usize)))
+                });
+                if let Some((p, line)) = found {
+                    self.open_at(&p, line, 0, 0);
+                }
+            }
+            Hit::LinkMention(f) => self.link_mention(f),
+            Hit::TagRow(i) => {
+                if let Some((tag, _, _, _, _)) = self.tag_rows().get(i).cloned() {
+                    self.search_tag(&tag);
+                }
+            }
+            Hit::TagFold(t) => {
+                if !self.tags_closed.remove(&t) {
+                    self.tags_closed.insert(t);
+                }
+            }
+            Hit::Property(i) => {
+                if let Some((name, _)) = self.all_properties().get(i).cloned() {
+                    let mut q = String::from("[");
+                    q.push_str(&name);
+                    q.push(']');
+                    self.search = Input::with(&q);
+                    self.run_search();
+                    self.left = LeftPane::Search;
+                    self.left_open = true;
+                }
+            }
+            Hit::SettingsNav(page) => {
+                self.setting_edit = None;
+                self.settings_scroll = 0.0;
+                self.overlay = Some(Overlay::Settings(page));
+            }
+            Hit::SettingsRow(i) => self.setting_click(i),
+            Hit::SettingsClose => {
+                self.setting_edit = None;
+                self.overlay = None;
+                self.save_settings();
+            }
+            Hit::VaultMenu => {
+                self.overlay = Some(Overlay::Menu(Menu {
+                    x: 8.0,
+                    y: 0.0,
+                    items: alloc::vec![
+                        (
+                            String::from("Open another vault"),
+                            MenuAction::Run(Cmd::OpenVault)
+                        ),
+                        (
+                            String::from("Close this vault"),
+                            MenuAction::Run(Cmd::CloseVault)
+                        ),
+                        (String::from("Settings"), MenuAction::Run(Cmd::Settings)),
+                    ],
+                }));
+            }
+            Hit::RecoveryPick(i) => {
+                if let Some(View::Recovery(r)) = self.view_mut() {
+                    r.pick = i;
+                }
+            }
+            Hit::RecoveryRestore => self.ask_restore(),
+            Hit::BaseViews => {
+                if let Some(View::Base(b)) = self.view_mut() {
+                    b.choosing_view = !b.choosing_view;
+                }
+            }
+            Hit::BaseView(i) => {
+                if let Some(View::Base(b)) = self.view_mut() {
+                    b.view = i;
+                    b.generation = 0;
+                    b.choosing_view = false;
+                    b.scroll = 0.0;
+                }
+            }
+            Hit::BaseRow(i) => {
+                let p = match self.view() {
+                    Some(View::Base(b)) => b.rows.get(i).cloned(),
+                    _ => None,
+                };
+                if let Some(p) = p {
+                    self.open_file(&p, m.primary);
+                }
+            }
+            Hit::BaseSort(col) => self.base_sort(col),
+            Hit::AskOk => self.ask_ok(),
         }
     }
 
@@ -2237,6 +3791,8 @@ impl App {
             (Some(RowKind::Folder(_)), Some(p)) => {
                 items.push((String::from("New note"), MenuAction::NewNote(p.clone())));
                 items.push((String::from("New folder"), MenuAction::NewFolder(p.clone())));
+                items.push((String::from("New canvas"), MenuAction::NewCanvas(p.clone())));
+                items.push((String::from("New base"), MenuAction::NewBase(p.clone())));
                 items.push((
                     String::from("Move folder to..."),
                     MenuAction::MoveTo(p.clone()),
@@ -2250,6 +3806,11 @@ impl App {
                     String::from("Open in new tab"),
                     MenuAction::OpenInNewTab(p.clone()),
                 ));
+                items.push((
+                    String::from("Open to the right"),
+                    MenuAction::OpenToRight(p.clone()),
+                ));
+                items.push((String::from("Bookmark..."), MenuAction::Bookmark(p.clone())));
                 items.push((
                     String::from("Move file to..."),
                     MenuAction::MoveTo(p.clone()),
@@ -2269,11 +3830,77 @@ impl App {
         self.overlay = Some(Overlay::Menu(Menu { x, y, items }));
     }
 
+    /// A right-click on a tab: what can be done to it.
+    pub fn tab_menu(&mut self, i: usize, x: f32, y: f32) {
+        let Some(t) = self.tabs.get(i) else {
+            return;
+        };
+        let mut items: Vec<(String, MenuAction)> = alloc::vec![
+            (String::from("Close"), MenuAction::CloseTab(i)),
+            (String::from("Close others"), MenuAction::CloseOthers(i)),
+            (
+                String::from(if t.pinned { "Unpin" } else { "Pin" }),
+                MenuAction::TogglePin(i)
+            ),
+            (String::from("Split right"), MenuAction::SplitRight(i)),
+            (String::from("Split down"), MenuAction::SplitDown(i)),
+        ];
+        if self.pane_order().len() > 1 {
+            if t.group.is_some() {
+                items.push((String::from("Unlink tab"), MenuAction::UnlinkTab(i)));
+            } else {
+                items.push((String::from("Link with tab beside"), MenuAction::LinkTab(i)));
+            }
+        }
+        if let Some(p) = t.path() {
+            items.push((
+                String::from("Bookmark..."),
+                MenuAction::Bookmark(String::from(p)),
+            ));
+        }
+        self.overlay = Some(Overlay::Menu(Menu { x, y, items }));
+    }
+
     fn menu_action(&mut self, a: MenuAction) {
         match a {
+            MenuAction::Run(c) => self.run(c),
             MenuAction::NewNote(f) => self.new_note_in(&f),
+            MenuAction::NewCanvas(f) => self.new_file_in(
+                &f,
+                "Untitled",
+                ".canvas",
+                &crate::canvas::Canvas::default().to_text(),
+            ),
+            MenuAction::NewBase(f) => {
+                self.new_file_in(&f, "Untitled", ".base", crate::bases::new_base_text())
+            }
+            MenuAction::OpenToRight(p) => {
+                self.split(false);
+                self.open_file(&p, false);
+            }
+            MenuAction::Bookmark(p) => self.bookmark_path(&p),
+            MenuAction::CloseTab(i) => self.close_tab(i),
+            MenuAction::CloseOthers(i) => self.close_others(i),
+            MenuAction::TogglePin(i) => self.toggle_pin(i),
+            MenuAction::SplitRight(i) => {
+                self.select_tab(i);
+                self.split(false);
+            }
+            MenuAction::SplitDown(i) => {
+                self.select_tab(i);
+                self.split(true);
+            }
+            MenuAction::LinkTab(i) => self.link_tab(i),
+            MenuAction::UnlinkTab(i) => self.unlink_tab(i),
+            MenuAction::RemoveBookmark(place) => {
+                crate::bookmarks::remove(&mut self.bookmarks, &place);
+                self.save_bookmarks();
+            }
+            MenuAction::CardColor(id, c) => self.canvas_color(&id, c),
+            MenuAction::CardRemove(id) => self.canvas_remove(&id),
+            MenuAction::CardOpen(p) => self.open_file(&p, true),
             MenuAction::NewFolder(f) => self.new_folder_in(&f),
-            MenuAction::OpenInNewTab(p) => self.open(&p, true),
+            MenuAction::OpenInNewTab(p) => self.open_file(&p, true),
             MenuAction::Rename(p) => self.start_rename(&p),
             MenuAction::MoveTo(p) => self.open_list(ListKind::MoveTo(p)),
             MenuAction::Delete(p) => self.ask_delete(&p),
@@ -2345,12 +3972,19 @@ impl App {
             self.save_tab(i);
             changed = true;
         }
+        if self.save_other_panes(false) {
+            changed = true;
+        }
+        if self.tick_views(more) {
+            changed = true;
+        }
         // Search first: a person is waiting on it.
         if let (Some(job), Some(v)) = (self.job.as_mut(), self.vault.as_mut()) {
             if !job.done {
-                let tabs = &self.tabs;
+                let (tabs, panes) = (&self.tabs, &self.panes);
                 let open = |p: &str| {
                     tabs.iter()
+                        .chain(panes.iter().flat_map(|x| x.tabs.iter()))
                         .filter_map(|t| t.doc.as_ref())
                         .find(|d| d.path == p && d.modified())
                         .map(Doc::text)
@@ -2385,18 +4019,24 @@ impl App {
                 v.queue_index(p);
             }
         }
-        let mut reload: Vec<(usize, String)> = Vec::new();
-        for (i, t) in self.tabs.iter().enumerate() {
+        let mut reload: Vec<String> = Vec::new();
+        for t in self.all_tabs() {
             if let Some(d) = t.doc.as_ref() {
-                if !d.modified() && changed.contains(&d.path) {
-                    reload.push((i, d.path.clone()));
+                if !d.modified() && changed.contains(&d.path) && !reload.contains(&d.path) {
+                    reload.push(d.path.clone());
                 }
             }
         }
-        for (i, p) in reload {
-            let fresh = self.vault.as_mut().and_then(|v| read_note(v, &p).ok());
-            if let (Some(text), Some(t)) = (fresh, self.tabs.get_mut(i)) {
-                if let Some(d) = t.doc.as_mut() {
+        for p in reload {
+            let Some(text) = self.vault.as_mut().and_then(|v| read_note(v, &p).ok()) else {
+                continue;
+            };
+            for t in self
+                .tabs
+                .iter_mut()
+                .chain(self.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()))
+            {
+                if let Some(d) = t.doc.as_mut().filter(|d| d.path == p) {
                     let mut nd = Doc::new(&d.path, &d.title, &text);
                     nd.mode = d.mode;
                     nd.cur = nd.buf.clamp(d.cur);
@@ -2406,21 +4046,18 @@ impl App {
             }
         }
         // A note gone from disk closes in its tab.
-        let live: Vec<bool> = self
+        let Some(v) = self.vault.as_ref() else {
+            return true;
+        };
+        for t in self
             .tabs
-            .iter()
-            .map(|t| {
-                t.doc.as_ref().is_none_or(|d| {
-                    d.modified()
-                        || self
-                            .vault
-                            .as_ref()
-                            .is_some_and(|v| v.note(&d.path).is_some())
-                })
-            })
-            .collect();
-        for (t, keep) in self.tabs.iter_mut().zip(live) {
-            if !keep {
+            .iter_mut()
+            .chain(self.panes.iter_mut().flat_map(|p| p.tabs.iter_mut()))
+        {
+            if t.doc
+                .as_ref()
+                .is_some_and(|d| !d.modified() && v.note(&d.path).is_none())
+            {
                 t.doc = None;
             }
         }
@@ -2438,7 +4075,7 @@ impl App {
     /// in ms from now; `None` when nothing is waiting.
     pub fn next_due(&self) -> Option<u64> {
         let mut due: Option<u64> = self.status.as_ref().map(|s| s.1);
-        for t in &self.tabs {
+        for t in self.all_tabs() {
             if let Some(s) = t
                 .doc
                 .as_ref()
@@ -2547,6 +4184,16 @@ fn push_rows(v: &Vault, folder: usize, depth: u16, open: &BTreeSet<String>, out:
 
 fn strip_md(name: &str) -> &str {
     name.strip_suffix(".md").unwrap_or(name)
+}
+
+/// A file's name without `.md`, `.canvas` or `.base`.
+pub fn strip_ext(name: &str) -> &str {
+    for ext in [".md", ".canvas", ".base"] {
+        if let Some(n) = name.strip_suffix(ext) {
+            return n;
+        }
+    }
+    name
 }
 
 fn moved_path(p: &str, from: &str, prefix: &str, to: &str) -> Option<String> {

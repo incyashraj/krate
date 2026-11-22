@@ -448,14 +448,36 @@ impl Vault {
 
     /// Make an empty note in `folder`, named from `base`. Its path.
     pub fn create_note(&mut self, folder: &str, base: &str, text: &str) -> Result<String, String> {
-        let path = self.free_name(folder, base, ".md");
+        self.create_file(folder, base, ".md", text)
+    }
+
+    /// Make a file (`ext` is `.md`, `.canvas` or `.base`) in `folder`, named
+    /// from `base`. Its path.
+    pub fn create_file(
+        &mut self,
+        folder: &str,
+        base: &str,
+        ext: &str,
+        text: &str,
+    ) -> Result<String, String> {
+        if !folder.is_empty() && !self.fs.exists(folder) {
+            self.fs.mkdir(folder)?;
+        }
+        let path = self.free_name(folder, base, ext);
         self.fs.write(&path, text)?;
-        let folders: Vec<String> = self
+        let mut folders: Vec<String> = self
             .folders
             .iter()
             .skip(1)
             .map(|f| f.path.clone())
             .collect();
+        let mut d = folder;
+        while !d.is_empty() {
+            if !folders.iter().any(|f| f == d) {
+                folders.push(String::from(d));
+            }
+            d = parent(d);
+        }
         let mut notes: Vec<String> = self.notes.iter().map(|n| n.path.clone()).collect();
         notes.push(path.clone());
         self.build(folders, notes);

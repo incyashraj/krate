@@ -16,7 +16,7 @@ key = "Enter"
 [[step]]
 expect_text = "Spring beds"
 [[step]]
-expect_text = "Linked mentions  3"
+expect_text = "3 backlinks"
 [[step]]
 key = "Primary+ArrowDown"
 [[step]]
@@ -32,4 +32,4 @@ type = "tomatoes"
 [[step]]
 wait_ms = 300
 [[step]]
-expect_text = "2 notes"
+expect_text = "2 results"
