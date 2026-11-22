@@ -3114,6 +3114,10 @@ impl Ui {
                     d.select_range(crate::buffer::Pos::new(pos.line, 0), end);
                 }
                 _ if m.alt && !m.shift && d.mode != Mode::Reading => d.add_caret(pos),
+                // A press inside the selection starts dragging the text.
+                _ if !m.shift && d.selection().is_some_and(|(a, b)| pos > a && pos < b) => {
+                    self.cache.text_drag = true;
+                }
                 _ => {
                     d.extra.clear();
                     d.place(pos, m.shift);
@@ -3237,6 +3241,17 @@ impl Ui {
     }
 
     fn release(&mut self, px: f32, py: f32) {
+        // Selected text dragged in the note drops where the pointer is.
+        if core::mem::take(&mut self.cache.text_drag) {
+            let to = self.editor_pos(px, py).map(|(_, p)| p);
+            let now = self.app.now;
+            if let (Some(to), Some(d)) = (to, self.app.doc_mut()) {
+                if !d.move_selection(to, now) {
+                    d.place(to, false);
+                }
+            }
+            return;
+        }
         let drag = core::mem::replace(&mut self.drag, Drag::None);
         match drag {
             Drag::Row { row, moved, .. } => {

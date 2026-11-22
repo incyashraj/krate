@@ -938,6 +938,19 @@ impl Fences {
         self.lines.get(k.checked_sub(1)?).copied()
     }
 
+    /// The fence line after line `n`, if any.
+    pub fn next_after(&self, n: usize) -> Option<usize> {
+        self.lines
+            .get(self.lines.partition_point(|l| *l <= n))
+            .copied()
+    }
+
+    /// The fence line before line `n`, if any.
+    pub fn prev_before(&self, n: usize) -> Option<usize> {
+        let k = self.before(n);
+        self.lines.get(k.checked_sub(1)?).copied()
+    }
+
     /// Whether fence line `n` opens a block (an even number before it).
     pub fn opens(&self, n: usize) -> bool {
         self.is_fence(n) && self.before(n).is_multiple_of(2)

@@ -926,6 +926,8 @@ pub struct LayCache {
     pub pointer: Option<(f32, f32)>,
     /// The link under the pointer while Cmd is held: the page preview.
     pub preview: Option<widgets::Preview>,
+    /// Selected text is being dragged to a new place.
+    pub text_drag: bool,
 }
 
 const CACHE_MAX: usize = 6_000;

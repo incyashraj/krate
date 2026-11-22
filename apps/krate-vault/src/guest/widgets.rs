@@ -250,6 +250,12 @@ pub enum Widget {
         subs: Vec<(String, Sub)>,
         top: f32,
     },
+    Diagram {
+        d: crate::mermaid::Diagram,
+        x: f32,
+        y: f32,
+        line: usize,
+    },
 }
 
 impl Widget {
@@ -292,6 +298,11 @@ impl Widget {
                 }
             }
             Widget::Image { note: Some(n), .. } => add(n),
+            Widget::Diagram { d, .. } => {
+                for n in &d.nodes {
+                    add(&n.label);
+                }
+            }
             Widget::Math { .. } | Widget::Image { .. } => {}
         }
         s
@@ -387,6 +398,7 @@ pub fn block(cache: &mut LayCache, c: u64, doc: &Doc, span: Span, v: &View) -> R
         SpanKind::Callout => callout(c, doc, span, v.width, &sz),
         SpanKind::Math => math_block(c, doc, span, v.width, &sz),
         SpanKind::Front => properties(c, doc, span, v.width, &sz),
+        SpanKind::Diagram => diagram(c, doc, span, v.width, &sz),
         SpanKind::Embed => match embed {
             Some(e) if e.is_image() => image(&mut cache.env, &e, &folder, span.first, v.width, &sz),
             Some(e) => note_embed(c, &mut cache.env, &e, &folder, span.first, v.width, &sz),
@@ -647,6 +659,35 @@ fn math_block(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> 
     )
 }
 
+fn diagram(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
+    let mut src = String::new();
+    for n in span.first + 1..span.last {
+        src.push_str(doc.line(n));
+        src.push('\n');
+    }
+    let size = 14.0 * sz.body / 16.0;
+    let measure = |s: &str| look::width(c, s, size, 400);
+    match crate::mermaid::flowchart(&src, &measure, size) {
+        Some(d) => {
+            let pad = 12.0 * sz.body / 16.0;
+            // Obsidian sets a diagram at the left of the column.
+            let x = if d.w > width { 0.0 } else { 2.0 };
+            let h = d.h + pad * 2.0;
+            widget_lay(
+                Widget::Diagram {
+                    d,
+                    x,
+                    y: pad,
+                    line: span.first,
+                },
+                h,
+                sz.body,
+            )
+        }
+        None => Rc::new(Lay::hidden(sz.body)),
+    }
+}
+
 fn properties(_c: u64, doc: &Doc, span: Span, _width: f32, sz: &Sizes) -> Rc<Lay> {
     let k = sz.body / 16.0;
     let lines: Vec<&str> = (span.first + 1..span.last).map(|n| doc.line(n)).collect();
@@ -769,6 +810,7 @@ fn note_lines(
                     Some(e) if e.is_image() => Some(image(env, &e, folder, n, width, sz)),
                     _ => None,
                 },
+                SpanKind::Diagram => Some(diagram(c, &d, span, width, sz)),
                 SpanKind::Front => None,
             };
             if let Some(l) = lay {
@@ -1105,6 +1147,105 @@ pub fn draw(
                 draw_sub(c, s, ox, y0, t, resolved, env);
             }
         }
+        Widget::Diagram { d, x, y, .. } => {
+            let (bx, by) = (ox + x, oy + y);
+            let size = 14.0;
+            let edge_ink = t.muted;
+            for e in &d.edges {
+                let (x0, y0, x1, y1) = (bx + e.x0, by + e.y0, bx + e.x1, by + e.y1);
+                let w = if e.thick { 2.6 } else { 1.4 };
+                if e.dotted {
+                    let (dx, dy) = (x1 - x0, y1 - y0);
+                    let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                    let steps = (len / 6.0) as usize;
+                    for i in (0..steps).step_by(2) {
+                        let a = i as f32 / steps as f32;
+                        let b = ((i + 1) as f32 / steps as f32).min(1.0);
+                        look::line(
+                            c,
+                            x0 + dx * a,
+                            y0 + dy * a,
+                            x0 + dx * b,
+                            y0 + dy * b,
+                            w,
+                            edge_ink,
+                        );
+                    }
+                } else {
+                    look::line(c, x0, y0, x1, y1, w, edge_ink);
+                }
+                if e.arrow {
+                    let (dx, dy) = (x1 - x0, y1 - y0);
+                    let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                    let (ux, uy) = (dx / len, dy / len);
+                    let (hx, hy) = (x1 - ux * 8.0, y1 - uy * 8.0);
+                    look::line(c, x1, y1, hx - uy * 4.5, hy + ux * 4.5, 1.6, edge_ink);
+                    look::line(c, x1, y1, hx + uy * 4.5, hy - ux * 4.5, 1.6, edge_ink);
+                }
+                if !e.label.is_empty() {
+                    let lw = look::width(c, &e.label, 12.0, 400);
+                    let (mx, my) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+                    round(
+                        c,
+                        r(mx - lw * 0.5 - 4.0, my - 9.0, lw + 8.0, 18.0),
+                        3.0,
+                        t.code_bg,
+                    );
+                    look::text(c, &e.label, mx - lw * 0.5, my + 4.5, 12.0, 400, t.text);
+                }
+            }
+            for n in &d.nodes {
+                let rc = r(bx + n.x, by + n.y, n.w, n.h);
+                let fillc = t.code_bg;
+                let line = t.muted;
+                match n.shape {
+                    crate::mermaid::Shape::Circle => {
+                        let cx = rc.x + rc.w * 0.5;
+                        let cy = rc.y + rc.h * 0.5;
+                        let p = krate::gfx::types::Point { x: cx, y: cy };
+                        let _ = canvas2d::fill_circle(c, p, rc.w * 0.5, fillc);
+                        let _ = canvas2d::stroke_circle(c, p, rc.w * 0.5, 1.2, line);
+                    }
+                    crate::mermaid::Shape::Diamond => {
+                        let (cx, cy) = (rc.x + rc.w * 0.5, rc.y + rc.h * 0.5);
+                        let steps = (rc.h * 0.5) as usize;
+                        for i in 0..steps {
+                            let f = i as f32 / steps.max(1) as f32;
+                            let half = rc.w * 0.5 * (1.0 - f);
+                            fill(
+                                c,
+                                r(cx - half, cy - rc.h * 0.5 * f - 1.0, half * 2.0, 1.0),
+                                fillc,
+                            );
+                            fill(c, r(cx - half, cy + rc.h * 0.5 * f, half * 2.0, 1.0), fillc);
+                        }
+                        look::line(c, cx, rc.y, rc.right(), cy, 1.2, line);
+                        look::line(c, rc.right(), cy, cx, rc.bottom(), 1.2, line);
+                        look::line(c, cx, rc.bottom(), rc.x, cy, 1.2, line);
+                        look::line(c, rc.x, cy, cx, rc.y, 1.2, line);
+                    }
+                    shape => {
+                        let rad = match shape {
+                            crate::mermaid::Shape::Stadium => rc.h * 0.5,
+                            crate::mermaid::Shape::Round => 8.0,
+                            _ => 3.0,
+                        };
+                        round(c, rc, rad, fillc);
+                        look::outline(c, rc, rad, 1.2, line);
+                    }
+                }
+                let lw = look::width(c, &n.label, size, 400);
+                look::text(
+                    c,
+                    &n.label,
+                    rc.x + (rc.w - lw) * 0.5,
+                    rc.y + rc.h * 0.5 + size * 0.36,
+                    size,
+                    400,
+                    t.text,
+                );
+            }
+        }
         Widget::Footnotes { subs, top } => {
             fill(c, r(ox, oy + top, width, 1.0), t.border);
             for (num, s) in subs {
@@ -1403,6 +1544,7 @@ pub fn press(c: u64, w: &Widget, lx: f32, ly: f32, _width: f32, line: usize) -> 
             Some(Act::Place(Pos::new(*head, *title_col)))
         }
         Widget::Math { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
+        Widget::Diagram { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
         Widget::Props { rows, add_y } => {
             if ly >= *add_y && ly < add_y + 30.0 && lx < 140.0 {
                 return Some(Act::AddProperty);

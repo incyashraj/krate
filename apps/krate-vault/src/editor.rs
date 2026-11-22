@@ -84,6 +84,8 @@ pub enum SpanKind {
     Table,
     Callout,
     Embed,
+    /// A ```mermaid block holding a flowchart.
+    Diagram,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -882,7 +884,7 @@ impl Doc {
         }
         let code = |i: usize| self.fences.in_code(i) || self.fences.is_fence(i);
         if code(n) {
-            return None;
+            return self.diagram_span(n);
         }
         if let Some((first, last)) = self.maths.span(n) {
             return Some(Span {
@@ -965,6 +967,34 @@ impl Doc {
             });
         }
         None
+    }
+
+    /// The ```mermaid flowchart block line `n` (inside code) belongs to.
+    fn diagram_span(&self, n: usize) -> Option<Span> {
+        let open = if self.fences.is_fence(n) {
+            if self.fences.opens(n) {
+                n
+            } else {
+                self.fences.prev_before(n)?
+            }
+        } else {
+            self.fences.opener(n)?
+        };
+        if !md::fence_lang(self.buf.line(open)).eq_ignore_ascii_case("mermaid") {
+            return None;
+        }
+        let close = self.fences.next_after(open)?;
+        let first = (open + 1..close)
+            .map(|i| self.buf.line(i).trim())
+            .find(|l| !l.is_empty() && !l.starts_with("%%"))?;
+        if !(first.starts_with("graph") || first.starts_with("flowchart")) {
+            return None;
+        }
+        Some(Span {
+            kind: SpanKind::Diagram,
+            first: open,
+            last: close,
+        })
     }
 
     /// Whether the caret or a selection touches lines `a..=b`.
@@ -1151,6 +1181,36 @@ impl Doc {
         self.top = n + 1;
         self.top_off = 0.0;
         self.reveal = false;
+    }
+
+    /// Move the selected text to `to` (dragging it), as one undo. False
+    /// when there is nothing selected or `to` is inside the selection.
+    pub fn move_selection(&mut self, to: Pos, now: u64) -> bool {
+        let Some((a, b)) = self.selection() else {
+            return false;
+        };
+        let to = self.buf.clamp(to);
+        if to >= a && to <= b {
+            return false;
+        }
+        let text = self.buf.slice(a, b);
+        self.buf.begin_group(self.cur);
+        // Insert first when the drop is after the text, so `a..b` stays put.
+        let (start, end) = if to > b {
+            let end = self.replace(to, to, &text, now);
+            self.replace(a, b, "", now);
+            let start = follow(to, a, b, a);
+            let end = follow(end, a, b, a);
+            (start, end)
+        } else {
+            self.replace(a, b, "", now);
+            let end = self.replace(to, to, &text, now);
+            (to, end)
+        };
+        self.buf.end_group(end);
+        self.extra.clear();
+        self.select_range(start, end);
+        true
     }
 
     // ---- several carets ---------------------------------------------------------------
@@ -1500,6 +1560,16 @@ mod obsidian_blocks {
     }
 
     #[test]
+    fn mermaid_flowcharts_are_blocks_and_other_code_is_not() {
+        let d = doc("```mermaid\ngraph TD; A-->B;\n```\n```mermaid\nsequenceDiagram\nA->>B: hi\n```\n```js\nx\n```");
+        let s = d.span(1).unwrap();
+        assert_eq!((s.kind, s.first, s.last), (SpanKind::Diagram, 0, 2));
+        assert_eq!(d.span(2).map(|s| s.first), Some(0));
+        assert_eq!(d.span(4), None, "a sequence diagram stays code");
+        assert_eq!(d.span(8), None);
+    }
+
+    #[test]
     fn blocks_follow_edits() {
         let mut d = doc(NOTE);
         // Typing a fence above everything turns the rest to code.
@@ -1572,6 +1642,20 @@ mod obsidian_blocks {
         g.add_caret_vertical(true);
         g.add_caret_vertical(true);
         assert_eq!(g.carets().len(), 3);
+    }
+
+    #[test]
+    fn selected_text_moves_by_dragging() {
+        let mut d = doc("one two three\nfour");
+        d.select_range(Pos::new(0, 4), Pos::new(0, 8));
+        assert!(d.move_selection(Pos::new(1, 4), 0));
+        assert_eq!(d.text(), "one three\nfourtwo ");
+        assert_eq!(d.selected_text(), "two ");
+        assert!(d.move_selection(Pos::new(0, 0), 0));
+        assert_eq!(d.text(), "two one three\nfour");
+        assert!(!d.move_selection(Pos::new(0, 1), 0), "not into itself");
+        d.undo();
+        assert_eq!(d.text(), "one three\nfourtwo ");
     }
 
     #[test]

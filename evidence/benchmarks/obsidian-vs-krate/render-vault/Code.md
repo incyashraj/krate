@@ -19,5 +19,9 @@ const n = [1, 2, 3].map((x) => x * 2); // double
 ```
 
 ```mermaid
-graph TD; A-->B;
+flowchart TD
+  start([Start]) --> check{Ready?}
+  check -->|yes| ship[Ship it]
+  check -->|no| fix(Fix it)
+  fix -.-> check
 ```

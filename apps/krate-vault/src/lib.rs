@@ -49,6 +49,7 @@ pub mod json;
 pub mod links;
 pub mod math;
 pub mod md;
+pub mod mermaid;
 pub mod panes;
 pub mod props;
 pub mod recovery;
