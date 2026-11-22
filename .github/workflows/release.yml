@@ -1321,6 +1321,15 @@ jobs:
       # GitHub's generated list of pull requests follows it. Before this
       # the page was only that list ("test(bundle): cover malformed WASM
       # sections by @..."), and that is what an update showed people.
+      # This job does not check the repository out (it works from the
+      # build artifacts), so fetch just the changelog of the tag being
+      # released. Without it the step failed and v0.6.1 was not published.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          path: source
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
       - name: Release notes from the changelog
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -1330,7 +1339,7 @@ jobs:
             $0 ~ "^## \\[" v "\\]" { on = 1; next }
             on && /^## \[/ { exit }
             on { print }
-          ' CHANGELOG.md > release-notes.md
+          ' source/CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
             echo "Krate $version." > release-notes.md
           fi
