@@ -16,6 +16,14 @@ rust-version = "1.91"
 krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
+# Pictures embedded in notes (PNG and JPEG), decoded in the app: pure Rust,
+# no_std with alloc, so the import check stays krate:*-only and `cargo test`
+# decodes them natively too.
+[dependencies]
+zune-core = { version = "0.5", default-features = false }
+zune-png = { version = "0.5", default-features = false }
+zune-jpeg = { version = "0.5", default-features = false }
+
 # Standalone: excluded from the repo workspace, builds on its own, so it carries
 # an empty workspace table to stop cargo walking up to the repo root manifest.
 [workspace]

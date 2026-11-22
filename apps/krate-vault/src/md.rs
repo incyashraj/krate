@@ -241,6 +241,22 @@ pub struct Style {
     /// Markdown syntax (`**`, `[[`, the `](url)` of a link): shown on the line
     /// the caret is on, hidden everywhere else in live preview.
     pub syntax: bool,
+    /// Inline TeX between `$` signs (the source; drawn as math).
+    pub math: bool,
+    /// `<sup>` and `<sub>`.
+    pub sup: bool,
+    pub sub: bool,
+    /// `<u>`.
+    pub underline: bool,
+    /// `<kbd>`: a key cap.
+    pub kbd: bool,
+    /// A footnote reference `[^1]`, an inline footnote `^[...]`, or a
+    /// definition's label `[^1]:`.
+    pub footnote: bool,
+    /// `%%comment%%`: dimmed while editing, gone in reading view.
+    pub comment: bool,
+    /// A block id `^id` at the end of a line: dimmed, gone in reading view.
+    pub blockid: bool,
 }
 
 /// What a link points at.
@@ -253,6 +269,8 @@ pub enum Target {
     Url(usize, usize),
     /// `#tag`: the tag's range, `#` included.
     Tag(usize, usize),
+    /// `[^id]` or `^[text]`: the label's or the text's range.
+    Footnote(usize, usize),
 }
 
 /// One styled stretch of a line.
@@ -323,6 +341,101 @@ fn closing(s: &[u8], from: usize, delim: &[u8]) -> Option<usize> {
     None
 }
 
+/// The inline HTML tags a note may use that change how text looks, and the
+/// flag each sets. `br` and `span` are recognised and hidden but style
+/// nothing.
+fn html_tag(name: &[u8]) -> Option<u8> {
+    Some(match name {
+        b"u" | b"ins" => 1,
+        b"mark" => 2,
+        b"sub" => 3,
+        b"sup" => 4,
+        b"kbd" => 5,
+        b"b" | b"strong" => 6,
+        b"i" | b"em" => 7,
+        b"s" | b"del" | b"strike" => 8,
+        b"span" | b"font" | b"small" | b"big" | b"abbr" | b"cite" | b"q" => 0,
+        _ => return None,
+    })
+}
+
+fn set_html(st: &mut Style, kind: u8, on: bool) {
+    match kind {
+        1 => st.underline = on,
+        2 => st.mark = on,
+        3 => st.sub = on,
+        4 => st.sup = on,
+        5 => st.kbd = on,
+        6 => st.bold = on,
+        7 => st.italic = on,
+        8 => st.strike = on,
+        _ => {}
+    }
+}
+
+/// An opening tag `<name ...>` at `i`: its name and where it ends.
+fn open_tag(s: &[u8], i: usize) -> Option<(&[u8], usize)> {
+    let rest = s.get(i + 1..)?;
+    let n = rest.iter().take_while(|b| b.is_ascii_alphabetic()).count();
+    if n == 0 {
+        return None;
+    }
+    let name = rest.get(..n)?;
+    let close = rest.iter().position(|b| *b == b'>')?;
+    if close < n
+        || rest
+            .get(n)
+            .is_some_and(|b| !matches!(*b, b'>' | b' ' | b'/'))
+    {
+        return None;
+    }
+    Some((name, i + 1 + close + 1))
+}
+
+/// Whether `s[i]` starts a block id: `^` after a space, then letters,
+/// digits and dashes to the end of the line.
+fn block_id_at(s: &[u8], i: usize) -> bool {
+    if s.get(i) != Some(&b'^') || (i > 0 && s.get(i - 1) != Some(&b' ')) {
+        return false;
+    }
+    let rest = s.get(i + 1..).unwrap_or(&[]);
+    let trimmed = rest
+        .iter()
+        .rposition(|b| *b != b' ')
+        .map_or(&[][..], |e| rest.get(..=e).unwrap_or(&[]));
+    !trimmed.is_empty()
+        && trimmed
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+}
+
+/// The closing `$` of inline math opened at `open` (the byte after it is
+/// where the TeX starts): not after a space or a backslash, and not before
+/// a digit, so `$5 and $6` stays text.
+fn math_close(s: &[u8], from: usize) -> Option<usize> {
+    let first = *s.get(from)?;
+    if first == b' ' || first == b'$' {
+        return None;
+    }
+    let mut j = from + 1;
+    while j < s.len() {
+        let c = s.get(j).copied().unwrap_or(0);
+        if c == b'\\' {
+            j += 2;
+            continue;
+        }
+        if c == b'$' {
+            let before = s.get(j - 1).copied().unwrap_or(b' ');
+            let after = s.get(j + 1).copied().unwrap_or(b' ');
+            if before != b' ' && before != b'$' && after != b'$' && !after.is_ascii_digit() {
+                return Some(j);
+            }
+        }
+        j += 1;
+    }
+    None
+}
+
 /// Style the text of a line from byte `from` (past its block marker).
 /// Every byte from `from` to the end lands in exactly one segment, in order.
 pub fn inline(line: &str, from: usize) -> Vec<Seg> {
@@ -334,6 +447,8 @@ pub fn inline(line: &str, from: usize) -> Vec<Seg> {
     let mut ital_end: Option<usize> = None;
     let mut strike_end: Option<usize> = None;
     let mut mark_end: Option<usize> = None;
+    // Open HTML tags: where each closing tag starts and ends, and its kind.
+    let mut html_open: Vec<(usize, usize, u8)> = Vec::new();
     let mut i = from.min(s.len());
     let mut text_start = i;
     let syntax = |st: Style| Style { syntax: true, ..st };
@@ -386,7 +501,158 @@ pub fn inline(line: &str, from: usize) -> Vec<Seg> {
             text_start = i;
             continue;
         }
+        if let Some(k) = html_open.iter().position(|(at, _, _)| *at == i) {
+            let (_, end, kind) = html_open.remove(k);
+            flush!(i);
+            push(&mut out, i, end, syntax(st), None);
+            set_html(&mut st, kind, false);
+            i = end;
+            text_start = i;
+            continue;
+        }
         match c {
+            b'$' => {
+                let double = s.get(i + 1) == Some(&b'$');
+                let open = if double { 2 } else { 1 };
+                let close = if double {
+                    find_from(s, i + 2, b"$$").filter(|c| *c > i + 2)
+                } else {
+                    math_close(s, i + 1)
+                };
+                if let Some(close) = close {
+                    flush!(i);
+                    let m = Style {
+                        math: true,
+                        ..Style::default()
+                    };
+                    push(&mut out, i, i + open, syntax(m), None);
+                    push(&mut out, i + open, close, m, None);
+                    push(&mut out, close, close + open, syntax(m), None);
+                    i = close + open;
+                    text_start = i;
+                    continue;
+                }
+            }
+            b'%' if s.get(i + 1) == Some(&b'%') => {
+                let cm = Style {
+                    comment: true,
+                    ..Style::default()
+                };
+                flush!(i);
+                match find_from(s, i + 2, b"%%") {
+                    Some(close) => {
+                        push(&mut out, i, i + 2, syntax(cm), None);
+                        push(&mut out, i + 2, close, cm, None);
+                        push(&mut out, close, close + 2, syntax(cm), None);
+                        i = close + 2;
+                    }
+                    None => {
+                        // A comment that runs past the end of the line.
+                        push(&mut out, i, i + 2, syntax(cm), None);
+                        push(&mut out, i + 2, s.len(), cm, None);
+                        i = s.len();
+                    }
+                }
+                text_start = i;
+                continue;
+            }
+            b'[' if s.get(i + 1) == Some(&b'^') => {
+                if let Some(close) = find_from(s, i + 2, b"]") {
+                    let label = s.get(i + 2..close).unwrap_or(b"");
+                    if !label.is_empty() && !label.contains(&b' ') && !label.contains(&b'[') {
+                        flush!(i);
+                        let def = i == 0 && s.get(close + 1) == Some(&b':');
+                        let f = Style {
+                            footnote: true,
+                            ..st
+                        };
+                        let target = Some(Target::Footnote(i + 2, close));
+                        let end = if def { close + 2 } else { close + 1 };
+                        push(&mut out, i, i + 2, syntax(f), target);
+                        push(&mut out, i + 2, close, f, target);
+                        push(&mut out, close, end, syntax(f), target);
+                        i = end;
+                        text_start = i;
+                        continue;
+                    }
+                }
+            }
+            b'^' if s.get(i + 1) == Some(&b'[') => {
+                // An inline footnote: `^[text]`, brackets may nest.
+                let mut depth = 0usize;
+                let mut j = i + 1;
+                let mut close = None;
+                while j < s.len() {
+                    match s.get(j) {
+                        Some(b'[') => depth += 1,
+                        Some(b']') => {
+                            depth -= 1;
+                            if depth == 0 {
+                                close = Some(j);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                if let Some(close) = close.filter(|c| *c > i + 2) {
+                    flush!(i);
+                    let f = Style {
+                        footnote: true,
+                        ..st
+                    };
+                    let target = Some(Target::Footnote(i + 2, close));
+                    push(&mut out, i, i + 2, syntax(f), target);
+                    push(&mut out, i + 2, close, f, target);
+                    push(&mut out, close, close + 1, syntax(f), target);
+                    i = close + 1;
+                    text_start = i;
+                    continue;
+                }
+            }
+            b'^' if block_id_at(s, i) => {
+                flush!(i);
+                push(
+                    &mut out,
+                    i,
+                    s.len(),
+                    Style {
+                        blockid: true,
+                        ..Style::default()
+                    },
+                    None,
+                );
+                i = s.len();
+                text_start = i;
+                continue;
+            }
+            b'<' => {
+                if let Some((name, end)) = open_tag(s, i) {
+                    let lname: Vec<u8> = name.iter().map(u8::to_ascii_lowercase).collect();
+                    if lname == b"br" {
+                        flush!(i);
+                        push(&mut out, i, end, syntax(st), None);
+                        i = end;
+                        text_start = i;
+                        continue;
+                    }
+                    if let Some(kind) = html_tag(&lname) {
+                        let mut closer: Vec<u8> = Vec::from(&b"</"[..]);
+                        closer.extend_from_slice(name);
+                        closer.push(b'>');
+                        if let Some(at) = find_from(s, end, &closer) {
+                            flush!(i);
+                            push(&mut out, i, end, syntax(st), None);
+                            set_html(&mut st, kind, true);
+                            html_open.push((at, at + closer.len(), kind));
+                            i = end;
+                            text_start = i;
+                            continue;
+                        }
+                    }
+                }
+            }
             b'\\' if i + 1 < s.len() => {
                 // An escaped character is plain text; the backslash is syntax.
                 flush!(i);
@@ -863,5 +1129,53 @@ mod tests {
         assert!(f.in_code(5) && !f.in_code(3));
         let rebuilt = Fences::build(gone.iter().copied());
         assert_eq!(rebuilt.lines, f.lines);
+    }
+}
+
+#[cfg(test)]
+mod obsidian_inline {
+    use super::*;
+
+    fn find(line: &str, pred: impl Fn(&Style) -> bool) -> Vec<&str> {
+        inline(line, 0)
+            .into_iter()
+            .filter(|s| pred(&s.style) && !s.style.syntax)
+            .map(|s| &line[s.start..s.end])
+            .collect()
+    }
+
+    #[test]
+    fn math_footnotes_comments_html_and_block_ids() {
+        let l = "Inline $e^{i\\pi}$ and $5 and $6 and $$x$$ end";
+        assert_eq!(find(l, |s| s.math), ["e^{i\\pi}", "x"]);
+        assert_eq!(plain("costs $5 and $6", 0), "costs $5 and $6");
+        let f = "Here[^1] and ^[inline [nested] note] done";
+        assert_eq!(find(f, |s| s.footnote), ["1", "inline [nested] note"]);
+        let def = inline("[^1]: The text.", 0);
+        assert!(def
+            .iter()
+            .any(|s| s.style.footnote && matches!(s.target, Some(Target::Footnote(2, 3)))));
+        let c = "a %%hidden%% b %%open";
+        assert_eq!(find(c, |s| s.comment), ["hidden", "open"]);
+        let h = "x<sup>2</sup> H<sub>2</sub>O <u>u</u> <mark>m</mark> <kbd>Cmd</kbd> a<br>b <b>bold</b>";
+        assert_eq!(find(h, |s| s.sup), ["2"]);
+        assert_eq!(find(h, |s| s.sub), ["2"]);
+        assert_eq!(find(h, |s| s.underline), ["u"]);
+        assert_eq!(find(h, |s| s.mark), ["m"]);
+        assert_eq!(find(h, |s| s.kbd), ["Cmd"]);
+        assert_eq!(find(h, |s| s.bold), ["bold"]);
+        assert_eq!(plain(h, 0), "x2 H2O u m Cmd ab bold");
+        assert_eq!(plain("a <notatag> b", 0), "a <notatag> b");
+        assert_eq!(find("A block. ^abc-1", |s| s.blockid), ["^abc-1"]);
+        assert!(find("x^2 is not an id", |s| s.blockid).is_empty());
+        for line in [l, f, c, h, "<u>unclosed", "$", "%%", "[^", "^[", "a ^"] {
+            let segs = inline(line, 0);
+            let mut at = 0;
+            for s in &segs {
+                assert_eq!(s.start, at, "{line:?}");
+                at = s.end;
+            }
+            assert_eq!(at, line.len());
+        }
     }
 }
