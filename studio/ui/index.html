@@ -1203,6 +1203,21 @@
     </main>
   </div>
 
+  <!-- A newer Krate is ready (app.js, promptForUpdate): asked once per
+       version; Later asks again the next day. -->
+  <div class="sheet-wrap hidden" id="updSheet">
+    <div class="sheet sheet-upd" role="dialog" aria-modal="true" aria-labelledby="updSheetT">
+      <h2 id="updSheetT">A new Krate is ready</h2>
+      <p class="pub-sub" id="updSheetS"></p>
+      <ul class="rep-list" id="updSheetList"></ul>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="updSheetNow">Install and restart</button>
+        <button class="btn btn-ghost" id="updSheetLater">Later</button>
+      </div>
+      <p class="detail-note" id="updSheetNote" aria-live="polite"></p>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="reportSheet">
     <div class="sheet sheet-report">
       <h2>Report an issue</h2>

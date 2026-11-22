@@ -155,42 +155,122 @@ const invoke = async (cmd, args) => {
   return out;
 };
 
-/* One update check per session: newer release -> a quiet chip that opens
- * this machine's installer. No auto-download, no nagging; the person
- * clicks when they want it. */
-(async function () {
-  // Desktop only. In a browser there is nothing to update: the tab is always
-  // current, and the chip offered a .dmg or .exe to somebody who had not
-  // installed anything -- then did nothing when clicked, because opening it
-  // needs the desktop bridge.
+/* A newer Krate: ask, once per version, the way an app people like asks.
+ *
+ * When a newer release is out, Studio puts up "Install and restart" or
+ * "Later". Later (or closing it) asks again the next day, never sooner;
+ * installing downloads the verified installer (install_update) and
+ * restarts into it. The chip in the bar stays as the way back to the same
+ * question. Checked at start and every six hours for a Studio left open.
+ * Never in a browser (the tab is always current) and never on a computer
+ * whose organisation manages updates (IC-949): the shell answers those
+ * with "Your organisation ..." and the question is not asked. */
+const UPDATE_PROMPT_KEY = "krate.update.prompt";
+const UPDATE_REASK_MS = 24 * 3600 * 1000;
+
+function updatePromptDue(latest) {
+  try {
+    const seen = JSON.parse(localStorage.getItem(UPDATE_PROMPT_KEY) || "null");
+    return !(seen && seen.v === latest && Date.now() < Number(seen.until || 0));
+  } catch (e) { return true; }
+}
+
+function snoozeUpdatePrompt(latest) {
+  try {
+    localStorage.setItem(UPDATE_PROMPT_KEY, JSON.stringify({ v: latest, until: Date.now() + UPDATE_REASK_MS }));
+  } catch (e) { /* storage refused: it may ask again next start, which is still right */ }
+}
+
+/// A release body's lines a person can act on (the same rule as Settings).
+function releaseNoteLines(body) {
+  const MACHINERY = /https?:\/\/|@[\w-]+|\(#\d+\)|#\d+\b|full changelog|^v?\d+\.\d+/i;
+  return String(body || "")
+    .split("\n")
+    .map((l) => l.replace(/^[-*]\s*/, "").trim())
+    .map((l) => l.replace(/\s+by\s+@[\w-]+.*$/i, "").trim())
+    .filter((l) => l && !l.startsWith("#") && l.length < 120)
+    .filter((l) => !MACHINERY.test(l))
+    .slice(0, 4);
+}
+
+function openUpdatePrompt(latest, mine, notes) {
+  const sheet = $("updSheet");
+  if (!sheet) return;
+  // Asked now: the next ask is tomorrow at the soonest, whatever happens.
+  snoozeUpdatePrompt(latest);
+  $("updSheetT").textContent = `Krate ${latest} is ready`;
+  $("updSheetS").textContent = mine ? `You have ${mine}. Your apps and sessions stay as they are.` : "Your apps and sessions stay as they are.";
+  const lines = releaseNoteLines(notes);
+  $("updSheetList").innerHTML = (lines.length ? lines : ["Fixes and improvements"]).map((l) => `<li>${escapeHtml(l)}</li>`).join("");
+  const now = $("updSheetNow");
+  const later = $("updSheetLater");
+  const note = $("updSheetNote");
+  note.textContent = "";
+  now.disabled = false;
+  later.disabled = false;
+  const close = () => sheet.classList.add("hidden");
+  later.onclick = close;
+  now.onclick = async () => {
+    now.disabled = true;
+    later.disabled = true;
+    note.textContent = `Downloading Krate ${latest}…`;
+    try {
+      await invoke("install_update", { version: latest });
+    } catch (err) {
+      const words = String(err && err.message ? err.message : err).replace(/^error:\s*/i, "");
+      note.textContent = /^Your organisation/.test(words) ? words : `It did not download: ${words}. Try again, or later from Settings.`;
+      now.disabled = false;
+      later.disabled = false;
+      return;
+    }
+    // A restart in the middle of a build would throw the build away: wait
+    // for it, and say so.
+    let waited = false;
+    for (;;) {
+      let busy = false;
+      try { busy = await invoke("build_alive"); } catch (e) { busy = false; }
+      if (!busy) break;
+      if (!waited) note.textContent = "Downloaded. A build is running: Krate restarts as soon as it finishes.";
+      waited = true;
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    note.textContent = "Restarting…";
+    invoke("restart_for_update").catch((err) => {
+      note.textContent = `Could not restart: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Quit Krate and open it again to finish.`;
+      later.disabled = false;
+    });
+  };
+  sheet.onclick = (e) => { if (e.target === sheet && !now.disabled) close(); };
+  sheet.classList.remove("hidden");
+}
+
+async function checkForNewerKrate() {
   if (!tauri) return;
   try {
-    const mine = await invoke("studio_version");
+    const mine = String(await invoke("studio_version")).replace(/^v/, "");
     // Through the shell, as Settings does: the window's CSP blocks a direct
-    // fetch, so this check never once saw a newer release (K-994).
+    // fetch, so a check from here never once saw a newer release (K-994).
     const rel = await invoke("latest_release");
     const latest = String((rel && (rel.tag || rel.tag_name)) || "").replace(/^v/, "");
-    if (!latest || latest === mine) return;
-    const newer = isNewerVersion(latest, mine);
-    if (!newer) return;
-    const ua = navigator.userAgent;
-    const file = ua.includes("Windows")
-      ? `krate-studio-${latest}-windows-x64-setup.exe`
-      : ua.includes("Linux") && !ua.includes("Android")
-        ? `krate-studio-${latest}-linux-x86_64.AppImage`
-        : `krate-studio-${latest}-universal.dmg`;
+    if (!latest || latest === mine || !isNewerVersion(latest, mine)) return;
     const chip = $("updateChip");
     chip.textContent = `Update to v${latest}`;
     chip.classList.remove("hidden");
     // And the bell says there is something to read.
     $("sideBellDot")?.classList.remove("hidden");
-    chip.addEventListener("click", () => {
-      invoke("open_external", {
-        url: `https://github.com/incyashraj/krate/releases/download/v${latest}/${file}`,
-      }).catch(() => {});
-    });
+    chip.onclick = () => openUpdatePrompt(latest, mine, rel.body);
+    if (!updatePromptDue(latest)) return;
+    // Never on top of another sheet (the welcome, a plan): wait for a clear screen.
+    const ask = () => {
+      const open = [...document.querySelectorAll(".sheet-wrap")].some((s) => !s.classList.contains("hidden"));
+      if (open) { setTimeout(ask, 30000); return; }
+      if (updatePromptDue(latest)) openUpdatePrompt(latest, mine, rel.body);
+    };
+    setTimeout(ask, 4000);
   } catch (e) { /* the check is a courtesy, never a failure */ }
-})();
+}
+checkForNewerKrate();
+setInterval(checkForNewerKrate, 6 * 3600 * 1000);
 
 /* The OS shapes the chrome: macOS keeps its traffic lights (the bar reserves
  * their run), Windows loses the native frame and gets our three buttons,
