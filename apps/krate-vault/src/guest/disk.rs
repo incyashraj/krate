@@ -1,8 +1,9 @@
 //! A vault on disk, through Krate's fs calls.
 //!
 //! Two ways in. A folder the person picked is reached through
-//! `picked/<token>/`: the pick is the grant, for this run only, so the
-//! manifest asks for no fs capability at all. An automated run names a
+//! `picked/<token>/`: the pick is the grant, so the manifest asks for no
+//! fs capability at all. On a computer Krate keeps the pick for this app,
+//! and Vault reopens it on the next run from the saved token. An automated run names a
 //! folder inside the app's own folder instead (`vault=./vault`), which
 //! needs the optional `fs.*:./vault/**` grants a run gives by name.
 
@@ -13,8 +14,9 @@ use alloc::vec::Vec;
 use krate::bindings::krate::fs::files::{self, OpenMode};
 use krate::fs;
 
-/// The most one read or write call carries; the host refuses a single
-/// request over 8 MiB, and a 200,000-line note is bigger than that.
+/// The most one read or write call carries. Krate 0.6.1 refused a single
+/// request over 8 MiB (K-1335, fixed since), and a 200,000-line note is
+/// bigger than that, so Vault sends pieces either way.
 const CHUNK: usize = 4 << 20;
 /// How often to look for changes made outside the app. The runtime's
 /// watch is a scan of the folder, so this is a cost paid while idle.

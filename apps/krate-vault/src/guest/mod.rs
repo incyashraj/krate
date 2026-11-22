@@ -17,6 +17,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use editor::{LayCache, Shown, View};
+use krate::bindings::krate::store::kv as store_kv;
 use krate::gfx::canvas2d;
 use krate::layout::{Look, Rect, Said};
 #[allow(unused_imports)]
@@ -2391,6 +2392,7 @@ impl Ui {
                     };
                     match krate::ui::dialog::open_folder(self.win, title) {
                         Ok(Some(folder)) => {
+                            remember_vault(&folder.token, &folder.name);
                             let fs = disk::DiskFs::picked(&folder.token);
                             let mut v = Vault::open(&folder.name, Box::new(fs));
                             if create && v.note_count() == 0 {
@@ -2526,6 +2528,11 @@ impl krate::Guest for Component {
             ui.app.open_vault(v);
         } else if raw.split('\n').any(|a| a == "sample") {
             ui.app.open_vault(crate::sample::vault());
+        } else if let Some((token, name)) = last_vault() {
+            // Reopen the vault from last time, as a notes app does.
+            let v = Vault::open(&name, Box::new(disk::DiskFs::picked(&token)));
+            ui.mark("t_vault_listed_ms");
+            ui.app.open_vault(v);
         }
         if let Some(note) = arg(&raw, "open") {
             if ui.app.vault.is_some() {
@@ -2746,3 +2753,27 @@ impl krate::Guest for Component {
 }
 
 krate::export!(Component);
+
+/// Where the vault the person picked last is remembered: its folder token
+/// and display name. On a computer Krate keeps a picked folder for this app,
+/// so the same token opens it on the next run with no dialog (K-1336).
+const LAST_VAULT: &str = "last-vault";
+
+fn remember_vault(token: &str, name: &str) {
+    let mut v = String::from(token);
+    v.push('\n');
+    v.push_str(name);
+    let _ = store_kv::set(LAST_VAULT, v.as_bytes());
+}
+
+/// The vault picked last time, if Krate still lets this app reach it: the
+/// folder is there and the person has not taken it back.
+fn last_vault() -> Option<(String, String)> {
+    let bytes = store_kv::get(LAST_VAULT).ok()??;
+    let text = String::from_utf8(bytes).ok()?;
+    let (token, name) = text.split_once('\n')?;
+    let mut root = String::from("picked/");
+    root.push_str(token);
+    krate::fs::list(&root).ok()?;
+    Some((String::from(token), String::from(name)))
+}

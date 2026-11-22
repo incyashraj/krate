@@ -11,11 +11,17 @@ rationale = "Open the Vault window"
 required = true
 
 # The person picks the folder that is their vault, and the pick is the
-# grant: every note is read and written through picked/<token>/ for this
-# run only, so Vault can touch nothing outside the folder they chose.
+# grant: every note is read and written through picked/<token>/, so Vault
+# can touch nothing outside the folder they chose. Krate keeps the pick for
+# this app, so the vault opens again next time.
 [[capabilities]]
 cap = "ui.dialog:open-folder"
-rationale = "Open a folder of Markdown notes as your vault -- Vault can read and save only inside it, and only while it is open"
+rationale = "Open a folder of Markdown notes as your vault -- Vault can read and save only inside it"
+required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember which vault you opened, so it opens again next time"
 required = true
 
 # Automated and benchmark runs, which cannot answer a folder picker: the
