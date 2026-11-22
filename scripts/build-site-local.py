@@ -82,8 +82,20 @@ def main() -> int:
             shutil.copy2(src, dst)
 
     script = "set -e\n"
+    # KRATE_SITE_QUICK=1 (ship-site.sh --quick): the checks are left to CI's
+    # build of the same commit. Each check line becomes `:` rather than going,
+    # so an if/then around one stays valid shell. Only lines that check: the
+    # site's own tests, self-tests and --check runs. Nothing that writes a file.
+    quick = os.environ.get("KRATE_SITE_QUICK") == "1"
+    check_line = re.compile(
+        r"^(\s*)(node docs/landing/studio/\S+-test\.mjs|node scripts/test-\S+\.mjs(\s+--self-test)?"
+        r"|python3 scripts/test-\S+\.py|python3 scripts/\S+\.py --self-test|python3 scripts/\S+\.py --check"
+        r"|python3 scripts/site-seo\.py check \S+.*)\s*$"
+    )
     for name in STEPS:
         block = run_block(name)
+        if quick:
+            block = "\n".join(check_line.sub(r"\1:", line) for line in block.split("\n"))
         if name == "Assemble site" and os.environ.get("KRATE_BIN"):
             block = block.replace("cargo build --release -p krate-cli\n",
                                   "echo 'using KRATE_BIN for the store shelf'\n")

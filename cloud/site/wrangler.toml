@@ -1,0 +1,22 @@
+# krate.tech, served by Cloudflare static assets (IC-997).
+#
+# No code: the Worker is the built site and nothing else. scripts/ship-site.sh
+# builds it into .site (exactly as the deploy does) and uploads only the files
+# that changed, so a change is live within a minute instead of the 8 to 12 a
+# GitHub Pages build takes.
+#
+# The same paths as GitHub Pages served: /faq and /faq/ both open faq/index.html,
+# /about.html opens about.html.
+name = "krate-site"
+compatibility_date = "2026-11-01"
+workers_dev = true
+# The address people use. Added once the founder has moved the DNS records for
+# krate.tech off GitHub Pages; until then the site answers on workers.dev only.
+# routes = [
+#   { pattern = "krate.tech", custom_domain = true },
+# ]
+
+[assets]
+directory = ".site"
+html_handling = "auto-trailing-slash"
+not_found_handling = "none"

@@ -1,0 +1,18 @@
+# The files Cloudflare has no type for, sent as GitHub Pages sent them, so a
+# download is a download (IC-997). ship-site.sh copies this into the site.
+/*.krate
+  Content-Type: application/octet-stream
+/*.ps1
+  Content-Type: application/octet-stream
+/*.mobileconfig
+  Content-Type: application/octet-stream
+/*.plist
+  Content-Type: application/octet-stream
+/*.reg
+  Content-Type: application/octet-stream
+/*.admx
+  Content-Type: application/octet-stream
+/*.adml
+  Content-Type: application/octet-stream
+/CNAME
+  Content-Type: application/octet-stream
