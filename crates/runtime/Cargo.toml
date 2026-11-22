@@ -177,12 +177,17 @@ dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "o
 block2 = "0.6.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# krate:ui/spelling (K-1340): the Hunspell dictionaries installed for the
+# person's language, read by a pure-Rust Hunspell reader (MPL-2.0).
+spellbook = "0.4.2"
 krate-adapter-linux = { path = "../adapter-linux" }
 # Camera capture through V4L2. Needs the kernel headers (libv4l-dev) at build
 # time, which is why this cannot be cross-checked from a Mac.
 nokhwa = { version = "0.10", default-features = false, features = ["input-v4l"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# krate:ui/spelling (K-1340): the Mac's own spell checker.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSSpellChecker"] }
 krate-adapter-macos = { path = "../adapter-macos" }
 # Camera capture. Same objc2 family the macOS window adapter already uses, so
 # there is one Objective-C runtime in the tree rather than two. Only the
@@ -204,6 +209,8 @@ block2 = "0.6.2"
 directories-next = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# krate:ui/spelling (K-1340): Windows' own spell-checking API.
+windows = { version = "0.62", features = ["Win32_Globalization", "Win32_System_Com"] }
 krate-adapter-windows = { path = "../adapter-windows" }
 # ShellExecuteW, so opening a link does not go through a command interpreter.
 # `cmd /C start` was passing app-controlled URL text to the shell, and every

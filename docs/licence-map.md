@@ -70,11 +70,12 @@ which one, so the question is not re-derived.
 | r-efi 5.3.0 | Apache-2.0, LGPL-2.1-or-later, MIT | MIT |
 | r-efi 6.0.0 | Apache-2.0, LGPL-2.1-or-later, MIT | MIT |
 | serialport 4.10.1 | MPL-2.0 | MPL-2.0 |
+| spellbook 0.4.2 | MPL-2.0 | MPL-2.0 |
 | unescaper 0.1.10 | GPL-3.0-only, MIT | MIT |
 
 ## Dependencies by the licence relied on
 
-648 crate versions. Allow list order (deny.toml): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unicode-3.0, Unicode-DFS-2016, CC0-1.0, Zlib, OpenSSL, CDLA-Permissive-2.0, BSL-1.0, Unlicense.
+649 crate versions. Allow list order (deny.toml): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, Unicode-3.0, Unicode-DFS-2016, CC0-1.0, Zlib, OpenSSL, CDLA-Permissive-2.0, BSL-1.0, Unlicense.
 
 ### MIT (551)
 
@@ -112,10 +113,10 @@ webpki-root-certs 1.0.11, webpki-roots 0.26.11, webpki-roots 1.0.11
 
 clipboard-win 5.4.1, error-code 3.3.2
 
+### MPL-2.0 (2)
+
+serialport 4.10.1, spellbook 0.4.2
+
 ### CC0-1.0 (1)
 
 hexf-parse 0.2.1
-
-### MPL-2.0 (1)
-
-serialport 4.10.1

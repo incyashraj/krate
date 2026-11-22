@@ -817,6 +817,9 @@ export function buildImports(ctx) {
       throw new HostError({ tag: 'unavailable', val: 'A browser tab has no Trash. Open the app in Krate on your computer to use it.' });
     },
   };
+  // Spelling (K-1340): a tab cannot reach the computer's spell checker, so
+  // it says there is none and nothing is ever marked.
+  impl['krate:ui/spelling'] = { available: () => false, check: () => [], suggest: () => [], learn() {} };
   impl['krate:gfx/canvas-images'] = {
     keep: (c, w, h, rgba) => BigInt(unwrap(ui.c_keep(c, w, h, rgba))),
     draw: (c, image, a) => g(ui.c_draw_kept(c, image, geo(a))),

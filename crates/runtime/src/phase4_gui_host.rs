@@ -1258,6 +1258,32 @@ fn modifiers_to_phase4(m: ui3::types::Modifiers) -> ui4::types::Modifiers {
     }
 }
 
+/// The computer's spell checker (krate:ui/spelling, K-1340).
+impl ui4::spelling::Host for Phase3GuiHost {
+    fn available(&mut self) -> wasmtime::Result<bool> {
+        Ok(crate::spelling::available())
+    }
+
+    fn check(&mut self, text: String) -> wasmtime::Result<Vec<ui4::spelling::Misspelling>> {
+        Ok(crate::spelling::check(&text)
+            .into_iter()
+            .map(|m| ui4::spelling::Misspelling {
+                start: m.start,
+                len: m.len,
+            })
+            .collect())
+    }
+
+    fn suggest(&mut self, word: String) -> wasmtime::Result<Vec<String>> {
+        Ok(crate::spelling::suggest(&word))
+    }
+
+    fn learn(&mut self, word: String) -> wasmtime::Result<()> {
+        crate::spelling::learn(&word);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// K-1343: a sound or video file in a folder the person picked plays;

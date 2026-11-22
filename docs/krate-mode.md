@@ -1085,6 +1085,10 @@ takes this path, so any of them is a model for the wiring.
 - `print::add-page: func(window: u64) -> result<u32, ui-error>`
 - `print::finish: func(window: u64, title: string) -> result<print-outcome, ui-error>`
 - `trash::move-to-trash: func(path: string) -> result<_, trash-error>`
+- `spelling::available: func() -> bool`
+- `spelling::check: func(text: string) -> list<misspelling>`
+- `spelling::suggest: func(word: string) -> list<string>`
+- `spelling::learn: func(word: string)`
 
 ## `audio`
 

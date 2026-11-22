@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 84 boundaries reviewed, 75 of them WIT interfaces (75 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 47 optional.
+- 85 boundaries reviewed, 76 of them WIT interfaces (76 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 48 optional.
 - 8 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -89,6 +89,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:ui@0.1.0/screen` | wit | how a window's screen is described: its size classes, touch or pointer, and the edges something else covers | every layout decision; the classes are information, not a layout | canvas-size and the app's own breakpoints | no | -- |
 | `krate:ui@0.1.0/share` | wit | handing a text, a link and files (name and bytes) to the system's share sheet, and hearing only sent or cancelled | what to share and when; where it goes is the person's pick | save-file and the clipboard, which already exist | no | -- |
 | `krate:ui@0.1.0/sign-in` | wit | an OAuth 2 PKCE pair and the system sign-in sheet that returns the address a service sends the person back to | which service, its client id, scopes and redirect, when to ask, how to trade the code and where to keep the token | open-url to the browser and a code the person pastes back | no | -- |
+| `krate:ui@0.1.0/spelling` | wit | that an editor marks the words the person's own spell checker marks, in their language with the words they taught it, and that nothing leaves the computer | which text to check, how to mark it, and when to offer corrections | ship a word list of the app's own | no | -- |
 | `krate:ui@0.1.0/text-entry` | wit | showing and hiding the system's on-screen keyboard for a window; typing arrives as ordinary text and key events | when a field wants text, and drawing the field and its caret | the raw text and key events, the same as a physical keyboard's | yes | platform |
 | `krate:ui@0.1.0/touch` | wit | every finger on a touch screen, by a stable id, in logical pixels, cleared when the window loses focus | what each finger does: a stick, a look, a button, a gesture | the raw finger positions, unfiltered | yes | platform |
 | `krate:ui@0.1.0/trash` | wit | that a deleted file can be put back from the computer's own Trash, and that only a path the app could already delete can go there | which files to delete, when to ask first, and whether to keep its own bin where there is no Trash | remove the file with fs.files.remove-file, or move it to a folder of the app's own | no | -- |

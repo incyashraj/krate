@@ -695,6 +695,12 @@ Turned text -- a tab title up its spine, a chart's axis label: \
 turns it a quarter clockwise (3: anticlockwise), as sharp as level text; \
 `at` is the top-left of the turned box (the measured box, width and \
 height swapped).\n\n\
+Spelling for a text editor of the app's own: \
+`krate::ui::spelling::check(text)` lists the words the computer's spell \
+checker does not know (`start`, `len` in UTF-8 bytes) -- underline them -- \
+`suggest(word)` gives corrections best first and `learn(word)` is \
+\"Add to dictionary\". `available()` is false in a browser tab or on a \
+phone: then mark nothing. Check the lines on screen, not the whole file.\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \
 `draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \

@@ -103,6 +103,8 @@ pub mod phase3_gui_host;
 pub mod phase4_gui_bindings;
 pub mod phase4_gui_host;
 mod print_host;
+#[cfg(feature = "phase2-bindings")]
+mod spelling;
 // Programs on the computer (krate:process, IC-977): desktop only.
 #[cfg(all(
     feature = "phase2-bindings",
@@ -1831,6 +1833,8 @@ impl Runtime {
         // Phase 4 only: the computer's Trash (K-1337), served beside the
         // fs calls so the same path rules and fs.remove check decide it.
         link_phase2!(ui4::trash);
+        // Phase 4 only: the computer's spell checker (K-1340).
+        link_gui!(ui4::spelling);
         // Phase 4 only: notifications replaced and taken back by id (IC-271).
         link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).

@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, text_entry, touch, trash, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -558,6 +558,31 @@ pub mod ui {
             callback_scheme: &str,
         ) -> Result<alloc::string::String, SignInError> {
             crate::bindings::krate::ui::sign_in::start(window, authorize_url, callback_scheme)
+        }
+    }
+    /// `krate:ui/spelling`.
+    pub mod spelling {
+        pub use crate::bindings::krate::ui::spelling::Misspelling;
+
+        /// Whether a spell checker is here at all.
+        pub fn available() -> bool {
+            crate::bindings::krate::ui::spelling::available()
+        }
+
+        /// The words in `text` the checker does not know.
+        pub fn check(text: &str) -> alloc::vec::Vec<Misspelling> {
+            crate::bindings::krate::ui::spelling::check(text)
+        }
+
+        /// Corrections for one word, best first.
+        pub fn suggest(word: &str) -> alloc::vec::Vec<alloc::string::String> {
+            crate::bindings::krate::ui::spelling::suggest(word)
+        }
+
+        /// Teach the checker a word ("Add to dictionary"): it is no longer marked,
+        /// here and in the person's other apps that share the checker.
+        pub fn learn(word: &str) {
+            crate::bindings::krate::ui::spelling::learn(word)
         }
     }
     /// `krate:ui/text_entry`.

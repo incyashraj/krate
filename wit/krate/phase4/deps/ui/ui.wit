@@ -1504,3 +1504,30 @@ interface trash {
   /// everything in it, as one item the person can put back.
   move-to-trash: func(path: string) -> result<_, trash-error>;
 }
+
+/// Spelling, by the computer's own spell checker (K-1340): the words an
+/// editor should underline and the corrections to offer -- the same the
+/// person's other apps show, in their language, with the words they taught
+/// it. Nothing leaves the computer and no permission is asked. Where there
+/// is no checker (a browser tab, a phone, a Linux machine with no
+/// dictionary) `available` is false and nothing is ever marked.
+interface spelling {
+  /// A word the checker does not know, as UTF-8 byte offsets into the text
+  /// that was checked.
+  record misspelling {
+    /// Where the word starts, in bytes.
+    start: u32,
+    /// How long it is, in bytes.
+    len: u32,
+  }
+
+  /// Whether a spell checker is here at all.
+  available: func() -> bool;
+  /// The words in `text` the checker does not know.
+  check: func(text: string) -> list<misspelling>;
+  /// Corrections for one word, best first.
+  suggest: func(word: string) -> list<string>;
+  /// Teach the checker a word ("Add to dictionary"): it is no longer marked,
+  /// here and in the person's other apps that share the checker.
+  learn: func(word: string);
+}

@@ -2922,6 +2922,7 @@ dependencies = [
  "nokhwa",
  "nusb",
  "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "objc2-av-foundation",
  "objc2-core-media",
  "objc2-core-video",
@@ -2936,6 +2937,7 @@ dependencies = [
  "serde_json",
  "serialport",
  "sha2",
+ "spellbook",
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
@@ -2946,6 +2948,7 @@ dependencies = [
  "wasmtime",
  "wat",
  "whisper-rs",
+ "windows",
  "windows-sys 0.61.2",
  "wit-parser 0.244.0",
 ]
@@ -5132,6 +5135,16 @@ dependencies = [
  "web-sys",
  "windows-sys 0.61.2",
  "x11rb",
+]
+
+[[package]]
+name = "spellbook"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d204abcbdf8e88729306a8d0ca01a79d8a49969fe1f84696909d6dbc4321c1a"
+dependencies = [
+ "foldhash 0.2.0",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
