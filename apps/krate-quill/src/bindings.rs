@@ -47261,7 +47261,9 @@ pub mod krate {
                 pub name: _rt::String,
                 /// Prefix paths with `picked/<token>/` to reach files inside it through
                 /// the ordinary fs calls -- list, read, write, mkdir, remove all work
-                /// under that prefix, and only there.
+                /// under that prefix, and only there. On a computer it works on this
+                /// app's later runs too, until the folder is gone or the person takes it
+                /// back; elsewhere it lasts for the run.
                 pub token: _rt::String,
             }
             impl ::core::fmt::Debug for ChosenFolder {
@@ -47905,10 +47907,16 @@ pub mod krate {
             /// This is how an app reaches a real folder of theirs: not by naming a
             /// path (no path can be named), and not by asking for everything, but by
             /// the person picking one -- and the pick IS the grant. The app can then
-            /// use every fs call under `picked/<token>/...` for this run: list what
-            /// is there, read files, write results, make subfolders. The grant ends
-            /// with the run; nothing about the folder's location is learnable; and a
-            /// tidy-my-folder app needs exactly this and no fs capability at all.
+            /// use every fs call under `picked/<token>/...`: list what is there,
+            /// read files, write results, make subfolders. On a computer the grant is
+            /// kept for this app: the same token works on its later runs until the
+            /// folder is gone or the person takes it back (in a browser tab or on a
+            /// phone it lasts for the run), so an app that reopens its folder (a
+            /// notes vault, a photo library) saves the token and lists
+            /// `picked/<token>` at start, asking again only when that fails. Nothing
+            /// about the folder's location is learnable, no other app can use the
+            /// token, and a tidy-my-folder app needs exactly this and no fs
+            /// capability at all.
             ///
             /// `none` means they cancelled, which is a normal outcome and not an
             /// error. Requires the `ui.dialog:open-folder` capability.
