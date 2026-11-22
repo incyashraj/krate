@@ -2518,7 +2518,8 @@ impl fs::watch::Host for Phase2Host<'_> {
             Ok(entries) => entries,
             Err(err) => return Ok(Err(bridge::fs_error_to_wit(err))),
         };
-        Ok(Ok(self.watches.start(&path, entries)))
+        let host = self.dispatcher().fs_host_path(&path);
+        Ok(Ok(self.watches.start(&path, entries, host.as_deref())))
     }
 
     fn changes(

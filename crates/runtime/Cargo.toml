@@ -146,6 +146,10 @@ portable-pty = "0.9.0"
 # the Recycle Bin on Windows, the freedesktop Trash on Linux -- so a file an
 # app deletes can be put back. MIT; one call per system.
 trash = "5"
+# krate:fs/watch: the system's own change notices (FSEvents, inotify,
+# ReadDirectoryChangesW) say WHEN to look, so a watched folder that did
+# not change costs no scan. CC0-1.0.
+notify = { version = "9", default-features = false, features = ["macos_fsevent"] }
 # krate:serial (IC-985): a serial device the person picks. serialport
 # (MPL-2.0) opens, configures and lists ports on all three systems; the
 # libudev feature is off so a Linux build needs no system library (the list

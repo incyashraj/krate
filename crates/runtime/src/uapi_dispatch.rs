@@ -334,6 +334,11 @@ pub trait FsAdapter {
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn rename(&self, from: &str, to: &str) -> std::result::Result<(), AdapterError>;
+    /// The folder on this computer behind an app path, for the system's own
+    /// change notices (krate:fs/watch). None where there is no such folder.
+    fn host_path(&self, _path: &str) -> Option<std::path::PathBuf> {
+        None
+    }
     /// Move a path to the computer's Trash (krate:ui/trash, K-1337). A host
     /// with no Trash -- a browser tab, a phone -- says so.
     fn trash(&self, _path: &str) -> std::result::Result<(), AdapterError> {
@@ -548,6 +553,15 @@ impl<'a> UapiDispatcher<'a> {
 
     /// A folder's whole tree, for a watch. Allowed exactly when listing the
     /// folder is: a watch sees what `list` would, and nothing else.
+    /// The host folder behind `path`, only where listing it is allowed.
+    pub fn fs_host_path(&self, path: &str) -> Option<std::path::PathBuf> {
+        self.check_fs(UapiCall::Fs(FsCall::List {
+            path: path.to_string(),
+        }))
+        .ok()?;
+        self.adapter.fs().host_path(path)
+    }
+
     pub fn fs_scan(
         &self,
         path: &str,

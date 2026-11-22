@@ -12,6 +12,14 @@
 //! refused, and a look sooner than `MIN_INTERVAL` after the last returns
 //! nothing, so an app that asks every frame walks its folder four times a
 //! second, not sixty.
+//!
+//! And a look happens only when something may have changed: on a computer
+//! the system's own change notice (FSEvents, inotify, ReadDirectoryChangesW)
+//! sets a flag, and with the flag down a watch reports nothing without
+//! walking the folder at all -- a quiet 10,000-note vault costs nothing to
+//! watch. The notice decides WHEN to look, never WHAT changed: the look is
+//! still the scan above, so nothing is lost to a notice that overflowed or
+//! never came, and every `SAFETY_LOOK` a scan happens anyway.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -24,6 +32,9 @@ pub const MAX_WATCHES: usize = 8;
 pub const MAX_ENTRIES: usize = 20_000;
 /// The shortest time between two looks at one folder.
 pub const MIN_INTERVAL: Duration = Duration::from_millis(250);
+/// The longest a watch with a change notice goes without a look: a network
+/// folder or a missed notice is still found, just later.
+pub const SAFETY_LOOK: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
@@ -46,6 +57,36 @@ struct Watch {
     path: String,
     seen: BTreeMap<String, Seen>,
     looked: Instant,
+    /// Raised by the system's change notice; `None` where there is none,
+    /// and then every look scans.
+    changed: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// Kept so the notice keeps coming; dropped with the watch.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    _notice: Option<notify::RecommendedWatcher>,
+}
+
+/// The system's change notice for `folder`, raising the returned flag on
+/// any change below it; `None` where the system will not watch it.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+fn notice_for(
+    folder: &std::path::Path,
+) -> Option<(
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+    notify::RecommendedWatcher,
+)> {
+    use notify::Watcher;
+    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let raise = flag.clone();
+    let mut watcher = notify::recommended_watcher(move |_event: notify::Result<notify::Event>| {
+        // Any event -- or an error, which may mean events were lost -- is a
+        // reason to look.
+        raise.store(true, std::sync::atomic::Ordering::SeqCst);
+    })
+    .ok()?;
+    watcher
+        .watch(folder, notify::RecursiveMode::Recursive)
+        .ok()?;
+    Some((flag, watcher))
 }
 
 #[derive(Default)]
@@ -68,7 +109,25 @@ impl Watches {
         self.live.len() >= MAX_WATCHES
     }
 
-    pub fn start(&mut self, path: &str, entries: Vec<ScanEntry>) -> u64 {
+    /// Start a watch on `path`, whose first look found `entries`.
+    /// `host` is the folder on this computer behind it, for the system's
+    /// change notice; `None` scans on every look as before.
+    pub fn start(
+        &mut self,
+        path: &str,
+        entries: Vec<ScanEntry>,
+        host: Option<&std::path::Path>,
+    ) -> u64 {
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        let (changed, notice) = match host.and_then(notice_for) {
+            Some((flag, watcher)) => (Some(flag), Some(watcher)),
+            None => (None, None),
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+        let changed = {
+            let _ = host;
+            None
+        };
         self.next += 1;
         self.live.insert(
             self.next,
@@ -76,17 +135,37 @@ impl Watches {
                 path: path.trim_end_matches('/').to_string(),
                 seen: snapshot(entries),
                 looked: Instant::now(),
+                changed,
+                #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+                _notice: notice,
             },
         );
         self.next
     }
 
-    pub fn due(&self, id: u64) -> Due<'_> {
+    /// Whether to look now. With a change notice and nothing raised, not
+    /// until `SAFETY_LOOK`; a look that is due lowers the flag first, so a
+    /// change during the scan raises it again for the next.
+    pub fn due(&mut self, id: u64) -> Due<'_> {
         match self.live.get(&id) {
             None => Due::Unknown,
             Some(watch) if watch.looked.elapsed() < MIN_INTERVAL => Due::Later,
-            Some(watch) => Due::Now(&watch.path),
+            Some(watch) => {
+                if let Some(flag) = &watch.changed {
+                    let quiet = !flag.swap(false, std::sync::atomic::Ordering::SeqCst);
+                    if quiet && watch.looked.elapsed() < SAFETY_LOOK {
+                        return Due::Later;
+                    }
+                }
+                Due::Now(&watch.path)
+            }
         }
+    }
+
+    /// Whether this watch has the system's change notice (for tests).
+    #[cfg(test)]
+    pub fn has_notice(&self, id: u64) -> bool {
+        self.live.get(&id).is_some_and(|w| w.changed.is_some())
     }
 
     /// Take a fresh look's entries, report what differs, and keep the look.
@@ -188,6 +267,7 @@ mod tests {
                 entry("old", true, 0, 1),
                 entry("old/c.jpg", false, 5, 1),
             ],
+            None,
         );
         let changes = watches.apply(
             id,
@@ -230,7 +310,7 @@ mod tests {
     #[test]
     fn a_file_replaced_by_a_folder_is_a_removal_and_a_creation() {
         let mut watches = Watches::default();
-        let id = watches.start("notes", vec![entry("x", false, 1, 1)]);
+        let id = watches.start("notes", vec![entry("x", false, 1, 1)], None);
         let changes = watches.apply(id, vec![entry("x", true, 0, 2)]);
         assert_eq!(changes.len(), 2);
         assert!(changes
@@ -244,15 +324,45 @@ mod tests {
     #[test]
     fn looking_again_too_soon_is_not_a_look_and_the_ninth_watch_is_refused() {
         let mut watches = Watches::default();
-        let id = watches.start("a", Vec::new());
+        let id = watches.start("a", Vec::new(), None);
         assert!(matches!(watches.due(id), Due::Later));
         assert!(matches!(watches.due(id + 100), Due::Unknown));
         for _ in 1..MAX_WATCHES {
             assert!(!watches.is_full());
-            watches.start("a", Vec::new());
+            watches.start("a", Vec::new(), None);
         }
         assert!(watches.is_full());
         watches.stop(id);
         assert!(!watches.is_full(), "stopping one frees its place");
+    }
+
+    /// With the system's change notice, a quiet folder is not walked at
+    /// all, and a file written into it makes the next look due.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn a_quiet_folder_is_not_walked_and_a_change_makes_a_look_due() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut watches = Watches::default();
+        let id = watches.start("vault", Vec::new(), Some(dir.path()));
+        assert!(watches.has_notice(id), "the system watches the folder");
+        std::thread::sleep(MIN_INTERVAL + Duration::from_millis(50));
+        // Notices from creating the folder may still arrive: drain them.
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = matches!(watches.due(id), Due::Now(_));
+        std::thread::sleep(MIN_INTERVAL + Duration::from_millis(50));
+        assert!(
+            matches!(watches.due(id), Due::Later),
+            "nothing changed: no look"
+        );
+        std::fs::write(dir.path().join("new.md"), b"hi").unwrap();
+        let mut due = false;
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(100));
+            if matches!(watches.due(id), Due::Now(_)) {
+                due = true;
+                break;
+            }
+        }
+        assert!(due, "a written file makes a look due");
     }
 }

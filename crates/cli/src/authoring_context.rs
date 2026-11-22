@@ -326,8 +326,11 @@ inbox a scanner fills -- `let w = krate::fs::watch::start(\"picked/<token>\")?` 
 once, then `krate::fs::watch::changes(w)?` from the event loop: a list of \
 `{ path, kind: Created | Modified | Removed, is_dir }` since the last call, \
 with `path` ready to pass to `fs::read`. It looks at most four times a \
-second (asking sooner returns an empty list), so calling it every frame is \
-fine. Allowed wherever listing the folder is; no extra capability.\n\n\
+second (asking sooner returns an empty list), and on a computer it walks \
+the folder only when the system says something changed, so calling it \
+every frame is fine and a quiet folder costs nothing -- do not poll on a \
+timer of your own. Allowed wherever listing the folder is; no extra \
+capability.\n\n\
 To run a program on the computer -- an editor building with `cargo`, \
 formatting with `rustfmt`, talking to `rust-analyzer` -- declare each one by \
 its bare name, `process.run:cargo` (no path, no `*`), and `process.terminal` \

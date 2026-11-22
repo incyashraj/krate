@@ -3189,6 +3189,10 @@ impl FsAdapter for LocalPhase2Adapter {
         rename_path_on_host(from.as_path(), to.as_path()).map_err(map_io_error)
     }
 
+    fn host_path(&self, path: &str) -> Option<PathBuf> {
+        self.resolve_fs_path(path, FsOperation::Existing).ok()
+    }
+
     fn trash(&self, path: &str) -> std::result::Result<(), AdapterError> {
         // The same resolution as a remove: inside the sandbox or a picked
         // folder, never a symlink out of it, never the root itself.
