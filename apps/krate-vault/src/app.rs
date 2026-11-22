@@ -465,6 +465,8 @@ pub enum Cmd {
     // Workspace.
     SplitRight,
     SplitDown,
+    OpenInNewWindow,
+    MoveToNewWindow,
     TogglePin,
     // Core plugins.
     Graph,
@@ -610,6 +612,20 @@ pub const COMMANDS: &[Command] = &[
         Cmd::SplitDown,
         "workspace:split-horizontal",
         "Split down",
+        "",
+        "",
+    ),
+    c(
+        Cmd::OpenInNewWindow,
+        "workspace:open-in-new-window",
+        "Open current tab in new window",
+        "",
+        "",
+    ),
+    c(
+        Cmd::MoveToNewWindow,
+        "workspace:move-to-new-window",
+        "Move current tab to new window",
         "",
         "",
     ),
@@ -1070,6 +1086,11 @@ pub enum MenuAction {
     TogglePin(usize),
     SplitRight(usize),
     SplitDown(usize),
+    /// A tab to a window of its own, or a copy of it there.
+    MoveToWindow(usize),
+    OpenInWindow(usize),
+    /// A file opened in a window of its own.
+    OpenPathInWindow(String),
     LinkTab(usize),
     UnlinkTab(usize),
     // Bookmarks.
@@ -1276,6 +1297,11 @@ pub struct App {
     pub panes: Vec<Pane>,
     pub pane: usize,
     pub layout: Layout,
+    /// Tab groups in windows of their own (src/popout.rs).
+    pub floating: Vec<crate::popout::Floating>,
+    pub next_float: u64,
+    /// Bringing the workspace file back: do not write it meanwhile.
+    pub restoring: bool,
     /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
     pub closed: Vec<String>,
     pub settings: Settings,
@@ -1368,6 +1394,9 @@ impl App {
             }],
             pane: 0,
             layout: Layout::Pane(0),
+            floating: Vec::new(),
+            next_float: 0,
+            restoring: false,
             closed: Vec::new(),
             settings: Settings::new(),
             bookmarks: Vec::new(),
@@ -1445,6 +1474,7 @@ impl App {
         self.stacked = false;
         self.pane = 0;
         self.layout = Layout::Pane(0);
+        self.floating.clear();
         self.closed.clear();
         self.unlinked = None;
         self.recovery = Recovery::default();
@@ -1472,6 +1502,9 @@ impl App {
             msg.push_str(p);
             self.say(&msg);
         }
+        // The tabs, groups and windows from last time, as the notes app
+        // keeps them in the vault (src/popout.rs).
+        self.restore_workspace();
     }
 
     pub fn close_vault(&mut self) {
@@ -1616,8 +1649,15 @@ impl App {
         }
     }
 
-    /// Take away a group that has no tabs left (never the last group).
-    fn drop_pane_if_empty(&mut self) {
+    /// Take away a group that has no tabs left (never the last group of
+    /// the main window; a window of its own closes with its last tab).
+    pub(crate) fn drop_pane_if_empty(&mut self) {
+        if let Some(id) = self.float_of(self.pane).map(|f| f.id) {
+            if self.tabs.is_empty() {
+                self.close_floating(id);
+            }
+            return;
+        }
         let only = self.pane_order().len() <= 1;
         if !self.tabs.is_empty() || only {
             if self.tabs.is_empty() {
@@ -1637,6 +1677,11 @@ impl App {
         }
         self.panes.remove(gone);
         self.layout.renumber_after(gone);
+        for f in &mut self.floating {
+            if f.pane > gone {
+                f.pane -= 1;
+            }
+        }
         self.pane = if next > gone { next - 1 } else { next };
         if self.tabs.is_empty() {
             self.tabs.push(Tab::empty());
@@ -3153,6 +3198,8 @@ impl App {
                 }
             }
             Cmd::SplitRight => self.split(false),
+            Cmd::OpenInNewWindow => self.open_in_new_window(),
+            Cmd::MoveToNewWindow => self.move_to_new_window(),
             Cmd::SplitDown => self.split(true),
             Cmd::TogglePin => self.toggle_pin(self.active),
             Cmd::ToggleRibbon => {
@@ -3856,6 +3903,15 @@ impl App {
                         self.toggle_folder(&p);
                         self.focus = Focus::Tree;
                     }
+                    // Cmd+click: a new tab; with Option: to the right; with
+                    // Option and Shift too: a window of its own.
+                    RowKind::Note(_) if m.primary && m.alt && m.shift => {
+                        self.open_path_in_new_window(&p)
+                    }
+                    RowKind::Note(_) if m.primary && m.alt => {
+                        self.split(false);
+                        self.open_file(&p, false);
+                    }
                     RowKind::Note(_) => self.open_file(&p, m.primary),
                 }
             }
@@ -4089,6 +4145,10 @@ impl App {
                     String::from("Open to the right"),
                     MenuAction::OpenToRight(p.clone()),
                 ));
+                items.push((
+                    String::from("Open in new window"),
+                    MenuAction::OpenPathInWindow(p.clone()),
+                ));
                 items.push((String::from("Bookmark..."), MenuAction::Bookmark(p.clone())));
                 items.push((
                     String::from("Move file to..."),
@@ -4123,6 +4183,14 @@ impl App {
             ),
             (String::from("Split right"), MenuAction::SplitRight(i)),
             (String::from("Split down"), MenuAction::SplitDown(i)),
+            (
+                String::from("Move to new window"),
+                MenuAction::MoveToWindow(i)
+            ),
+            (
+                String::from("Open in new window"),
+                MenuAction::OpenInWindow(i)
+            ),
             (
                 String::from(if self.stacked {
                     "Unstack tab group"
@@ -4180,6 +4248,15 @@ impl App {
                 self.select_tab(i);
                 self.split(true);
             }
+            MenuAction::MoveToWindow(i) => {
+                self.select_tab(i);
+                self.move_to_new_window();
+            }
+            MenuAction::OpenInWindow(i) => {
+                self.select_tab(i);
+                self.open_in_new_window();
+            }
+            MenuAction::OpenPathInWindow(p) => self.open_path_in_new_window(&p),
             MenuAction::LinkTab(i) => self.link_tab(i),
             MenuAction::UnlinkTab(i) => self.unlink_tab(i),
             MenuAction::RemoveBookmark(place) => {
@@ -4429,6 +4506,7 @@ impl App {
     /// The window is closing: save everything first.
     pub fn close(&mut self) {
         self.save_all();
+        self.save_workspace();
         self.closing = true;
     }
 
@@ -4452,6 +4530,18 @@ impl App {
             None => put("vault", "none"),
         }
         put("tabs", &num(self.tabs.len()));
+        if !self.floating.is_empty() {
+            put("windows", &num(self.floating.len() + 1));
+            for f in &self.floating {
+                let paths: Vec<&str> = self
+                    .pane_tabs(f.pane)
+                    .0
+                    .iter()
+                    .filter_map(Tab::path)
+                    .collect();
+                put("window", &paths.join(","));
+            }
+        }
         if let Some(d) = self.doc() {
             put("note", &d.path);
             put("lines", &num(d.buf.line_count()));

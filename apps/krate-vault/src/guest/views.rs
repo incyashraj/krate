@@ -1788,18 +1788,19 @@ impl Ui {
                 }
                 match self.graph_img.file_img.clone() {
                     Some((_, Ok((h, w, hh)))) => {
-                        // As the notes app shows a picture: whole, centred,
-                        // never larger than it is.
-                        let room_w = a.w - 64.0 * k;
-                        let room_h = a.h - 64.0 * k;
-                        let f = (room_w / w as f32).min(room_h / hh as f32);
+                        // As the notes app shows a picture: at its own size
+                        // at the top, centred across, smaller only when the
+                        // tab is.
+                        let room_w = a.w - 24.0 * k;
+                        let room_h = a.h - 20.0 * k;
+                        let f = (room_w / w as f32).min(room_h / hh as f32).min(1.0);
                         let (dw, dh) = (w as f32 * f, hh as f32 * f);
                         let _ = canvas_images::draw(
                             self.c,
                             h,
                             canvas_images::Rect {
                                 x: a.x + (a.w - dw) * 0.5,
-                                y: a.y + (a.h - dh) * 0.5,
+                                y: a.y + 10.0 * k,
                                 width: dw,
                                 height: dh,
                             },

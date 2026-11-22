@@ -53,6 +53,7 @@ pub mod math;
 pub mod md;
 pub mod mermaid;
 pub mod panes;
+pub mod popout;
 pub mod propedit;
 pub mod props;
 pub mod recovery;

@@ -14,6 +14,7 @@ mod look;
 mod media;
 mod views;
 mod widgets;
+mod windows;
 
 use crate::app::{
     App, Cmd, Focus, Hit, HostRequest, LeftPane, ListKind, Mods, Overlay, RightPane, RowKind, View,
@@ -167,6 +168,13 @@ struct Ui {
     block_count: Option<usize>,
     /// Web pages being read for link cards: address and handle.
     fetches: Vec<(String, u64)>,
+    /// The windows of their own (src/guest/windows.rs).
+    extra: Vec<windows::WinState>,
+    /// The window a menu or list was opened in: 0 the main window,
+    /// otherwise a floating group's id.
+    overlay_in: u64,
+    /// The window whose state is swapped in now, the same way.
+    in_window: u64,
 }
 
 fn ms() -> u64 {
@@ -351,6 +359,10 @@ impl Ui {
         self.dividers.clear();
         self.tab_rects.clear();
         self.view_areas.clear();
+        if self.app.is_floating(self.app.pane) {
+            self.view = None;
+            self.shown.area = None;
+        }
         let _ = canvas2d::clear(
             self.c,
             if self.app.vault.is_none() {
@@ -364,8 +376,14 @@ impl Ui {
         } else {
             self.draw_workspace(w, h);
         }
-        self.draw_editor_extras(w, h);
-        self.draw_overlay(w, h);
+        // The note in focus may be in a window of its own: its extras and
+        // the menus opened there are drawn there.
+        if !self.app.is_floating(self.app.pane) {
+            self.draw_editor_extras(w, h);
+        }
+        if self.overlay_in == 0 {
+            self.draw_overlay(w, h);
+        }
         if !show {
             return;
         }
@@ -381,7 +399,13 @@ impl Ui {
 
     fn set_title(&mut self) {
         let mut want = String::new();
-        if let Some(tb) = self.app.tab() {
+        let main = if self.app.is_floating(self.app.pane) {
+            self.app.main_pane()
+        } else {
+            self.app.pane
+        };
+        let (tabs, act) = self.app.pane_tabs(main);
+        if let Some(tb) = tabs.get(act) {
             want.push_str(tb.title());
             want.push_str(" - ");
         }
@@ -4076,6 +4100,9 @@ impl krate::Guest for Component {
             index_done_said: false,
             graph_img: views::GraphImage::default(),
             files: media::Files::default(),
+            extra: Vec::new(),
+            overlay_in: 0,
+            in_window: 0,
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4196,6 +4223,8 @@ impl krate::Guest for Component {
                     "newtab" => ui.app.run(Cmd::NewTab),
                     "pin" => ui.app.run(Cmd::TogglePin),
                     "stack" => ui.app.run(Cmd::StackTabs),
+                    "newwindow" => ui.app.run(Cmd::OpenInNewWindow),
+                    "movewindow" => ui.app.run(Cmd::MoveToNewWindow),
                     "pdfthumbs" => ui.app.menu_action(crate::app::MenuAction::PdfThumbs),
                     "loop" => ui.app.menu_action(crate::app::MenuAction::MediaLoop),
                     "outlinehere" => ui.app.run(Cmd::OpenOutlineHere),
@@ -4244,7 +4273,17 @@ impl krate::Guest for Component {
                 }
             }
         }
+        ui.sync_windows();
+        // `shootwindow`: a headless picture of the first window of its own,
+        // drawn by the same code into the main window's first frame (the
+        // runtime shoots the first window).
+        if raw.split('\n').any(|a| a == "shootwindow") && !ui.extra.is_empty() {
+            ui.in_window = ui.extra[0].id;
+            ui.draw_window();
+            ui.in_window = 0;
+        }
         ui.draw();
+        ui.draw_windows();
         let mut last_watch = ms();
         let mut last_clock = ms();
         loop {
@@ -4287,6 +4326,28 @@ impl krate::Guest for Component {
             let mut changed = false;
             let mut close = false;
             while let Some(e) = ev {
+                // An event from a window of its own is handled with that
+                // window's state swapped in (src/guest/windows.rs).
+                let from = match &e {
+                    types::Event::Pointer(p) => Some(p.window),
+                    types::Event::Key(k) => Some(k.window),
+                    types::Event::Wheel(w) => Some(w.window),
+                    types::Event::CloseRequested(w) | types::Event::RedrawRequested(w) => Some(*w),
+                    _ => None,
+                }
+                .and_then(|w| ui.window_index(w));
+                if let (Some(i), types::Event::CloseRequested(_)) = (from, &e) {
+                    // Closing it closes its tabs; nothing goes back.
+                    let id = ui.extra[i].id;
+                    ui.app.close_floating(id);
+                    changed = true;
+                    ev = events::poll();
+                    continue;
+                }
+                if let Some(i) = from {
+                    ui.swap_window(i);
+                }
+                let had_overlay = ui.app.overlay.is_some();
                 match e {
                     types::Event::CloseRequested(_) => close = true,
                     types::Event::Resized(_)
@@ -4429,7 +4490,16 @@ impl krate::Guest for Component {
                     }
                     _ => {}
                 }
+                if !had_overlay && ui.app.overlay.is_some() {
+                    ui.overlay_in = ui.in_window;
+                }
+                if let Some(i) = from {
+                    ui.swap_window(i);
+                }
                 ev = events::poll();
+            }
+            if ui.sync_windows() {
+                changed = true;
             }
             if close {
                 break;
@@ -4483,6 +4553,7 @@ impl krate::Guest for Component {
             }
             if changed {
                 ui.draw();
+                ui.draw_windows();
             }
         }
         ui.app.close();

@@ -104,13 +104,7 @@ pub struct Files {
     track: Option<(usize, Rect)>,
 }
 
-/// A sound file, shown with the sound player rather than a picture.
-pub fn is_sound(path: &str) -> bool {
-    matches!(
-        crate::vault::ext_of(path).to_ascii_lowercase().as_str(),
-        "mp3" | "wav" | "m4a" | "flac" | "ogg" | "3gp" | "oga" | "opus"
-    )
-}
+pub use crate::popout::is_sound;
 
 fn clock(ms: u64) -> String {
     let s = ms / 1000;
