@@ -106,6 +106,16 @@ test("an app from before versions existed folds in, whichever sign-in republishe
   assert.deepEqual((await galleryRows(env)).map((a) => a.id), [v.body.id]);
 });
 
+test("a listing shows what a person is asked for, not what every app may do", async () => {
+  const env = hubEnv();
+  const v = await publish(env, "gho_alice", "0.1.0");
+  const kept = row(env, v.body.id).capabilities;
+  const window = kept.find((c) => c.cap === "ui.window:create");
+  assert.equal(window && window.asks, false, "the manifest's every line is kept, marked never asked");
+  const meta = await call(env, null, "GET", `/meta/${v.body.id}`);
+  assert.deepEqual(meta.body.meta.capabilities.map((c) => c.cap).sort(), ["store.kv", "store.sql"]);
+});
+
 test("an account's login text never makes it somebody's GitHub (K-1085)", async () => {
   const env = hubEnv();
   // The real boss signs in with GitHub and publishes.

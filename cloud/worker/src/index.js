@@ -1314,12 +1314,17 @@ async function admitJudged(env, { identity, judgement, hash, size, fields, store
   // The validator's plain words for each one, the words the consent sheet
   // shows, kept with the listing so a page or a connector can say what an
   // app may do without a table of its own (IC-989).
-  const capWords = new Map(
-    (Array.isArray(judgement.capabilities) ? judgement.capabilities : []).map((c) => [c.cap, c.words]),
-  );
+  const judged = Array.isArray(judgement.capabilities) ? judgement.capabilities : [];
+  const capWords = new Map(judged.map((c) => [c.cap, c.words]));
+  // Whether a person is ever asked for it (the validator's `asks`): printing
+  // output or reading what it was started with is granted to every app and
+  // asked of nobody, so a listing that names it reads as a worry with
+  // nothing behind it. Kept, so the full manifest is still on record.
+  const capAsks = new Map(judged.map((c) => [c.cap, c.asks]));
   const manifestCapabilities = judgement.manifest.capabilities.map((c) => ({
     cap: c.cap,
     ...(typeof capWords.get(c.cap) === "string" && capWords.get(c.cap) ? { words: capWords.get(c.cap).slice(0, 200) } : {}),
+    ...(capAsks.get(c.cap) === false ? { asks: false } : {}),
     rationale: c.rationale || "",
     required: Boolean(c.required),
   }));
@@ -2863,7 +2868,9 @@ async function meta(ref, env) {
       // downloads anything. Empty for apps published before this shipped,
       // and the page says "not recorded" rather than "asks for nothing" --
       // an absent list and an empty one mean very different things.
-      capabilities: Array.isArray(m.capabilities) ? m.capabilities : null,
+      // Only what a person is asked for: what every app may do without
+      // asking (print output, open its window) is not a permission to them.
+      capabilities: Array.isArray(m.capabilities) ? m.capabilities.filter((c) => c && c.asks !== false) : null,
     },
     // Which version of its app this build is, and the app's own link
     // (IC-976): a page holding an older build can say a newer one exists.

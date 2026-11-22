@@ -453,7 +453,10 @@ function isoDate(published) {
  */
 function permissionsOf(meta) {
   if (!Array.isArray(meta.capabilities)) return null;
-  return meta.capabilities.slice(0, 64).map((c) => ({
+  // What a person is asked for. Printing output, reading what it was started
+  // with, opening its own window: every app may, nobody is asked, and a
+  // listing that names them reads as a worry with nothing behind it.
+  return meta.capabilities.filter((c) => c && c.asks !== false).slice(0, 64).map((c) => ({
     id: String(c.cap || ""),
     words: String(c.words || c.cap || ""),
     ...(c.rationale ? { why: String(c.rationale) } : {}),
