@@ -471,9 +471,25 @@
       const doc = ide.docs.get(e.rel);
       const on = !e.dir && e.rel === ide.cur;
       return `<button type="button" class="tn${on ? " on" : ""}${e.dir ? " dir" : ""}${e.dir && ide.collapsed.has(e.rel) ? " shut" : ""}" style="--lv:${depth}" data-rel="${esc(e.rel)}" data-dir="${e.dir ? 1 : ""}" title="${esc(e.rel)}"${e.dir ? ` aria-expanded="${!ide.collapsed.has(e.rel)}"` : ""}>${iconFor(e)}<span>${esc(name)}</span>${doc && doc.dirty ? '<i class="md" title="Not saved"></i>' : ""}</button>`;
-    }).join("");
+    }).join("") + editorsHtml();
+  }
+  // The person's own editor, for whoever keeps one (IC-995): only the ones
+  // installed here, read once.
+  let editors = [];
+  call("ide_editors").then((list) => { editors = Array.isArray(list) ? list : []; if (ide) paintTree(); }).catch(() => {});
+  function editorsHtml() {
+    if (!editors.length) return "";
+    return `<div class="ide-eds"><span>Open in</span>${editors.map((e) => `<button type="button" data-editor="${esc(e.id)}" title="Open this project in ${esc(e.name)}">${esc(e.name)}</button>`).join("")}</div>`;
   }
   $("ideTree").addEventListener("click", (e) => {
+    const ed = e.target.closest("[data-editor]");
+    if (ed && ide) {
+      e.stopPropagation();
+      saveAll(false).then(() => call("ide_open_in", { path: ide.path, editor: ed.dataset.editor }))
+        .then(() => term(`==> opened in ${ed.textContent}`, "g"))
+        .catch((err) => { term(String(err), "r"); toast(String(err)); });
+      return;
+    }
     const nb = e.target.closest("[data-tnew]"); if (nb && ide) { newFileIn(nb.dataset.tnew); return; }
     const b = e.target.closest(".tn"); if (!b || !ide) return;
     const rel = b.dataset.rel;

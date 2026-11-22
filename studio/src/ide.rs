@@ -1870,6 +1870,99 @@ pub(crate) async fn ide_hw_jobs(path: String) -> Result<serde_json::Value, Strin
     .await
 }
 
+/* ---- the person's own editor (IC-995 part 4) --------------------------- */
+
+/// The code editors this Studio can hand a project to: VS Code, Cursor and
+/// Zed. On a Mac each is an app; elsewhere each is a command on the PATH.
+const EDITORS: [(&str, &str, &str, &str); 3] = [
+    // (id, name shown, macOS app, command)
+    ("vscode", "VS Code", "Visual Studio Code", "code"),
+    ("cursor", "Cursor", "Cursor", "cursor"),
+    ("zed", "Zed", "Zed", "zed"),
+];
+
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct EditorChoice {
+    id: String,
+    name: String,
+}
+
+fn editor_installed(app: &str, command: &str) -> bool {
+    if cfg!(target_os = "macos") {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        [PathBuf::from("/Applications"), home.join("Applications")]
+            .iter()
+            .any(|dir| dir.join(format!("{app}.app")).is_dir())
+    } else {
+        on_path(command).is_some()
+    }
+}
+
+/// A command on the PATH, with Windows' launcher extensions tried.
+fn on_path(command: &str) -> Option<PathBuf> {
+    let exts: &[&str] = if cfg!(windows) {
+        &["cmd", "exe", "bat"]
+    } else {
+        &[""]
+    };
+    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|dir| {
+        exts.iter().find_map(|ext| {
+            let file = if ext.is_empty() {
+                dir.join(command)
+            } else {
+                dir.join(format!("{command}.{ext}"))
+            };
+            file.is_file().then_some(file)
+        })
+    })
+}
+
+/// The editors installed here, in a fixed order.
+#[tauri::command]
+pub(crate) async fn ide_editors() -> Result<Vec<EditorChoice>, String> {
+    blocking(|| {
+        Ok(EDITORS
+            .iter()
+            .filter(|(_, _, app, command)| editor_installed(app, command))
+            .map(|(id, name, _, _)| EditorChoice {
+                id: id.to_string(),
+                name: name.to_string(),
+            })
+            .collect())
+    })
+    .await
+}
+
+/// Open the project's folder in the editor the person picked.
+#[tauri::command]
+pub(crate) async fn ide_open_in(path: String, editor: String) -> Result<(), String> {
+    blocking(move || {
+        let project = project_dir(&path)?;
+        let Some((_, name, app, command)) = EDITORS.iter().find(|(id, ..)| *id == editor) else {
+            return Err(format!("{editor} is not an editor Studio knows"));
+        };
+        let status = if cfg!(target_os = "macos") {
+            Command::new("open")
+                .arg("-a")
+                .arg(app)
+                .arg(&project)
+                .status()
+        } else {
+            let Some(launcher) = on_path(command) else {
+                return Err(format!("{name} is not installed on this computer"));
+            };
+            Command::new(launcher).arg(&project).status()
+        };
+        match status {
+            Ok(done) if done.success() => Ok(()),
+            _ => Err(format!("{name} did not open the project")),
+        }
+    })
+    .await
+}
+
 #[tauri::command]
 pub(crate) async fn ide_pack(app: tauri::AppHandle, path: String) -> Result<PackResult, String> {
     blocking(move || {

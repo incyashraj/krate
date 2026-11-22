@@ -6299,6 +6299,8 @@ fn main() {
             ide::ide_hw_stop,
             ide::ide_hw_jobs,
             ide::ide_serial_send,
+            ide::ide_editors,
+            ide::ide_open_in,
             ide::ide_pack,
             ide::ide_run,
             ide::ide_ask,

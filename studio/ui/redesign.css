@@ -1612,7 +1612,12 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
 .ide-btn[disabled] { opacity: .4; pointer-events: none; }
 .ide-btn kbd { margin-left: 2px; padding: 2px 4px; font: 500 11px var(--sans); color: var(--ink-3); border-radius: 5px; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .ide-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 224px minmax(0, 1fr) 380px; }
-.ide-tree { overflow: auto; padding: 12px 8px; background: var(--side-bg); border-right: 1px solid var(--line); font: 400 13px var(--sans); }
+.ide-tree { overflow: auto; display: flex; flex-direction: column; padding: 12px 8px; background: var(--side-bg); border-right: 1px solid var(--line); font: 400 13px var(--sans); }
+.ide-tree > .tn { flex: none; }
+/* Open in the person's own editor: quiet, at the foot of the files. */
+.ide-eds { margin-top: auto; padding: 10px 8px 2px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font: 400 11.5px var(--sans); color: var(--ink-3); }
+.ide-eds button { height: 24px; padding: 0 9px; border: 0; border-radius: 999px; cursor: pointer; font: 500 11.5px var(--sans); color: var(--ink-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); }
+.ide-eds button:hover { color: var(--ink); background: var(--hover); }
 .ide-tree .th2 { padding: 4px 8px 8px; font-size: 11.5px; font-weight: 500; letter-spacing: .02em; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ide-tree .tn { width: 100%; height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 calc(8px + var(--lv, 0) * 14px); border: 0; border-radius: 7px; background: none; cursor: pointer;
   font: inherit; color: var(--ink-2); text-align: left; transition: background .15s, color .15s; }
