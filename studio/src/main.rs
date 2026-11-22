@@ -5625,7 +5625,38 @@ const ORG_UPDATES_NOTIFY: &str =
 /// is run: an update channel that installs whatever it downloaded is a
 /// worse hole than the one it closes.
 #[tauri::command]
-fn install_update(version: String) -> Result<String, String> {
+async fn install_update(app: tauri::AppHandle, version: String) -> Result<String, String> {
+    // Off the main thread: as a plain command this ran on the window's own
+    // thread, so the whole window froze for the length of the download and
+    // looked stuck. Progress goes to the window as it happens.
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        let mut last_pct = u64::MAX;
+        install_update_blocking(&version, &mut |phase, done, total| {
+            let pct = total.map(|t| done * 100 / t.max(1)).unwrap_or(0);
+            if phase != "download"
+                || pct != last_pct && last.elapsed() >= std::time::Duration::from_millis(120)
+            {
+                last = std::time::Instant::now();
+                last_pct = pct;
+                let _ = app.emit(
+                    "update-progress",
+                    serde_json::json!({ "phase": phase, "done": done, "total": total }),
+                );
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The download, checked against the release's checksums and staged.
+/// `progress(phase, bytes_done, bytes_total)`: "download" as bytes arrive,
+/// then "verify" while the digest is compared.
+fn install_update_blocking(
+    version: &str,
+    progress: &mut dyn FnMut(&str, u64, Option<u64>),
+) -> Result<String, String> {
     // `notify` tells and never installs; `off` never even checks (IC-949).
     match org_update_mode().as_str() {
         "auto" => {}
@@ -5684,10 +5715,14 @@ fn install_update(version: String) -> Result<String, String> {
     let hex = {
         use sha2::{Digest, Sha256};
         use std::io::Write as _;
-        let mut reader = krate_http::get(&format!("{base}/{file}"))
+        let response = krate_http::get(&format!("{base}/{file}"))
             .call()
-            .map_err(|e| format!("the download failed: {e}"))?
-            .into_reader();
+            .map_err(|e| format!("the download failed: {e}"))?;
+        let length = response
+            .header("content-length")
+            .and_then(|v| v.parse::<u64>().ok());
+        let mut reader = response.into_reader();
+        progress("download", 0, length);
         let mut out = std::fs::File::create(&partial)
             .map_err(|e| format!("could not open a staging file: {e}"))?;
         let mut hasher = Sha256::new();
@@ -5708,6 +5743,7 @@ fn install_update(version: String) -> Result<String, String> {
                 return Err("the update is larger than Krate will download".to_string());
             }
             hasher.update(&buf[..n]);
+            progress("download", total, length);
             if let Err(e) = out.write_all(&buf[..n]) {
                 let _ = std::fs::remove_file(&partial);
                 return Err(format!("could not save the update: {e}"));
@@ -5721,6 +5757,7 @@ fn install_update(version: String) -> Result<String, String> {
         format!("{:x}", hasher.finalize())
     };
     let got = hex;
+    progress("verify", 0, None);
 
     if got != expected {
         let _ = std::fs::remove_file(&partial);
@@ -5805,7 +5842,10 @@ fn verified_update(staged: &std::path::Path) -> Result<std::path::PathBuf, Strin
 /// installed. This opens the installer the download produced and closes the
 /// Studio so the file it is replacing is not in use.
 #[tauri::command]
-fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
+/// Answers how it is finishing, so the screen can say what happens next:
+/// "replace" (Krate closes and opens again by itself) or "installer" (the
+/// installer opens and the person follows it).
+fn restart_for_update(app: tauri::AppHandle) -> Result<&'static str, String> {
     let staged = studio_dir().join("updates");
 
     // Open the file that was VERIFIED, not the file that is newest (IC-866).
@@ -5821,6 +5861,35 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
     // back here, and the bytes on disk are hashed again -- because a file
     // that passed at download time can still have been replaced since.
     let verified = verified_update(&staged)?;
+
+    // macOS: install in place and reopen (IC-1001), the way people expect an
+    // app to update -- not a Finder window asking them to drag Krate over
+    // itself. Only when this Krate is a signed app bundle the person can
+    // write to; anything else keeps the old way, opening the installer.
+    #[cfg(target_os = "macos")]
+    if let Some((bundle, team)) = replaceable_bundle() {
+        if verified.extension().and_then(|e| e.to_str()) == Some("dmg") {
+            let spawned = Command::new("/bin/sh")
+                .arg("-c")
+                .arg(MAC_SWAP_SCRIPT)
+                .arg("krate-update")
+                .arg(std::process::id().to_string())
+                .arg(&verified)
+                .arg(&bundle)
+                .arg(&team)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            if spawned.is_ok() {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(600));
+                    app.exit(0);
+                });
+                return Ok("replace");
+            }
+        }
+    }
 
     #[cfg(target_os = "macos")]
     let opened = Command::new("/usr/bin/open").arg(&verified).status();
@@ -5839,7 +5908,7 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
         std::thread::sleep(std::time::Duration::from_millis(900));
         app.exit(0);
     });
-    Ok(())
+    Ok("installer")
 }
 
 /// Open a terminal running one command, for the steps a GUI cannot do.
@@ -5856,6 +5925,68 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
 /// told us about.
 /// Is `krate` reachable from a terminal, and can we fix it without a
 /// password? Read-only: this never changes the machine.
+/// Waits for Studio to quit, then swaps the verified update in place and
+/// reopens it: `$1` Studio's pid, `$2` the verified DMG, `$3` the running
+/// app bundle, `$4` its Apple Team ID. The new app must pass codesign's
+/// strict check and carry the SAME team as the app it replaces, or nothing
+/// is touched and the installer opens instead, as it always used to. The old
+/// bundle is moved aside first and moved back if the swap fails.
+#[cfg(target_os = "macos")]
+const MAC_SWAP_SCRIPT: &str = r#"
+set -u
+pid="$1"; dmg="$2"; target="$3"; team="$4"
+i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done
+mnt=$(mktemp -d /tmp/krate-update.XXXXXX)
+fail() { hdiutil detach -quiet "$mnt" >/dev/null 2>&1; rmdir "$mnt" 2>/dev/null; /usr/bin/open "$dmg"; exit 1; }
+hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" >/dev/null 2>&1 || fail
+app=$(ls -d "$mnt"/*.app 2>/dev/null | head -n 1)
+[ -n "$app" ] || fail
+codesign --verify --deep --strict "$app" >/dev/null 2>&1 || fail
+got=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+[ -n "$got" ] && [ "$got" = "$team" ] || fail
+new="$target.krate-update"; old="$target.krate-old"
+rm -rf "$new" "$old"
+ditto "$app" "$new" || { rm -rf "$new"; fail; }
+if mv "$target" "$old" && mv "$new" "$target"; then
+  rm -rf "$old"
+else
+  [ -d "$old" ] && [ ! -d "$target" ] && mv "$old" "$target"
+  rm -rf "$new"; fail
+fi
+hdiutil detach -quiet "$mnt" >/dev/null 2>&1; rmdir "$mnt" 2>/dev/null
+/usr/bin/open "$target"
+"#;
+
+/// The running Krate's app bundle and its Apple Team ID, when it can be
+/// replaced in place: a signed `.app` in a folder this person can write to.
+#[cfg(target_os = "macos")]
+fn replaceable_bundle() -> Option<(std::path::PathBuf, String)> {
+    let exe = std::env::current_exe().ok()?;
+    let bundle = exe
+        .ancestors()
+        .find(|p| p.extension().and_then(|e| e.to_str()) == Some("app"))?
+        .to_path_buf();
+    let parent = bundle.parent()?;
+    let probe = parent.join(format!(".krate-write-check-{}", std::process::id()));
+    std::fs::write(&probe, b"").ok()?;
+    let _ = std::fs::remove_file(&probe);
+    let out = Command::new("codesign")
+        .args(["-dv", "--verbose=2"])
+        .arg(&bundle)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stderr);
+    let team = text
+        .lines()
+        .find_map(|l| l.strip_prefix("TeamIdentifier="))?
+        .trim()
+        .to_string();
+    if team.is_empty() || team == "not set" {
+        return None;
+    }
+    Some((bundle, team))
+}
+
 #[tauri::command]
 #[allow(clippy::needless_return)]
 fn terminal_status() -> serde_json::Value {

@@ -1316,6 +1316,25 @@ jobs:
             echo "::warning::No build provenance was made for this release. The downloads are still checkable against SHA256SUMS."
           fi
 
+      # The release page opens with the changelog's own words for this
+      # version -- what Studio's update screen shows a person -- and
+      # GitHub's generated list of pull requests follows it. Before this
+      # the page was only that list ("test(bundle): cover malformed WASM
+      # sections by @..."), and that is what an update showed people.
+      - name: Release notes from the changelog
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "Krate $version." > release-notes.md
+          fi
+          head -5 release-notes.md
       - name: Upload release assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -1345,6 +1364,7 @@ jobs:
             dist/**/*.cdx.json
             krate-*-provenance.sigstore.json
             SHA256SUMS
+          body_path: release-notes.md
           generate_release_notes: true
 
   # ---------------------------------------------------------------- the gate

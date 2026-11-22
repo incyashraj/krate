@@ -181,16 +181,100 @@ function snoozeUpdatePrompt(latest) {
   } catch (e) { /* storage refused: it may ask again next start, which is still right */ }
 }
 
-/// A release body's lines a person can act on (the same rule as Settings).
+/// What a release changed, in lines a person reads: the changelog's own
+/// bullets, each cut to its headline ("Make an app in a Claude chat"),
+/// never GitHub's generated list of pull requests. A release made before the
+/// changelog led its notes falls back to that list with the developer
+/// machinery taken out (handles, links, "test(bundle):" prefixes).
 function releaseNoteLines(body) {
-  const MACHINERY = /https?:\/\/|@[\w-]+|\(#\d+\)|#\d+\b|full changelog|^v?\d+\.\d+/i;
-  return String(body || "")
+  const text = String(body || "");
+  const human = text.split(/^## What'?s Changed/m)[0];
+  const headline = (b) => {
+    // Code names and asides in brackets are for developers: "Serial ports
+    // (device.serial), printers ..." reads as "Serial ports, printers ...".
+    const clean = b.replace(/`/g, "").replace(/\s*\([^)]*\)/g, "").replace(/\s+([,.;:])/g, "$1").trim();
+    const colon = clean.indexOf(": ");
+    let t = colon > 0 && colon < 70 ? clean.slice(0, colon) : clean.split(/(?<=[.!?])\s/)[0];
+    if (t.length > 84) t = t.slice(0, 82).replace(/[\s,;:]+\S*$/, "") + "\u2026";
+    return t.replace(/[.:;,]$/, "");
+  };
+  const bullets = human.split("\n").filter((l) => /^\s*[-*]\s+\S/.test(l)).map((l) => headline(l.replace(/^\s*[-*]\s+/, "")));
+  if (bullets.length) return bullets.slice(0, 5);
+  const MACHINERY = /https?:\/\/|@[\w-]+|\(#\d+\)|#\d+\b|full changelog|^v?\d+\.\d+|^[a-z]+(\([^)]*\))?!?:\s/i;
+  return text
     .split("\n")
     .map((l) => l.replace(/^[-*]\s*/, "").trim())
     .map((l) => l.replace(/\s+by\s+@[\w-]+.*$/i, "").trim())
     .filter((l) => l && !l.startsWith("#") && l.length < 120)
     .filter((l) => !MACHINERY.test(l))
     .slice(0, 4);
+}
+
+/// Download and check the newer Krate (install_update), telling `onStep`
+/// what is happening as it goes: "Downloading Krate 0.6.1: 41 of 96 MB",
+/// then the check. The share done is 0..1, or null when the size is unknown.
+/// Before this the button sat frozen for the whole download (IC-1001).
+async function installKrateUpdate(latest, onStep) {
+  const mb = (n) => Math.max(1, Math.round(Number(n || 0) / 1048576));
+  let off = null;
+  try {
+    off = await tauri.event.listen("update-progress", (e) => {
+      const p = e.payload || {};
+      if (p.phase === "verify") onStep("Checking it is the genuine Krate…", 1);
+      else if (p.total) onStep(`Downloading Krate ${latest}: ${mb(p.done)} of ${mb(p.total)} MB`, p.done / p.total);
+      else onStep(`Downloading Krate ${latest}: ${mb(p.done)} MB`, null);
+    });
+  } catch (e) { /* no progress events: the words below still say what is happening */ }
+  onStep(`Downloading Krate ${latest}…`, 0);
+  try {
+    await invoke("install_update", { version: latest });
+  } finally {
+    if (off) off();
+  }
+}
+
+/// The screen while Krate replaces itself, so the last thing a person sees
+/// is "Installing Krate 0.6.1" and not a window that froze and vanished. The
+/// next start says "Krate is now 0.6.1" (noteUpdatedKrate).
+async function restartIntoUpdate(latest, mine, onFail) {
+  const el = document.createElement("div");
+  el.id = "krUpdating";
+  el.className = "kr-updating";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  el.innerHTML = `<div class="kr-updating-card"><span class="kr-spin" aria-hidden="true"></span><h2>Installing Krate ${escapeHtml(latest)}</h2><p>This takes a few seconds.</p></div>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("on"));
+  if (!mine) mine = String(await invoke("studio_version").catch(() => "")).replace(/^v/, "");
+  try { localStorage.setItem("krate.update.from", JSON.stringify({ from: mine || "", to: latest, at: Date.now() })); } catch (e) { /* only the welcome-back line is lost */ }
+  try {
+    const how = await invoke("restart_for_update");
+    el.querySelector("p").textContent = how === "installer"
+      ? "The installer is opening. Follow it, and Krate opens with your apps and sessions as they were."
+      : "Krate closes and opens again by itself. Your apps and sessions stay as they are.";
+  } catch (err) {
+    el.remove();
+    try { localStorage.removeItem("krate.update.from"); } catch (e) { /* nothing to undo */ }
+    onFail(String(err && err.message ? err.message : err).replace(/^error:\s*/i, ""));
+  }
+}
+
+/// First start after an update: say it worked, once.
+function noteUpdatedKrate(version) {
+  let rec = null;
+  try {
+    rec = JSON.parse(localStorage.getItem("krate.update.from") || "null");
+    localStorage.removeItem("krate.update.from");
+  } catch (e) { return; }
+  if (!rec || Date.now() - Number(rec.at || 0) > 7 * 24 * 3600 * 1000) return;
+  if (!isNewerVersion(version, rec.from || "0")) return;
+  const bar = document.createElement("div");
+  bar.className = "kr-toast";
+  bar.setAttribute("role", "status");
+  bar.innerHTML = `<i><svg viewBox="0 0 12 12" fill="none"><path d="M2.5 6.2 5 8.6l4.6-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Krate is now ${escapeHtml(version)}</span>`;
+  document.body.appendChild(bar);
+  requestAnimationFrame(() => bar.classList.add("on"));
+  setTimeout(() => { bar.classList.remove("on"); setTimeout(() => bar.remove(), 400); }, 5000);
 }
 
 function openUpdatePrompt(latest, mine, notes) {
@@ -207,16 +291,27 @@ function openUpdatePrompt(latest, mine, notes) {
   const note = $("updSheetNote");
   note.textContent = "";
   now.disabled = false;
+  now.textContent = "Install and restart";
   later.disabled = false;
+  $("updSheetBar").parentElement.classList.add("hidden");
   const close = () => sheet.classList.add("hidden");
   later.onclick = close;
   now.onclick = async () => {
     now.disabled = true;
     later.disabled = true;
-    note.textContent = `Downloading Krate ${latest}…`;
+    now.textContent = "Installing…";
+    const bar = $("updSheetBar");
+    bar.parentElement.classList.remove("hidden");
+    bar.style.width = "0%";
     try {
-      await invoke("install_update", { version: latest });
+      await installKrateUpdate(latest, (words, share) => {
+        note.textContent = words;
+        bar.style.width = share == null ? "" : `${Math.round(share * 100)}%`;
+        bar.parentElement.classList.toggle("indet", share == null);
+      });
     } catch (err) {
+      bar.parentElement.classList.add("hidden");
+      now.textContent = "Install and restart";
       const words = String(err && err.message ? err.message : err).replace(/^error:\s*/i, "");
       note.textContent = /^Your organisation/.test(words) ? words : `It did not download: ${words}. Try again, or later from Settings.`;
       now.disabled = false;
@@ -234,9 +329,12 @@ function openUpdatePrompt(latest, mine, notes) {
       waited = true;
       await new Promise((r) => setTimeout(r, 5000));
     }
-    note.textContent = "Restarting…";
-    invoke("restart_for_update").catch((err) => {
-      note.textContent = `Could not restart: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Quit Krate and open it again to finish.`;
+    close();
+    restartIntoUpdate(latest, mine, (words) => {
+      sheet.classList.remove("hidden");
+      bar.parentElement.classList.add("hidden");
+      now.textContent = "Downloaded";
+      note.textContent = `Could not restart: ${words}. Quit Krate and open it again to finish.`;
       later.disabled = false;
     });
   };
@@ -248,6 +346,7 @@ async function checkForNewerKrate() {
   if (!tauri) return;
   try {
     const mine = String(await invoke("studio_version")).replace(/^v/, "");
+    noteUpdatedKrate(mine);
     // Through the shell, as Settings does: the window's CSP blocks a direct
     // fetch, so a check from here never once saw a newer release (K-994).
     const rel = await invoke("latest_release");
@@ -262,7 +361,9 @@ async function checkForNewerKrate() {
     if (!updatePromptDue(latest)) return;
     // Never on top of another sheet (the welcome, a plan): wait for a clear screen.
     const ask = () => {
-      const open = [...document.querySelectorAll(".sheet-wrap")].some((s) => !s.classList.contains("hidden"));
+      // The welcome (#krOb) is not a sheet-wrap and once sat under this question.
+      const open = [...document.querySelectorAll(".sheet-wrap")].some((s) => !s.classList.contains("hidden"))
+        || !!document.querySelector("#krOb.on");
       if (open) { setTimeout(ask, 30000); return; }
       if (updatePromptDue(latest)) openUpdatePrompt(latest, mine, rel.body);
     };
@@ -10137,14 +10238,7 @@ async function checkForUpdate() {
       // Keep sentences, drop the machinery. What survives is a line that
       // reads like prose; what does not is anything carrying a URL, an
       // @handle, a (#123), or the changelog footer.
-      const MACHINERY = /https?:\/\/|@[\w-]+|\(#\d+\)|#\d+\b|full changelog|^v?\d+\.\d+/i;
-      const lines = (rel.body || "")
-        .split("\n")
-        .map((l) => l.replace(/^[-*]\s*/, "").trim())
-        .map((l) => l.replace(/\s+by\s+@[\w-]+.*$/i, "").trim())
-        .filter((l) => l && !l.startsWith("#") && l.length < 120)
-        .filter((l) => !MACHINERY.test(l))
-        .slice(0, 4);
+      const lines = releaseNoteLines(rel.body);
       list.innerHTML = lines.length
         ? lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")
         : "<li>Fixes and improvements</li>";
@@ -10179,18 +10273,24 @@ async function runUpdate(latest) {
   $("updT").textContent = `Downloading version ${latest}`;
   $("updS").textContent = "Krate keeps working while this happens";
   $("updAct").innerHTML = "";
+  const bar = $("updBar");
+  bar.style.width = "0%";
 
   try {
-    await invoke("install_update", { version: latest });
+    await installKrateUpdate(latest, (words, share) => {
+      $("updT").textContent = words;
+      bar.style.width = share == null ? "" : `${Math.round(share * 100)}%`;
+      bar.parentElement.classList.toggle("indet", share == null);
+    });
     card.classList.remove("working");
     card.classList.add("done");
     updIcon("done");
     $("updT").textContent = `Version ${latest} is ready to install`;
     $("updS").textContent = "Takes about five seconds. Your apps and history stay.";
     $("updAct").innerHTML = '<button class="set-mini go" id="updRestart">Restart Krate</button>';
-    $("updRestart").addEventListener("click", () => invoke("restart_for_update").catch((err) => {
+    $("updRestart").addEventListener("click", () => restartIntoUpdate(latest, "", (words) => {
       // Said where the button is: a failed restart did nothing at all.
-      $("updS").textContent = `Could not restart: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Quit Krate and open it again to finish.`;
+      $("updS").textContent = `Could not restart: ${words}. Quit Krate and open it again to finish.`;
     }));
   } catch (err) {
     // `notify`: the organisation installs updates itself (IC-949). Told,

@@ -1182,7 +1182,7 @@ fn an_update_version_that_could_reach_a_path_is_refused_before_any_download() {
         "1.0?x=1",
     ] {
         assert_eq!(
-            install_update(version.to_string()).unwrap_err(),
+            install_update_blocking(version, &mut |_, _, _| {}).unwrap_err(),
             "that does not look like a version",
             "{version:?}"
         );
@@ -1199,7 +1199,7 @@ fn the_organisations_update_mode_stops_the_install_before_any_download() {
     t.engine(r#"echo '{"v":1,"state":"in-force","policy":{"updates":{"mode":"notify"}}}'"#);
     assert_eq!(org_update_mode(), "notify");
     assert_eq!(
-        install_update("9.9.9".to_string()).unwrap_err(),
+        install_update_blocking("9.9.9", &mut |_, _, _| {}).unwrap_err(),
         ORG_UPDATES_NOTIFY
     );
     assert!(
@@ -1211,7 +1211,7 @@ fn the_organisations_update_mode_stops_the_install_before_any_download() {
     t.engine(r#"echo '{"v":1,"state":"unreadable","policy":null}'"#);
     assert_eq!(org_update_mode(), "off");
     assert_eq!(
-        install_update("9.9.9".to_string()).unwrap_err(),
+        install_update_blocking("9.9.9", &mut |_, _, _| {}).unwrap_err(),
         ORG_UPDATES_OFF
     );
 
