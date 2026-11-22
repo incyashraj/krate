@@ -15,6 +15,20 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 Contributors: add a line here with your change.
 
+## [0.6.1] - 2026-11-22
+
+- Krate asks when a newer version is ready: install and restart, or later. Later asks again the next day, never sooner.
+- Updating no longer freezes Studio: a bar shows the download, then "Installing Krate", and on a Mac Krate replaces itself and opens again on its own instead of opening the installer for a drag. The next start says it worked.
+- Studio's menus: a hovered row is quieter than the current one, so the two never read as two selections, and the sidebar's text is a little larger.
+- Sign in to one Krate account with GitHub, Google, Apple or email, and manage them in Studio's Profile settings or on the account page. Whichever one you use, the apps you published are yours.
+- See and end the AI apps connected to your account.
+- Studio's screens can be updated between releases from a bundle Krate signs; Studio checks the signature before it uses one.
+- Studio's IDE opens the project in VS Code, Cursor or Zed.
+- No "Fill code" menu over Studio's prompt box.
+- An app's listing names only the permissions a person is asked for.
+- Apps can be built for a Bluetooth device, a game controller, or a USB camera or microphone.
+- In the Web Player, dictation, the emoji picker and input methods reach a text field on a computer.
+
 ## [0.6.0] - 2026-11-22
 
 The first stable release since 0.5.4: everything in the 0.5.5 pre-releases below, and these since rc9.

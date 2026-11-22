@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "krate-http"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "rustls",
  "rustls-platform-verifier",
@@ -2024,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "krate-studio"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64 0.22.1",
  "krate-http",
