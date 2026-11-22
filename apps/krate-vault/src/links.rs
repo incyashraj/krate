@@ -57,6 +57,10 @@ pub enum MediaOp {
     /// Jump to this fraction of the way through.
     Seek(f32),
     Mute,
+    /// Fill the window with the video, or come back from it.
+    Fullscreen,
+    /// Open or close the three-dots menu.
+    More,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

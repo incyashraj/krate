@@ -394,6 +394,16 @@ impl Ui {
         if self.overlay_in == 0 {
             self.draw_overlay(w, h);
         }
+        // A video filling the window covers everything (src/guest/widgets.rs).
+        let t = self.t();
+        widgets::draw_fullscreen(
+            self.c,
+            &self.cache.env,
+            look::r(0.0, 0.0, w, h),
+            t,
+            &mut self.said,
+        );
+        widgets::say_media_menu(&self.cache.env, &mut self.said);
         if !show {
             return;
         }
@@ -3619,6 +3629,18 @@ impl Ui {
 
     fn press(&mut self, px: f32, py: f32, m: Mods) {
         self.drag_mods = m;
+        // A player's menu or a video filling the window (src/guest/widgets.rs).
+        let window = look::r(0.0, 0.0, self.w, self.h);
+        if widgets::media_overlay_press(
+            &mut self.cache.env,
+            self.win,
+            &mut self.app,
+            px,
+            py,
+            window,
+        ) {
+            return;
+        }
         let Some(z) = self.zone_at(px, py) else {
             self.files.page_edit = None;
             return;
@@ -4412,7 +4434,10 @@ impl krate::Guest for Component {
                         changed = true;
                     }
                     types::Event::Key(k) => {
-                        if k.pressed {
+                        if k.pressed && widgets::media_key(&mut ui.cache.env, &k.key) {
+                            // A player's menu or full screen took it.
+                            changed = true;
+                        } else if k.pressed {
                             let m = mods(k.modifiers);
                             let single = {
                                 let mut cs = k.key.chars();

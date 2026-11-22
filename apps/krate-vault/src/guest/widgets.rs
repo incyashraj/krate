@@ -43,6 +43,13 @@ pub struct Media {
     /// The picture's size once the player knows it (0 by 0 for a sound).
     pub size: Option<(u32, u32)>,
     pub muted: bool,
+    /// The file in the vault, for Download.
+    pub path: Option<String>,
+}
+
+/// The three-dots menu of a player, open.
+pub struct MediaMenu {
+    pub key: String,
 }
 
 pub enum Img {
@@ -100,6 +107,12 @@ pub struct Env {
     /// When the next frame of a playing picture is due (ms on `now`'s
     /// clock), set while drawing.
     pub due: core::cell::Cell<Option<u64>>,
+    /// The video filling the window, by its key; Escape brings it back.
+    pub fullscreen: Option<String>,
+    /// The player menu that is open, and where it was drawn (window
+    /// coordinates), for presses.
+    pub media_menu: Option<MediaMenu>,
+    menu_at: core::cell::Cell<Option<Rect>>,
 }
 
 impl Env {
@@ -171,6 +184,19 @@ impl Env {
             crate::links::MediaOp::Mute => {
                 m.muted = !m.muted;
                 let _ = krate::gfx::video::set_muted(h, m.muted);
+            }
+            crate::links::MediaOp::Fullscreen => {
+                self.media_menu = None;
+                self.fullscreen = match self.fullscreen.take() {
+                    Some(k) if k == key => None,
+                    _ => Some(String::from(key)),
+                };
+            }
+            crate::links::MediaOp::More => {
+                let open = self.media_menu.as_ref().is_some_and(|mm| mm.key == key);
+                self.media_menu = (!open).then(|| MediaMenu {
+                    key: String::from(key),
+                });
             }
         }
     }
@@ -282,6 +308,7 @@ pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
                 error: Some(String::from("No vault is open")),
                 size: None,
                 muted: false,
+                path: None,
             },
         };
         env.media.insert(key.clone(), m);
@@ -383,6 +410,7 @@ fn open_media(v: &mut crate::vault::Vault, target: &str, folder: &str) -> Media 
         error: Some(e),
         size: None,
         muted: false,
+        path: None,
     };
     for p in tries {
         if !v.fs.exists(&p) {
@@ -397,6 +425,7 @@ fn open_media(v: &mut crate::vault::Vault, target: &str, folder: &str) -> Media 
                 error: None,
                 size: None,
                 muted: false,
+                path: Some(p.clone()),
             },
             Err(e) => fail(alloc::format!("Krate could not open \"{target}\" ({e:?})")),
         };
@@ -579,7 +608,8 @@ impl Widget {
                 ..
             } => {
                 let rc = r(ox + x, oy + y, *w, *h);
-                let (play, _, snd) = player_parts(*audio, rc);
+                let parts = player_parts(*audio, rc);
+                let (play, snd) = (parts.play, parts.snd);
                 let what = if *audio { "sound" } else { "video" };
                 said.text(
                     rc,
@@ -591,6 +621,10 @@ impl Widget {
                 );
                 said.button(play, &alloc::format!("Play or pause {what}"));
                 said.button(snd, &alloc::format!("Mute {what}"));
+                if let Some(f) = parts.full {
+                    said.button(f, "Full screen");
+                }
+                said.button(parts.more, &alloc::format!("More options for the {what}"));
                 true
             }
             _ => false,
@@ -1704,7 +1738,7 @@ pub fn draw(
             if let Some(n) = note {
                 look::fit(c, n, rc.x, rc.y + rc.h * 0.65, 14.0, 400, t.faint, rc.w);
             } else {
-                draw_player(c, env, key, *audio, rc, t);
+                draw_player(c, env, key, *audio, rc, rc, t);
             }
         }
         Widget::Footnotes { subs, top } => {
@@ -2233,7 +2267,19 @@ fn clock(ms: u64) -> String {
 
 /// Where a player's parts are: the play button, the track and the sound
 /// button, relative to its rect.
-fn player_parts(audio: bool, rc: Rect) -> (Rect, Rect, Rect) {
+/// Where a player's controls are, as Chromium lays them out in Obsidian
+/// (measured on its 320 by 180 video and its sound bar).
+struct Parts {
+    play: Rect,
+    track: Rect,
+    snd: Rect,
+    /// Full screen (videos only).
+    full: Option<Rect>,
+    /// The three dots.
+    more: Rect,
+}
+
+fn player_parts(audio: bool, rc: Rect) -> Parts {
     if audio {
         let cy = rc.y + rc.h * 0.5;
         let play = r(rc.x + 8.0, cy - 15.0, 30.0, 30.0);
@@ -2244,19 +2290,58 @@ fn player_parts(audio: bool, rc: Rect) -> (Rect, Rect, Rect) {
             (snd.x - 12.0 - (rc.x + 124.0)).max(20.0),
             12.0,
         );
-        (play, track, snd)
+        let more = r(rc.right() - 38.0, cy - 15.0, 28.0, 30.0);
+        Parts {
+            play,
+            track,
+            snd,
+            full: None,
+            more,
+        }
     } else {
         let bar_y = rc.bottom() - 44.0;
         let play = r(rc.x + 8.0, bar_y + 2.0, 30.0, 28.0);
-        let snd = r(rc.right() - 104.0, bar_y + 2.0, 30.0, 28.0);
+        let snd = r(rc.right() - 135.0, bar_y + 2.0, 30.0, 28.0);
+        let full = r(rc.right() - 88.0, bar_y + 2.0, 30.0, 28.0);
+        let more = r(rc.right() - 38.0, bar_y + 2.0, 28.0, 28.0);
         let track = r(rc.x + 14.0, rc.bottom() - 14.0, rc.w - 28.0, 10.0);
-        (play, track, snd)
+        Parts {
+            play,
+            track,
+            snd,
+            full: Some(full),
+            more,
+        }
     }
 }
 
+/// What a press at (x, y) does to a player drawn at `rc`.
+fn player_op(audio: bool, rc: Rect, x: f32, y: f32) -> Option<crate::links::MediaOp> {
+    use crate::links::MediaOp;
+    let p = player_parts(audio, rc);
+    Some(if p.play.contains(x, y) {
+        MediaOp::PlayPause
+    } else if p.snd.contains(x, y) {
+        MediaOp::Mute
+    } else if p.full.is_some_and(|f| f.contains(x, y)) {
+        MediaOp::Fullscreen
+    } else if p.more.contains(x, y) {
+        MediaOp::More
+    } else if r(p.track.x, p.track.y - 6.0, p.track.w, p.track.h + 12.0).contains(x, y) {
+        MediaOp::Seek(((x - p.track.x) / p.track.w.max(1.0)).clamp(0.0, 1.0))
+    } else if !audio && rc.contains(x, y) {
+        // A press on the picture plays or pauses it.
+        MediaOp::PlayPause
+    } else {
+        return None;
+    })
+}
+
 /// Chromium's media controls, as Obsidian shows them: play or pause, the
-/// time, the track with what has played, and the sound button.
-fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, t: &Theme) {
+/// time, the track with what has played, the sound button, full screen and
+/// the three dots. `pic` is where the picture goes (the whole player inline;
+/// fitted inside the window at full screen).
+fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, pic: Rect, t: &Theme) {
     let Some(m) = env.media_by_key(key) else {
         round(c, rc, 6.0, t.code_bg);
         return;
@@ -2268,13 +2353,15 @@ fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, t: &Theme) {
     let (pos, dur, playing) = st.as_ref().map_or((0, 0, false), |s| {
         (s.position_millis, s.duration_millis, s.playing)
     });
-    let (play, track, snd) = player_parts(audio, rc);
+    let parts = player_parts(audio, rc);
+    let (play, track, snd) = (parts.play, parts.track, parts.snd);
     let (ink, faint) = if audio {
         round(c, rc, 8.0, t.code_bg);
         look::outline(c, rc, 8.0, 1.0, t.border);
         (t.text, look::alpha(t.muted, 0.5))
     } else {
-        let _ = krate::gfx::video::draw_round(c, h, look::g(rc), look::radii(4.0));
+        let radius = if pic == rc { 4.0 } else { 0.0 };
+        let _ = krate::gfx::video::draw_round(c, h, look::g(pic), look::radii(radius));
         let bar = r(rc.x, rc.bottom() - 48.0, rc.w, 48.0);
         let _ = canvas2d::linear_gradient(
             c,
@@ -2317,13 +2404,12 @@ fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, t: &Theme) {
     round(c, r(track.x, ty - 2.0, track.w * f, 4.0), 2.0, ink);
     // The sound button: a speaker, crossed when muted.
     let (sx, sy) = (snd.x + snd.w * 0.5, snd.y + snd.h * 0.5);
-    let muted = m.muted;
     fill(c, r(sx - 7.0, sy - 3.0, 4.0, 6.0), ink);
     for i in 0..6 {
         let k = i as f32;
         fill(c, r(sx - 3.0 + k, sy - 3.0 - k, 1.0, 6.0 + k * 2.0), ink);
     }
-    if muted {
+    if m.muted {
         look::line(c, sx + 5.0, sy - 4.0, sx + 11.0, sy + 4.0, 1.5, ink);
         look::line(c, sx + 11.0, sy - 4.0, sx + 5.0, sy + 4.0, 1.5, ink);
     } else {
@@ -2331,8 +2417,24 @@ fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, t: &Theme) {
         let _ = canvas2d::stroke_arc(c, p, 5.0, -45.0, 90.0, 1.5, ink);
         let _ = canvas2d::stroke_arc(c, p, 9.0, -45.0, 90.0, 1.5, ink);
     }
+    // Full screen: four corners, turned in while the video fills the window.
+    if let Some(fr) = parts.full {
+        let (fx, fy) = (fr.x + fr.w * 0.5, fr.y + fr.h * 0.5);
+        let inward = env.fullscreen.as_deref() == Some(key);
+        for (dx, dy) in [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            // Outward: each corner's two arms run in from the corner.
+            // Inward (leave full screen): they run out from near the middle.
+            let (qx, qy, sx2, sy2) = if inward {
+                (fx + dx * 2.0, fy + dy * 2.0, dx * 4.0, dy * 4.0)
+            } else {
+                (fx + dx * 6.0, fy + dy * 6.0, -dx * 4.0, -dy * 4.0)
+            };
+            look::line(c, qx, qy, qx + sx2, qy, 1.6, ink);
+            look::line(c, qx, qy, qx, qy + sy2, 1.6, ink);
+        }
+    }
     // The more button (three dots), as Chromium draws it.
-    let mx = rc.right() - if audio { 24.0 } else { 22.0 };
+    let mx = parts.more.x + parts.more.w * 0.5 + if audio { 0.0 } else { 2.0 };
     for i in 0..3 {
         let _ = canvas2d::fill_circle(
             c,
@@ -2349,6 +2451,227 @@ fn draw_player(c: u64, env: &Env, key: &str, audio: bool, rc: Rect, t: &Theme) {
         let next = env.now + if audio { 250 } else { 33 };
         let due = env.due.get().map_or(next, |x| x.min(next));
         env.due.set(Some(due));
+    }
+    if env.media_menu.as_ref().is_some_and(|mm| mm.key == key) {
+        draw_media_menu(c, env, audio, rc);
+    }
+}
+
+/// The three-dots menu's items, as Chromium lists them in Obsidian: a
+/// video has Download, Playback speed and Picture-in-Picture; a sound has
+/// the first two. Only Download can be done in Krate (no playback rate:
+/// K-1357, no floating video window: K-1358), so the others are drawn
+/// greyed out, as Chromium draws an item it cannot do.
+const MENU_ITEMS: [(&str, bool); 3] = [
+    ("Download", true),
+    ("Playback speed", false),
+    ("Picture-in-Picture", false),
+];
+const MENU_W: f32 = 200.0;
+const MENU_ROW: f32 = 46.0;
+
+fn menu_rect(audio: bool, rc: Rect) -> Rect {
+    let n = if audio { 2.0 } else { 3.0 };
+    let h = n * MENU_ROW;
+    if audio {
+        r(rc.right() - MENU_W - 4.0, rc.y - h - 4.0, MENU_W, h)
+    } else {
+        r(
+            rc.right() - MENU_W - 4.0,
+            (rc.bottom() - 28.0 - h).max(rc.y + 4.0),
+            MENU_W,
+            h,
+        )
+    }
+}
+
+fn draw_media_menu(c: u64, env: &Env, audio: bool, rc: Rect) {
+    let mr = menu_rect(audio, rc);
+    env.menu_at.set(Some(mr));
+    round(c, mr, 2.0, look::hex(0x3B3B3B));
+    let n = if audio { 2 } else { 3 };
+    for (i, (label, on)) in MENU_ITEMS.iter().take(n).enumerate() {
+        let y = mr.y + i as f32 * MENU_ROW;
+        let ink = if *on {
+            look::hex(0xFFFFFF)
+        } else {
+            look::alpha(look::hex(0xFFFFFF), 0.38)
+        };
+        let (ix, iy) = (mr.x + 28.0, y + MENU_ROW * 0.5);
+        match i {
+            0 => {
+                // An arrow down onto a bar.
+                look::line(c, ix, iy - 8.0, ix, iy + 3.0, 2.0, ink);
+                look::line(c, ix - 5.0, iy - 2.0, ix, iy + 3.0, 2.0, ink);
+                look::line(c, ix + 5.0, iy - 2.0, ix, iy + 3.0, 2.0, ink);
+                look::line(c, ix - 7.0, iy + 8.0, ix + 7.0, iy + 8.0, 2.0, ink);
+            }
+            1 => {
+                // A dashed circle round a play triangle.
+                for k in 0..8 {
+                    let _ = canvas2d::stroke_arc(
+                        c,
+                        krate::gfx::types::Point { x: ix, y: iy },
+                        9.0,
+                        k as f32 * 45.0,
+                        28.0,
+                        2.0,
+                        ink,
+                    );
+                }
+                for k in 0..6 {
+                    let f = k as f32 / 6.0;
+                    fill(
+                        c,
+                        r(
+                            ix - 3.0 + f * 7.0,
+                            iy - 4.5 * (1.0 - f),
+                            1.2,
+                            9.0 * (1.0 - f),
+                        ),
+                        ink,
+                    );
+                }
+            }
+            _ => {
+                // A screen with a small one in its corner.
+                look::outline(c, r(ix - 10.0, iy - 8.0, 20.0, 16.0), 2.0, 2.0, ink);
+                fill(c, r(ix + 0.0, iy - 1.0, 7.0, 6.0), ink);
+            }
+        }
+        look::text(
+            c,
+            label,
+            mr.x + 56.0,
+            y + MENU_ROW * 0.5 + 5.0,
+            14.0,
+            400,
+            ink,
+        );
+    }
+}
+
+/// Tell a screen reader (and a task) the open player menu's items.
+pub fn say_media_menu(env: &Env, said: &mut krate::layout::Said) {
+    let (Some(_), Some(mr)) = (env.media_menu.as_ref(), env.menu_at.get()) else {
+        return;
+    };
+    let n = (mr.h / MENU_ROW).round() as usize;
+    for (i, (label, _)) in MENU_ITEMS.iter().take(n).enumerate() {
+        said.button(r(mr.x, mr.y + i as f32 * MENU_ROW, mr.w, MENU_ROW), label);
+    }
+}
+
+/// A press while a player menu is open or a video fills the window; true
+/// when it was taken. `app` is told what could not be done.
+pub fn media_overlay_press(
+    env: &mut Env,
+    win: u64,
+    app: &mut crate::app::App,
+    px: f32,
+    py: f32,
+    window: Rect,
+) -> bool {
+    if let Some(mm) = env.media_menu.take() {
+        if let Some(mr) = env.menu_at.get() {
+            if mr.contains(px, py) {
+                let i = ((py - mr.y) / MENU_ROW) as usize;
+                if i == 0 {
+                    download(env, win, app, &mm.key);
+                } else {
+                    app.say(if i == 1 {
+                        "Krate cannot change how fast a video plays yet"
+                    } else {
+                        "Krate cannot show a video in a window of its own yet"
+                    });
+                }
+            }
+        }
+        env.menu_at.set(None);
+        return true;
+    }
+    let Some(key) = env.fullscreen.clone() else {
+        return false;
+    };
+    if let Some(op) = player_op(false, window, px, py) {
+        env.media_act(&key, op);
+    }
+    true
+}
+
+/// A key while a player menu is open or a video fills the window: Escape
+/// closes the menu or leaves full screen, Space plays or pauses.
+pub fn media_key(env: &mut Env, key: &str) -> bool {
+    if env.media_menu.is_some() {
+        if key == "Escape" {
+            env.media_menu = None;
+        }
+        return true;
+    }
+    let Some(k) = env.fullscreen.clone() else {
+        return false;
+    };
+    match key {
+        "Escape" => env.fullscreen = None,
+        "Space" | " " => env.media_act(&k, crate::links::MediaOp::PlayPause),
+        _ => {}
+    }
+    true
+}
+
+/// The video that fills the window: black round it, the picture fitted,
+/// the controls along the bottom.
+pub fn draw_fullscreen(c: u64, env: &Env, window: Rect, t: &Theme, said: &mut krate::layout::Said) {
+    let Some(key) = env.fullscreen.as_deref() else {
+        return;
+    };
+    let Some(m) = env.media_by_key(key) else {
+        return;
+    };
+    fill(c, window, look::hex(0x000000));
+    let (vw, vh) = m.size.unwrap_or((16, 9));
+    let k = (window.w / vw.max(1) as f32).min(window.h / vh.max(1) as f32);
+    let (pw, ph) = (vw as f32 * k, vh as f32 * k);
+    let pic = r(
+        window.x + (window.w - pw) * 0.5,
+        window.y + (window.h - ph) * 0.5,
+        pw,
+        ph,
+    );
+    draw_player(c, env, key, false, window, pic, t);
+    let p = player_parts(false, window);
+    said.button(p.play, "Play or pause video");
+    said.button(p.snd, "Mute video");
+    if let Some(f) = p.full {
+        said.button(f, "Exit full screen");
+    }
+    said.button(p.more, "More options for the video");
+}
+
+/// Download, as Chromium's menu does it: the person picks where, and the
+/// file is copied there.
+fn download(env: &Env, win: u64, app: &mut crate::app::App, key: &str) {
+    let Some(path) = env.media_by_key(key).and_then(|m| m.path.clone()) else {
+        return;
+    };
+    let name = String::from(crate::vfs::file_name(&path));
+    let chosen = match krate::ui::dialog::save_file(win, "Download", &name, "") {
+        Ok(Some(f)) => f,
+        Ok(None) => return,
+        Err(_) => {
+            app.say("Krate did not let this app save a file where you choose");
+            return;
+        }
+    };
+    let Some(v) = app.vault.as_mut() else {
+        return;
+    };
+    let done =
+        v.fs.read_bytes(&path)
+            .map_err(|_| ())
+            .and_then(|b| krate::fs::write_chosen(&chosen.token, &b).map_err(|_| ()));
+    if done.is_err() {
+        app.say("The file could not be saved there");
     }
 }
 
@@ -2526,20 +2849,10 @@ pub fn press(c: u64, w: &Widget, lx: f32, ly: f32, _width: f32, line: usize) -> 
                 return Some(Act::Place(Pos::new(*line, 0)));
             }
             let rc = r(*x, *y, *w, *h);
-            let (play, track, snd) = player_parts(*audio, rc);
-            let op = if play.contains(lx, ly) {
-                crate::links::MediaOp::PlayPause
-            } else if snd.contains(lx, ly) {
-                crate::links::MediaOp::Mute
-            } else if r(track.x, track.y - 6.0, track.w, track.h + 12.0).contains(lx, ly) {
-                crate::links::MediaOp::Seek(((lx - track.x) / track.w.max(1.0)).clamp(0.0, 1.0))
-            } else if !*audio && rc.contains(lx, ly) {
-                // A press on the picture plays or pauses it.
-                crate::links::MediaOp::PlayPause
-            } else {
-                return Some(Act::Nothing);
-            };
-            Some(Act::Media(key.clone(), op))
+            match player_op(*audio, rc, lx, ly) {
+                Some(op) => Some(Act::Media(key.clone(), op)),
+                None => Some(Act::Nothing),
+            }
         }
         Widget::Note {
             subs,
