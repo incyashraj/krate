@@ -493,6 +493,18 @@ impl World {
     }
 
     fn spawn_popup(&mut self, x: f32, y: f32, value: u32) {
+        // Two hits on one spot read as one bigger number, not two numbers
+        // drawn over each other: check-app's screens stage caught "+250"
+        // over "+250" when two enemies went down together (K-1325).
+        for i in 0..self.n_popups {
+            if let Some(near) = self.popups.get_mut(i) {
+                if near.life > 0.6 && (near.x - x).abs() < 60.0 && (near.y - y).abs() < 28.0 {
+                    near.value += value;
+                    near.life = 0.9;
+                    return;
+                }
+            }
+        }
         if self.n_popups >= MAX_POPUPS {
             return;
         }
