@@ -276,13 +276,16 @@ impl Vfs for DiskFs {
     }
 }
 
-/// Move a file or folder (a Krate path) to the computer's trash. Krate has
-/// no call for it yet (K-1337), so this answers an error and the vault puts
-/// the file in its own `.trash` folder instead, as the notes app's "Move to
-/// Obsidian trash" setting does. The one place to switch to the new call.
+/// Move a file or folder (a Krate path) to the computer's Trash, as the
+/// notes app's default "Move to system trash" does (krate:ui/trash). Where
+/// there is no Trash -- a browser tab, a phone -- the error says so and the
+/// vault puts the file in its own `.trash` folder instead.
 pub fn trash_file(path: &str) -> Result<(), String> {
-    let _ = path;
-    Err(String::from(
-        "Krate cannot move files to the system trash yet",
-    ))
+    use krate::ui::trash::{move_to_trash, TrashError};
+    move_to_trash(path).map_err(|e| match e {
+        TrashError::Denied => String::from("Krate did not allow that here"),
+        TrashError::NotFound => String::from("not found"),
+        TrashError::InvalidPath => String::from("that name is not allowed"),
+        TrashError::Unavailable(why) => why,
+    })
 }
