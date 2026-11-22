@@ -2960,6 +2960,11 @@ impl Phase3GuiHost {
             return;
         }
         let dispatcher = self.dispatcher();
+        // A right click (`button = "secondary"`) reaches a context menu
+        // the way a person's does; validate() already refused a bad name.
+        let press_button = step
+            .pointer_button()
+            .unwrap_or(krate_adapter_common::ui::PointerButton::Primary);
         let delivered = if let Some(label) = &step.click {
             let target = on_screen
                 .iter()
@@ -3005,7 +3010,7 @@ impl Phase3GuiHost {
                         viewport,
                         x,
                         y,
-                        button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                        button: Some(press_button),
                         pressed,
                         modifiers: Default::default(),
                     })
@@ -3030,7 +3035,7 @@ impl Phase3GuiHost {
                         viewport,
                         x,
                         y,
-                        button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                        button: Some(press_button),
                         pressed,
                         modifiers: Default::default(),
                     })

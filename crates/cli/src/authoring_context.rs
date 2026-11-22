@@ -212,6 +212,8 @@ store on disk (its key-value store and database), `expect_notified =\n\
 `expect_requested = \"api.example.com\"` against the requests Krate sent\n\
 for it -- not against anything the app says on screen, so an app that\n\
 saves, reminds or fetches proves it did.\n\
+A `click` step can add `button = \"secondary\"` to right-click (a\n\
+context menu).\n\
 `key = \"Shift+ArrowLeft\"` or\n\
 `\"Primary+a\"` (Cmd on a Mac, Ctrl elsewhere) or `\"Primary+Alt+f\"`\n\
 (Alt is Option on a Mac) presses a chord,\n\

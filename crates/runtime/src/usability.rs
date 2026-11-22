@@ -139,6 +139,11 @@ pub struct TaskStep {
     /// game's menu, a canvas -- where there is no labelled control to find.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub click_at: Option<String>,
+    /// Which button a `click` or `click_at` presses: "primary" (the
+    /// default), "secondary" (a right click, for context menus) or
+    /// "middle".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<String>,
     /// Hold a key down for a while, "key milliseconds" ("w 3000"): walking
     /// in a game, scrolling with an arrow key. Released when the time is up.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,6 +258,10 @@ impl TaskStep {
         if let Some(Err(why)) = self.click_point() {
             return Err(why);
         }
+        if self.button.is_some() && self.click.is_none() && self.click_at.is_none() {
+            return Err("`button` goes with a `click` or `click_at` step".to_string());
+        }
+        self.pointer_button()?;
         if let Some(Err(why)) = self.held_key() {
             return Err(why);
         }
@@ -360,6 +369,20 @@ impl TaskStep {
             }
         }
         Some((rest.to_string(), chord))
+    }
+
+    /// The button a click presses (a right click is "secondary"), or why
+    /// the name is not one.
+    pub fn pointer_button(&self) -> Result<krate_adapter_common::ui::PointerButton, String> {
+        use krate_adapter_common::ui::PointerButton;
+        match self.button.as_deref().map(str::trim) {
+            None | Some("primary") | Some("left") => Ok(PointerButton::Primary),
+            Some("secondary") | Some("right") => Ok(PointerButton::Secondary),
+            Some("middle") => Ok(PointerButton::Middle),
+            Some(other) => Err(format!(
+                "button {other:?} is not one of \"primary\", \"secondary\" (a right click) or \"middle\""
+            )),
+        }
     }
 
     /// Where `click_at` presses, as fractions of the window, or why it cannot.
@@ -1099,5 +1122,42 @@ mod chord_tests {
             )
         );
         assert_eq!(chord("a"), ("a".into(), Chord::default()));
+    }
+}
+
+#[cfg(test)]
+mod button_tests {
+    use super::*;
+    use krate_adapter_common::ui::PointerButton;
+
+    fn step(click: Option<&str>, button: Option<&str>) -> TaskStep {
+        TaskStep {
+            click: click.map(str::to_string),
+            button: button.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    /// A task can right-click: a context menu is reachable headless.
+    #[test]
+    fn a_click_step_can_press_the_secondary_button() {
+        assert_eq!(
+            step(Some("teh"), None).pointer_button(),
+            Ok(PointerButton::Primary)
+        );
+        assert_eq!(
+            step(Some("teh"), Some("secondary")).pointer_button(),
+            Ok(PointerButton::Secondary)
+        );
+        assert_eq!(
+            step(Some("teh"), Some("right")).pointer_button(),
+            Ok(PointerButton::Secondary)
+        );
+        assert!(step(Some("teh"), Some("secondary")).validate().is_ok());
+        assert!(step(Some("teh"), Some("sideways")).validate().is_err());
+        assert!(
+            step(None, Some("secondary")).validate().is_err(),
+            "a button needs a click"
+        );
     }
 }
