@@ -323,11 +323,16 @@ impl Clock {
 
     /// (year, month, day, "HH:MM") for an instant, here.
     fn parts(&self, ms: u64) -> (u32, usize, u32, String) {
-        let s =
-            krate::locale::format_date(ms, &self.tz, krate::locale::DateStyle::Medium, &self.loc);
-        let num = |a: usize, b: usize| s.get(a..b).and_then(|t| t.parse::<u32>().ok()).unwrap_or(0);
-        let hm = String::from(s.get(11..16).unwrap_or(""));
-        (num(0, 4), (num(5, 7) as usize).clamp(1, 12), num(8, 10), hm)
+        // The local date and time as numbers (IC-991), never cut out of the
+        // text format_date returns: that text is made for a person, and its
+        // shape is not the same in a browser tab (K-1303).
+        let t = krate::locale::local_time(ms);
+        (
+            t.year.max(0) as u32,
+            (t.month as usize).clamp(1, 12),
+            u32::from(t.day),
+            format!("{:02}:{:02}", t.hour, t.minute),
+        )
     }
 
     /// "just now", "4 min ago", "today 14:02", "yesterday 09:15", "12 Oct".
@@ -343,8 +348,9 @@ impl Clock {
         if (y, m, d) == (ty, tm, td) {
             return format!("today {hm}");
         }
-        let (yy, ym, yd, _) = self.parts(now.saturating_sub(86_400_000));
-        if (y, m, d) == (yy, ym, yd) {
+        // Yesterday is the local day before, not 24 hours ago, which lands
+        // on the wrong day across a daylight-saving change.
+        if krate::locale::day_number(ms) + 1 == krate::locale::day_number(now) {
             return format!("yesterday {hm}");
         }
         let month = MONTHS.get(m - 1).copied().unwrap_or("");
@@ -987,9 +993,9 @@ impl App {
     }
 
     fn today(&self, back_days: u64) -> String {
-        let (y, m, d, _) = self
-            .clock
-            .parts(self.now().saturating_sub(back_days * 86_400_000));
+        // Days back counted in local days, not 24-hour blocks.
+        let day = krate::locale::day_number(self.now()) - back_days as i64;
+        let (y, m, d) = krate::locale::date_of_day(day);
         format!("{y:04}-{m:02}-{d:02}")
     }
 
