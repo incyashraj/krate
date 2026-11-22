@@ -472,5 +472,17 @@ mod tests {
         assert_eq!(a.doc().unwrap().selected_text(), "dog");
         assert_eq!(key(&mut a, "Escape", Mods::default()), Some(true));
         assert!(a.doc().unwrap().find.is_none());
+        // Cmd+Option+F opens it with the replace row, whether the host sends
+        // "f" or the "ƒ" Option makes on a Mac.
+        let cmd_opt = Mods {
+            primary: true,
+            alt: true,
+            ..Mods::default()
+        };
+        for k in ["f", "ƒ"] {
+            assert_eq!(key(&mut a, k, cmd_opt), Some(true));
+            assert!(a.doc().unwrap().find.as_ref().is_some_and(|f| f.replacing));
+            assert_eq!(key(&mut a, "Escape", Mods::default()), Some(true));
+        }
     }
 }

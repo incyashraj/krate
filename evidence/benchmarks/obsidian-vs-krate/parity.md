@@ -42,11 +42,11 @@ in `screens/parity/`.
 | Live preview: checkboxes | Done | drawn boxes, click ticks, Cmd+L toggles, done items struck (unit `tasks_toggle_and_bold_wraps`, shot 10) |
 | Live preview: code blocks | Done | fenced blocks shaded in a mono face, language label on the fence; the fence index follows edits without rescanning (unit `fences_follow_typing`) |
 | Live preview: links | Done | `[[x]]`, `[[x|alias]]` (alias shown), `[text](url)` (text shown), bare `https://` links; unresolved wiki links dimmed |
-| Live preview: tables, callouts, embeds, images, math, properties | Missing | tables show as plain text rows; `![[embed]]` shows as a link; front matter shows as text |
-| Reading view toggle | Partial | Cmd+E and the header button (unit `palette_runs_commands`, shot 07); it is the same line renderer with all syntax hidden and no caret, not a separate document renderer: blank lines keep their height, nothing is transcluded |
+| Live preview: tables, callouts, embeds, images, math, properties | Done | each drawn whole while the caret is outside it and shown as source with the caret in it, as live preview does; see "Editor and rendering" below |
+| Reading view toggle | Done | Cmd+E and the header button (unit `palette_runs_commands`); reading view lays lines out by its own rules: blank lines collapse into paragraph gaps, comments, footnote definitions and syntax-only lines go, footnotes are numbered and listed at the end, every block is drawn whole, embeds transclude (screens/parity/*-reading.png) |
 | Source mode | Done | palette "Toggle live preview and source mode": every character shown |
-| `[[wikilinks]]` open the target | Done | click (Cmd-click for a new tab) opens it; a link to a missing note creates it, as Obsidian does (unit `following_a_missing_link_makes_the_note`); `[[note#Heading]]` opens the note but does not scroll to the heading (Partial) |
-| Completion while typing `[[` | Partial | fuzzy over all note names, arrows and Enter or Tab or click, reuses the auto-closed `]]` (unit `brackets_pair_and_links_complete`, shot 06, check task); no heading (`[[note#`) or block completion |
+| `[[wikilinks]]` open the target | Done | click (Cmd-click for a new tab) opens it; a link to a missing note creates it, as Obsidian does (unit `following_a_missing_link_makes_the_note`); `[[note#Heading]]` and `[[note#^block]]` open the note with the heading or block at the top and the caret on it, `[[#Heading]]` stays in the note (unit `links_go_to_their_heading_and_block`); shown as "Note > Heading" (shot parity/links-live) |
+| Completion while typing `[[` | Done | fuzzy over all note names, arrows and Enter or Tab or click, reuses the auto-closed `]]` (unit `brackets_pair_and_links_complete`, shot 06, check task); after `[[Note#` the note's headings with their level, after `[[Note#^` its block ids with their text (unit `headings_and_blocks_complete_after_a_hash`); Obsidian also offers paragraphs without an id after `#^` and writes an id into the target -- Vault offers only blocks that have one |
 | `#tags` | Done | styled as pills, indexed, tag pane, `tag:` search including nested tags (unit `tags_match_their_children`) |
 | Vault search (Cmd+Shift+F) with matching lines | Done | runs between frames with results as they come, words AND'ed, `"phrases"`, `tag:`, `path:`, `file:`, `-exclude`; results grouped by note with each matching line and the match highlighted; click jumps to it (unit, shot 04: 580 notes, 2,371 matches); no regex, no case-sensitive toggle, no sort choice |
 | Quick switcher (Cmd+O) | Done | fuzzy over note names then paths, recent notes first when empty, Enter opens, Cmd+Enter new tab, Shift+Enter or no match creates (unit `switcher_finds_notes_fuzzily_and_creates_missing_ones`, shot 03 at 10,001 notes) |
@@ -92,10 +92,10 @@ in `screens/parity/`.
 
 ## Not in this replica
 
-Stacked tabs, hover previews, in-note find and replace (Cmd+F), spell
-check, community themes and plugins, sync, publish, PDF export,
-attachments and images in the file tree, recording hotkeys in settings,
-pop-out windows.
+Not built: stacked tabs, attachments and images in the file tree,
+recording hotkeys in settings, pop-out windows, community themes and
+plugins, sync, publish, PDF export. Spell check: Krate has no spell checker
+to ask (K-1340).
 
 ## Runtime holes found while building it
 
@@ -105,3 +105,57 @@ Filed in BUGS.md, unclaimed:
 - **K-1335** (our-code): `fs::write` fails over 8 MiB; `read_to_end` reads 8 KiB a call.
 - **K-1336** (runtime-hole): a picked folder is forgotten when the app closes (fixed since).
 - **K-1337** (runtime-hole): no call moves a file to the computer's trash, so Vault deletes into the vault's `.trash`.
+
+## Editor and rendering, against Obsidian 1.15.1 side by side
+
+Checked 2026-11-22 against Obsidian 1.15.1 itself (not its documentation):
+the same notes (`render-vault/`, copied into a generated light vault) opened
+in an isolated Obsidian profile and captured with `screencapture -l`, and in
+Vault headless with `krate run --task` steps that wait and `shoot`. Each
+picture in `screens/parity/` is Obsidian's note pane on the left and
+Vault's on the right. *unit* names a native test in `apps/krate-vault`
+(91 tests in all).
+
+| Feature | State | How verified / what differs |
+|---|---|---|
+| Tables (GFM pipes) | Done | drawn with 1 px borders, 8 by 3 px cell padding, bold header, `:---`, `:---:`, `---:` alignment, inline Markdown and links in cells, columns sized to content and shared when too wide (unit `table_rows_split_into_cells`, `spans_are_found_from_any_of_their_lines`; parity/table-live, table-reading); the caret in a table shows its rows as source. Obsidian 1.15 edits a cell inside the drawn table; Vault edits the row's source (the task's "editable as source") |
+| Callouts | Done | every Obsidian type and alias (note, abstract/summary/tldr, info, todo, tip/hint/important, success/check/done, question/help/faq, warning/caution/attention, failure/fail/missing, danger/error, bug, example, quote/cite; unknown types as note), its icon and RGB, a tenth of the colour behind, title or the type's name, `+`/`-` folding with the chevron, Markdown and lists inside (unit `callouts_read_their_head`; parity/callouts-live, callouts-reading). Icons are drawn from lines, close to but not Lucide's |
+| Embeds: notes | Done | `![[Note]]` (headed by its name), `![[Note#Heading]]` (the section), `![[Note#^block]]` (the block), with the accent bar, their own tables, callouts, maths and pictures drawn; an embed inside an embed shows as its link (unit `sections_and_blocks_are_found`, `embeds_name_notes_pictures_and_sizes`; parity/embeds-notes-live). Obsidian's open-in-place icon on hover is not drawn |
+| Embeds: pictures | Done | `![[pic.png]]`, `![[pic.png|300]]`, `![[pic.png|300x200]]`, `![alt](path)` and `![alt|64](path)`, found beside the note, at the root or in any folder; PNG, JPEG, GIF (first frame) and BMP decoded in the app, scaled to the column, rounded 4 px (unit `png_decodes_to_rgba`, `gif_first_frame_decodes`, `bmp_and_unknown_formats`; parity/embeds-pictures-live). WebP, AVIF and SVG show "... cannot be shown yet": no `no_std` decoder for them is in the app; animated GIFs stay on their first frame; pictures from the web are not fetched |
+| Math | Done | `$...$` inline and `$$...$$` blocks set in a serif face by the app's own TeX layout: fractions (`\frac`, `\dfrac`, `\binom`), sub- and superscripts, Greek, relations and operators, `\sum`/`\prod`/`\lim` with limits in display and beside inline, integrals, `\sqrt` and `\sqrt[n]`, `pmatrix`/`bmatrix`/`vmatrix`/`cases`/`aligned`, growing `\left( \right)`, accents, `\text`, `\mathbb`, spacing; what it cannot read shows in red, as KaTeX does (unit `math::tests`, 6 tests; parity/math-live). Glyph shapes are the system serif, not KaTeX's fonts |
+| Properties | Done | the Properties block for YAML front matter: text, list, number, checkbox, date, date and time, tags (pills), aliases, with their icons and the 148 px key column, "Add property" (unit `properties_are_typed_like_the_block_shows_them`, `presses_tick_fold_and_edit_properties`; parity/properties-live). A checkbox ticks in place and Add property adds a key; other values are edited in their YAML line (a click puts the caret there), where Obsidian edits them in the block |
+| Footnotes | Done | `[^1]` and `^[inline]` small and raised while editing; reading view numbers them by first reference and lists them after the note with the way back (unit `footnotes_number_in_reference_order`; parity/inline-live, inline-reading). The way-back arrow is not clickable |
+| Highlights, strikethrough, inline HTML | Done | `==x==`, `~~x~~`, `<u>`, `<mark>`, `<sub>`, `<sup>`, `<kbd>`, `<b>`/`<strong>`, `<i>`/`<em>`, `<s>`/`<del>`, `<br>` and `<span>` (tags hidden, text styled) (unit `math_footnotes_comments_html_and_block_ids`). Other HTML (tables, `<div>`, `<img>`, `<details>`) shows as text |
+| `%%comments%%` | Done | dimmed while editing, gone in reading view, inline and as `%%` blocks (unit same, `spans_are_found_from_any_of_their_lines`) |
+| Horizontal rules, blockquotes, nested and task lists | Done | task states `[ ]`, `[x]`, `[/]`, `[-]` and any other mark drawn in the box; ordered numbers muted. Obsidian also strikes the children of a done task; Vault strikes only the task's own line |
+| Block ids `^id` | Done | small and dimmed while editing, hidden in reading view |
+| Code blocks | Done | coloured by language with Obsidian's dark and light code colours: Rust, JavaScript/TypeScript, Python, shell, C/C++/Java/Go/C#/Swift/Kotlin, SQL, JSON/YAML/TOML, CSS; the language's name in the corner (unit `code_lines_are_coloured_by_language`; parity/code-mermaid-live) |
+| Mermaid | Partial | flowcharts (`graph`/`flowchart`, TD/TB/BT/LR/RL, rectangle, round, stadium, circle and diamond nodes, solid, dotted and thick edges, labels, cycles) drawn by the app (unit `flowcharts_rank_their_boxes`, `mermaid_flowcharts_are_blocks_and_other_code_is_not`; parity/code-mermaid-live); the layout is simple ranks, not Mermaid's. Sequence, class, state, Gantt, pie and other diagram kinds stay a styled code block |
+| Reading view | Done | its own layout (see the row above); typography spacing measured against Obsidian's: paragraph gaps of 1 em, headings 1.618/1.462/1.318/1.188/1.076 em |
+| Heading links show as "Note > Heading" | Done | parity/links-live |
+| Page preview | Done | a link hovered with Cmd held shows the note (its blocks drawn) in a popover under the link, gone when the pointer leaves link and popover (`preview=Table` start argument for a headless picture: screens/parity/vault-page-preview.png). Obsidian also previews without Cmd in reading view and on search results; Vault only in the note |
+| Tag click opens search | Done | unit `search_runs_as_a_job` (tag: query) |
+| External links | Done | open in the browser through `ui.open-url` |
+| Find and replace in the note | Done | Cmd+F opens the bar with the selection, matches highlighted, "n / total", Enter/Shift+Enter and the arrows step, Escape closes; Cmd+Option+F or the bar's button adds the replace row, Replace and Replace all (one undo); at most 10,000 matches counted (unit `find::tests`, `keys_drive_several_carets_and_the_find_bar`; screens/parity/vault-find-replace.png). Case-insensitive only; no regex toggle |
+| Several carets | Done | Option-click adds or removes a caret, Cmd+D selects the word then each next occurrence, Cmd+Option+Up/Down adds a caret above or below; typing, Backspace, Delete, Enter, Left, Right, Home and End act at every caret as one undo; Escape keeps one (unit `several_carets_type_together`). Up and Down move only the main caret |
+| Folding | Done | headings (to the next heading at their level) and list items (their children) fold from a chevron in the margin, shown on hover and while folded, with "..." after a folded line; Cmd+Option+[ and ] fold and unfold, with Shift all at once; folds follow edits (unit `headings_and_lists_fold`) |
+| Smart lists | Done | (earlier: `lists_continue_and_end_on_enter`) |
+| Drag text | Done | a press inside the selection drags the text and drops it where released, one undo (unit `selected_text_moves_by_dragging`); not dragged in a real window |
+| Spell check | Missing (runtime hole) | Krate has no spell checker an app can ask (K-1340) |
+
+Performance with all of this on: the 200,000-line note (debug runtime,
+`krate run ... --task` that waits 1.5 s, Cmd+Down, types, saves):
+
+| | before (b689eb95f) | after |
+|---|---|---|
+| note read and parsed (`t_note_open_ms`) | 160, 163 | 171, 199 |
+| first frame (`t_first_frame_ms`) | 766, 777 | 763, 810 |
+| lines laid out in the whole run | 44 | 45 |
+| saved after typing | yes | yes |
+
+The extra time at open is finding the `$$`, `%%` and front matter lines
+once; nothing else scans the note.
+
+Not checked here: anything in a real window (every run above was
+headless), Obsidian's light theme side by side, and the light-theme code
+colours.

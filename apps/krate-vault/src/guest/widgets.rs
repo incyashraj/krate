@@ -613,7 +613,12 @@ fn callout(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
     }
     let h = y + pb;
     let title_w = look::width(c, &title, sz.body, 600);
-    let top = 4.0 * k;
+    // Reading view's paragraph gap is the space between callouts there.
+    let top = if doc.mode == Mode::Reading {
+        0.0
+    } else {
+        4.0 * k
+    };
     widget_lay(
         Widget::Callout {
             rgb,
@@ -1305,14 +1310,9 @@ fn draw_value(c: u64, p: &PropRow, x: f32, cy: f32, room: f32, t: &Theme) {
                     look::text(c, label, px + 10.0, base, 15.0, 400, t.link);
                     look::text(c, "×", px + w + 14.0, base, 15.0, 400, t.link);
                 } else {
-                    round(
-                        c,
-                        r(px, cy - 12.0, w + 34.0, 24.0),
-                        12.0,
-                        look::alpha(t.muted, 0.12),
-                    );
-                    look::text(c, label, px + 10.0, base, 15.0, 400, t.text);
-                    look::text(c, "×", px + w + 14.0, base, 15.0, 400, t.muted);
+                    // Aliases and lists are plain words with a cross, no pill.
+                    look::text(c, label, px, base, 15.0, 400, t.text);
+                    look::text(c, "×", px + w + 4.0, base, 15.0, 400, t.muted);
                 }
                 px += w + 42.0;
             }

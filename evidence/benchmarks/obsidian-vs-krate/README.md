@@ -14,6 +14,11 @@ benchmark result yet.
   `krate run --task` steps against the generated vaults; [screens/parity/](screens/parity/)
   puts Obsidian 1.15.1 (window captures, isolated profile) and Vault side by
   side on the same vault.
+- The rendering notes: [render-vault/](render-vault/) -- tables, callouts,
+  math, properties, embeds, footnotes, code and Mermaid, a note each,
+  with two pictures. Copy them into a generated vault (`Render/`) and open
+  the same note in both apps; [screens/parity/](screens/parity/) holds
+  each side by side (Obsidian 1.15.1 left, Vault right).
 
 ## 1. Make the vaults
 
@@ -90,6 +95,7 @@ Arguments after `--`, one per word:
 | `right` / `light` | open the right sidebar / draw in the light theme |
 | `settle` | before the first frame, finish indexing and let a graph's layout settle (for a still picture) |
 | `reading` | start the note in reading view |
+| `preview=<link>` | show the page preview for that link at start (Cmd-hover cannot be done headless) |
 | `sample` | open the built-in sample vault (memory only) |
 | `trace` | print timing marks as they happen (below) |
 | `quick` | the self-check run: sample vault, every feature once, exit 0 |

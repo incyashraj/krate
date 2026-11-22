@@ -436,7 +436,7 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
             line_h = if live { 1.3 } else { 1.5 };
             pad_top = if reading {
                 // Reading view keeps a heading's space above it.
-                (if l <= 2 { 14.0 } else { 10.0 }) * k
+                (if l <= 2 { 6.0 } else { 4.0 }) * k
             } else if live && l <= 2 {
                 8.0 * k
             } else if live {
@@ -503,6 +503,9 @@ pub fn layout(c: u64, text: &str, ctx: Ctx, lang: &str, nums: &[usize]) -> Lay {
             x0 = level as f32 * indent_w;
             segs.push(plain(0, m, true));
             segs.push(plain(m, content, false));
+            // The number is drawn muted, as Obsidian's list markers are.
+            toks.push(Tok::Plain);
+            toks.push(Tok::Punct);
             segs.extend(md::inline(text, content));
         }
         Block::Quote { content } if live => {
@@ -1827,7 +1830,9 @@ pub fn draw_line(
             col = t.muted;
         } else if l.deco == Deco::Code {
             col = tok_colour(run.tok, t);
-        } else if l.deco == Deco::Task(true) && matches!(l.task_mark, b'x' | b'X') {
+        } else if run.tok == Tok::Punct
+            || (l.deco == Deco::Task(true) && matches!(l.task_mark, b'x' | b'X'))
+        {
             col = t.muted;
         } else if l.deco == Deco::Title {
             col = t.text;
