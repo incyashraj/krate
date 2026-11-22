@@ -115,6 +115,8 @@ import { orgChatRoute, chatSweep } from "./org-chat.js";
 import { orgApprovalsRoute } from "./org-approvals.js";
 // Signed-in sessions, and signing out everywhere.
 import { accountSessionsRoute, recordSession, sessionLabel, endEverySession, endSessionsOfKind, sessionId, GITHUB_INDEX_TTL_SECONDS } from "./account-sessions.js";
+// Studio's interface without a release (IC-998).
+import { studioUiRoute } from "./studio-ui.js";
 // One account, every way in (IC-996): list, add and remove sign-ins.
 import { addWay, wayFor, waysOf, signInsRoute, removeWayFrom, addable, appleAuthorizeUrl, verifyAppleIdToken } from "./sign-ins.js";
 // Deleting an account, and its export (K-1245).
@@ -866,6 +868,12 @@ export default {
       }
       if (request.method === "GET" && pathname === "/my/apps") {
         return cors(await myApps(request, env));
+      }
+      // Studio's interface updates (IC-998): the hub holds them, each
+      // Studio checks the signature itself.
+      if (pathname.startsWith("/studio-ui/") || pathname === "/admin/studio-ui") {
+        const answer = await studioUiRoute(request, url, env, { isAdmin, json, text });
+        if (answer) return cors(answer);
       }
       // Ways to sign in (IC-996): list, add, confirm, remove.
       if (pathname === "/me/sign-ins" || pathname.startsWith("/me/sign-ins/")) {

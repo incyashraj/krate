@@ -26,6 +26,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Checks Krate's signature on an interface update (IC-998, live_ui.rs).
+ring = "0.17"
 base64 = "0.22"
 # The same dialog crate the runtime's own host pickers use.
 rfd = "0.15"

@@ -9132,6 +9132,22 @@ if (tauri) {
   startOrgSync();
   tauri.event.listen("build-shot", (e) => onBuildShot(e.payload))
     .catch(() => {});
+  // A newer interface arrived and checked out (IC-998, live_ui.rs). It is
+  // used from the next start either way; Reload shows it now. Never forced:
+  // a reload in the middle of a build would throw away what is on screen.
+  tauri.event.listen("ui-update-ready", () => {
+    if ($("krUiReady")) return;
+    const bar = document.createElement("div");
+    bar.id = "krUiReady";
+    bar.className = "kr-toast kr-uiready";
+    bar.setAttribute("role", "status");
+    bar.innerHTML = '<span>Studio’s screens were updated</span><button type="button" class="go">Reload</button><button type="button">Later</button>';
+    const [reload, later] = bar.querySelectorAll("button");
+    reload.addEventListener("click", () => location.reload());
+    later.addEventListener("click", () => bar.remove());
+    document.body.appendChild(bar);
+    requestAnimationFrame(() => bar.classList.add("on"));
+  }).catch(() => {});
   // Install progress, so a two-minute npm run is not a frozen button. The
   // last line is enough: nobody wants npm's full output, they want to see
   // that something is happening.

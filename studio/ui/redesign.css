@@ -1409,6 +1409,11 @@ body:not(.light) .kr-pal { background: #1a1a1d; }
   font: 500 13.5px var(--sans); color: var(--btn-ink); background: var(--btn); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .45);
   transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: transform .5s var(--spring), opacity .3s; }
 .kr-toast.on { transform: translate(-50%, 0); opacity: 1; }
+/* Studio's screens were updated (IC-998): the toast with a choice in it. */
+.kr-uiready { padding: 0 6px 0 16px; pointer-events: auto; }
+.kr-uiready button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; font: 500 13px var(--sans); color: var(--btn-ink); background: transparent; cursor: pointer; }
+.kr-uiready button.go { background: color-mix(in srgb, var(--btn-ink) 16%, transparent); }
+.kr-uiready button:hover { background: color-mix(in srgb, var(--btn-ink) 22%, transparent); }
 .kr-toast i { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; }
 .kr-toast i svg { width: 11px; height: 11px; }
 .kr-burst { position: absolute; left: 20px; top: 20px; width: 0; height: 0; }

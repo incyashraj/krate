@@ -22,6 +22,7 @@ use tauri::{Emitter, Manager};
 #[cfg(test)]
 mod command_tests;
 mod ide;
+mod live_ui;
 mod pretend_serial;
 
 /// The one build allowed at a time, by process id, so Stop can reach it.
@@ -6135,10 +6136,31 @@ fn main() {
     #[cfg(target_os = "macos")]
     std::thread::spawn(first_run_setup);
 
+    // Studio's interface, newer than the one compiled in when Krate has
+    // shipped one (IC-998): the last checked bundle on disk serves from the
+    // first paint, through Tauri's own asset seam -- same origin, same
+    // policy, same commands. Anything wrong leaves the built-in interface.
+    let mut context = tauri::generate_context!();
+    live_ui::load_cached(&studio_dir());
+    let builtin = context.set_assets(Box::new(live_ui::LiveAssets::empty()));
+    context.set_assets(Box::new(live_ui::LiveAssets::new(builtin)));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(Running::fresh())
         .setup(|_app| {
+            // A newer interface from the hub, checked and kept for the next
+            // start; the window offers a reload to show it now.
+            {
+                let handle = _app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(8));
+                    if live_ui::fetch_newer(&hub_url(), &studio_dir()) {
+                        let _ = handle.emit("ui-update-ready", live_ui::serving_serial());
+                    }
+                });
+            }
+
             // One title bar, ours. On Windows the native frame stacked a
             // second bar with its own name and buttons above the studio's;
             // remove it and let the in-app bar carry minimize, maximize and
@@ -6388,7 +6410,7 @@ fn main() {
             ide::ide_delete,
             ide::ide_stop
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("the studio window could not start")
         .run(|app, event| {
             // The window starts hidden and shows only if no document claims
