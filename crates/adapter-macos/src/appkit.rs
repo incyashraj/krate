@@ -1264,9 +1264,8 @@ mod platform {
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
         NSButton, NSColor, NSControl, NSCursor, NSEvent, NSEventMask, NSEventModifierFlags,
-        NSEventType, NSFont, NSImage, NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSText,
-        NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
-        NSWindowTitleVisibility,
+        NSEventType, NSFont, NSImage, NSImageScaling, NSImageView, NSText, NSTextField, NSView,
+        NSWindow, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -2750,6 +2749,16 @@ mod platform {
             // Every button and every movement feeds the window's pointer
             // tracker (IC-909); the primary press and release also go on as
             // the raw samples widget hit-testing has always used.
+            // A right-click opens the window's own menu (IC-1002): every view
+            // in it must carry the menu before AppKit asks for it.
+            if matches!(event.r#type(), NSEventType::RightMouseDown)
+                || (event.r#type() == NSEventType::LeftMouseDown
+                    && event
+                        .modifierFlags()
+                        .contains(NSEventModifierFlags::Control))
+            {
+                crate::menus::refresh_context(&self.window);
+            }
             let (button, pressed, moved) = match event.r#type() {
                 NSEventType::LeftMouseDown => (Some(PointerButton::Primary), true, false),
                 NSEventType::LeftMouseUp => (Some(PointerButton::Primary), false, false),
@@ -2930,6 +2939,22 @@ mod platform {
                 // sample -- there is no portable name an app could ask for.
                 return true;
             };
+            // A shortcut of the app's own menu bar chooses its item, as a
+            // click does (IC-1002): the menu takes it, the item flashes, and
+            // the app is not handed the key as well.
+            if pressed {
+                let chord = krate_adapter_common::ui::Modifiers {
+                    shift: flags.contains(NSEventModifierFlags::Shift),
+                    control: flags.contains(NSEventModifierFlags::Control),
+                    alt: flags.contains(NSEventModifierFlags::Option),
+                    meta: flags.contains(NSEventModifierFlags::Command),
+                };
+                if crate::menus::bar_has_shortcut(&key, chord)
+                    && crate::menus::perform_key_equivalent(event)
+                {
+                    return true;
+                }
+            }
             // Escape always gives a held pointer back, whatever the app does
             // with the key (IC-909). The app still gets the key.
             if key == "Escape" && pressed {
@@ -3025,73 +3050,27 @@ mod platform {
     /// each item down the responder chain, where the focused NSTextField
     /// already implements `cut:`, `copy:`, `paste:`, and `selectAll:`. Idempotent:
     /// the menu is installed only once per process.
-    fn install_edit_menu(app: &NSApplication, mtm: MainThreadMarker) {
+    fn install_edit_menu(app: &NSApplication, _mtm: MainThreadMarker) {
         if app.mainMenu().is_some() {
             return;
         }
+        // The FIRST item of a main menu is the application menu, whatever it
+        // is called. With Edit first, Edit became the app menu and nothing
+        // anywhere offered Quit: Cmd+Q and Cmd+W did nothing in every Krate
+        // app on a Mac, and the app's own menu held Undo and Paste (K-918).
+        // The standard App, Edit and Window menus are built in one place now
+        // (menus.rs), the same ones an app's own bar is put between
+        // (IC-1002).
+        if let Err(error) = crate::menus::install_bar(None, "") {
+            tracing_free_note(&error);
+        }
+    }
 
-        // SAFETY: all AppKit menu construction runs on the main thread, proven
-        // by `mtm`, and every selector below is implemented by NSResponder.
-        unsafe {
-            let main_menu = NSMenu::new(mtm);
-
-            // The FIRST item of a main menu is the application menu, whatever
-            // it is called. With Edit first, Edit became the app menu and
-            // nothing anywhere offered Quit: Cmd+Q and Cmd+W did nothing in
-            // every Krate app on a Mac, and the app's own menu held Undo and
-            // Paste (K-918). The app menu comes first now, with Close Window
-            // and Quit where a Mac person reaches for them.
-            let app_item = NSMenuItem::new(mtm);
-            let app_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("App"));
-            app_menu.addItemWithTitle_action_keyEquivalent(
-                &NSString::from_str("Close Window"),
-                Some(sel!(performClose:)),
-                &NSString::from_str("w"),
-            );
-            app_menu.addItem(&NSMenuItem::separatorItem(mtm));
-            app_menu.addItemWithTitle_action_keyEquivalent(
-                &NSString::from_str("Quit"),
-                Some(sel!(terminate:)),
-                &NSString::from_str("q"),
-            );
-            main_menu.addItem(&app_item);
-            main_menu.setSubmenu_forItem(Some(&app_menu), &app_item);
-
-            let edit_item = NSMenuItem::new(mtm);
-            let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Edit"));
-
-            let add = |title: &str, selector, key: &str| {
-                edit_menu.addItemWithTitle_action_keyEquivalent(
-                    &NSString::from_str(title),
-                    Some(selector),
-                    &NSString::from_str(key),
-                )
-            };
-            // Undo/Redo route through the responder chain to the focused text
-            // field's field editor, which keeps its own undo stack. Without
-            // these menu items the Cmd+Z / Cmd+Shift+Z keystrokes reach nothing.
-            add("Undo", sel!(undo:), "z");
-            // Redo is Cmd+Shift+Z: same key equivalent, plus the Shift mask.
-            let redo_item = add("Redo", sel!(redo:), "z");
-            redo_item.setKeyEquivalentModifierMask(
-                NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
-            );
-            edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
-            // Where the organisation blocks the clipboard for this app, a
-            // native text field may not reach it on its own either (G17).
-            let (read_blocked, write_blocked) = krate_adapter_common::ui::clipboard_kept();
-            if !write_blocked {
-                add("Cut", sel!(cut:), "x");
-                add("Copy", sel!(copy:), "c");
-            }
-            if !read_blocked {
-                add("Paste", sel!(paste:), "v");
-            }
-            add("Select All", sel!(selectAll:), "a");
-
-            main_menu.addItem(&edit_item);
-            main_menu.setSubmenu_forItem(Some(&edit_menu), &edit_item);
-            app.setMainMenu(Some(&main_menu));
+    /// Nothing here may fail a window: a bar that could not be built leaves
+    /// the window without one, which the person can still close.
+    fn tracing_free_note(error: &str) {
+        if std::env::var_os("KRATE_MENU_TRACE").is_some() {
+            eprintln!("menus: {error}");
         }
     }
 

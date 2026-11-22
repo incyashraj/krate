@@ -820,6 +820,20 @@ export function buildImports(ctx) {
   // Spelling (K-1340): a tab cannot reach the computer's spell checker, so
   // it says there is none and nothing is ever marked.
   impl['krate:ui/spelling'] = { available: () => false, check: () => [], suggest: () => [], learn() {} };
+  // Menus (IC-1002): the tab keeps what the app set, so `checked` answers,
+  // and says the bar and the right-click menu are not drawn in a tab yet
+  // (K-1349): the app keeps working without them.
+  const menuMarks = new Map();
+  const noMenus = 'Menus show in Krate on a computer; a browser tab does not draw them yet.';
+  const keepMarks = (items) => { for (const i of items) if (i.kind === 'check' || i.kind === 'radio') menuMarks.set(String(i.id), !!i.checked); };
+  impl['krate:ui/menus'] = {
+    setBar: (_w, items) => { keepMarks(items); throw new HostError({ tag: 'unsupported', val: noMenus }); },
+    setContext: () => { throw new HostError({ tag: 'unsupported', val: noMenus }); },
+    popup: () => { throw new HostError({ tag: 'unsupported', val: noMenus }); },
+    setEnabled() {},
+    setChecked: (id, on) => { menuMarks.set(String(id), !!on); },
+    checked: (id) => menuMarks.get(String(id)) === true,
+  };
   // PDF pages (K-1342): drawn by Krate on a computer; a tab says so.
   const noPdf = () => { throw new HostError({ tag: 'unsupported', val: 'PDF pages are drawn in Krate on a computer; a browser tab cannot draw them yet.' }); };
   impl['krate:gfx/pdf'] = { open: noPdf, pageCount: noPdf, pageSize: noPdf, render: noPdf, pageText: noPdf, close() {} };

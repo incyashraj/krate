@@ -1531,3 +1531,118 @@ interface spelling {
   /// here and in the person's other apps that share the checker.
   learn: func(word: string);
 }
+
+/// Real menus (IC-1002): the app's menu bar, submenus, checkmarks, radio
+/// groups, disabled items, keyboard shortcuts, the system's standard items,
+/// and menus that open at the pointer on a right-click.
+///
+/// A menu is a flat list: each item names the submenu it sits in (`parent`,
+/// 0 for the top level), and a submenu comes before its items. When the
+/// person chooses an item the app gets an ordinary `action(id)` event with
+/// the item's id -- from the bar, a right-click menu or a tray icon's menu
+/// alike -- and a shortcut chooses its item exactly as a click does.
+///
+/// On a Mac the bar is the real menu bar at the top of the screen, between
+/// the app menu (About, Hide and Quit, with the app's name) and the Window
+/// menu, both kept; an Edit menu is kept too unless the app gives its own.
+/// On Windows and Linux the bar sits at the top of the window. No permission:
+/// a menu reaches nothing but the app's own commands.
+interface menus {
+  use types.{ui-error};
+
+  /// What kind of item a menu entry is.
+  enum item-kind {
+    /// An ordinary command.
+    normal,
+    /// A command with a checkmark that turns on and off as it is chosen.
+    check,
+    /// One of a group of choices: radio items next to each other in one
+    /// menu are a group, and exactly one of them is marked.
+    radio,
+    /// A line between groups of items.
+    separator,
+    /// A menu of its own: items name its id as their `parent`.
+    submenu,
+  }
+
+  /// A standard item: the system's own action in the system's own words,
+  /// with its usual shortcut. Leave the label empty to use the system's.
+  enum role {
+    /// Not a standard item: choosing it sends the app its id.
+    none,
+    /// Undo, in the focused text field or the app's own editor.
+    undo,
+    /// Redo.
+    redo,
+    /// Cut the selection.
+    cut,
+    /// Copy the selection.
+    copy,
+    /// Paste.
+    paste,
+    /// Select everything.
+    select-all,
+    /// Quit the app at once, as the Quit item of every app does.
+    quit,
+    /// About the app: on a Mac the system's About panel with the app's
+    /// name and icon; elsewhere the app's id arrives so it shows its own.
+    about,
+    /// Hide the app (a Mac); minimize its window elsewhere.
+    hide,
+    /// Minimize the window.
+    minimize,
+    /// Close the window, exactly as its close button does.
+    close-window,
+  }
+
+  /// One entry in a menu.
+  record item {
+    /// The id the `action` event carries when the person chooses it. Ids
+    /// are unique within one menu and not 0, except a separator's and a
+    /// standard item's, which may be 0.
+    id: u64,
+    /// The submenu this item sits in: a submenu's id listed before it, or
+    /// 0 for the top level (a bar's menus, a popup's items).
+    parent: u64,
+    /// What kind of item it is.
+    kind: item-kind,
+    /// What the person reads. A standard item may leave it empty.
+    label: string,
+    /// Whether it can be chosen; a disabled item is shown greyed.
+    enabled: bool,
+    /// Whether a check or radio item is marked.
+    checked: bool,
+    /// A keyboard shortcut such as `CmdOrCtrl+S` or `CmdOrCtrl+Shift+Z`
+    /// (CmdOrCtrl is Command on a Mac and Ctrl elsewhere; also Cmd, Ctrl,
+    /// Alt, Shift; keys are a letter, a digit, punctuation, F1-F24, Enter,
+    /// Escape, Tab, Space, Backspace, Delete, Home, End, PageUp, PageDown
+    /// and the arrows). Shown beside the label and pressing it chooses the
+    /// item. Empty for none.
+    shortcut: string,
+    /// A standard item, or `none`.
+    role: role,
+  }
+
+  /// Set the window's menu bar: its top-level items are the menus. An
+  /// empty list takes the app's menus away (a Mac keeps its standard ones).
+  /// Refused, with the item named, when the list is not a valid menu.
+  set-bar: func(window: u64, items: list<item>) -> result<_, ui-error>;
+  /// The menu a right-click opens anywhere in the window (a Control-click
+  /// too, on a Mac), at the pointer. What the person chose arrives as an
+  /// `action` event, and `pointer.position` still says where they clicked,
+  /// so "Delete this note" knows which note. An empty list for none.
+  set-context: func(window: u64, items: list<item>) -> result<_, ui-error>;
+  /// Open a menu at a point of the window yourself (in points from its
+  /// top-left): a "..." button's menu. Returns when the menu closes; what
+  /// the person chose arrives as an `action` event.
+  popup: func(window: u64, x: f32, y: f32, items: list<item>) -> result<_, ui-error>;
+  /// Turn an item of the bar or a tray menu on or off without setting the
+  /// whole menu again.
+  set-enabled: func(id: u64, enabled: bool);
+  /// Mark or unmark a check or radio item of the bar or a tray menu
+  /// (marking a radio item clears the rest of its group).
+  set-checked: func(id: u64, checked: bool);
+  /// Whether a check or radio item of the bar or a tray menu is marked now
+  /// -- the person's last choice included.
+  checked: func(id: u64) -> bool;
+}

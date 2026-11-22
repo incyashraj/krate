@@ -107,6 +107,9 @@ pub mod phase3_gui_bindings;
 pub mod phase3_gui_host;
 pub mod phase4_gui_bindings;
 pub mod phase4_gui_host;
+// Menus and tray icons for the running app (IC-1002, IC-1003).
+#[cfg(feature = "phase2-bindings")]
+mod menus_host;
 mod print_host;
 #[cfg(feature = "phase2-bindings")]
 mod spelling;
@@ -1842,6 +1845,9 @@ impl Runtime {
         link_phase2!(ui4::trash);
         // Phase 4 only: the computer's spell checker (K-1340).
         link_gui!(ui4::spelling);
+        // Phase 4 only: real menus -- the bar, submenus, shortcuts and
+        // right-click menus (IC-1002).
+        link_gui!(ui4::menus);
         // Phase 4 only: notifications replaced and taken back by id (IC-271).
         link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).
@@ -1938,6 +1944,10 @@ fn finish_gui_run(
             // a crash.
             Err(_) if krate_adapter_common::ui::app_ending() => {
                 krate_adapter_common::ui::clear_app_ending();
+                return Ok(RunOutcome::Exited(0));
+            }
+            // The person chose Quit in one of the app's menus (IC-1002).
+            Err(err) if err.downcast_ref::<menus_host::PersonQuit>().is_some() => {
                 return Ok(RunOutcome::Exited(0));
             }
             Err(err) => {

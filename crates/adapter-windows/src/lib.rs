@@ -48,6 +48,10 @@ pub mod unlock;
 /// Where the computer is, for `krate:ui/location` (IC-982).
 pub mod location;
 
+/// Menus in the window, on a right-click and from the app (IC-1002).
+#[cfg(windows)]
+mod menus;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -533,6 +537,47 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for WindowsWinitPrototypeUiAdapter {
+    /// A real menu bar in the window (IC-1002).
+    #[cfg(windows)]
+    fn set_menu_bar(
+        &self,
+        window: WindowId,
+        bar: &krate_adapter_common::menus::MenuTree,
+        _app: &str,
+    ) -> Result<(), String> {
+        let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
+        menus::set_bar(hwnd, bar)
+    }
+
+    /// The menu a right-click opens (IC-1002).
+    #[cfg(windows)]
+    fn set_context_menu(
+        &self,
+        window: WindowId,
+        menu: Option<&krate_adapter_common::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
+        menus::set_context(hwnd, menu);
+        Ok(())
+    }
+
+    /// A menu the app opens at a point of its window (IC-1002).
+    #[cfg(windows)]
+    fn popup_menu(
+        &self,
+        window: WindowId,
+        x: f32,
+        y: f32,
+        menu: &krate_adapter_common::menus::MenuTree,
+        _app: &str,
+    ) -> Result<(), String> {
+        let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
+        let scale = winit_native::native_window_scale(window).unwrap_or(1.0);
+        menus::popup(hwnd, x, y, scale, menu);
+        Ok(())
+    }
+
     #[cfg(windows)]
     /// Where the computer is: Windows' Geolocator (IC-982).
     fn location_available(&self) -> bool {

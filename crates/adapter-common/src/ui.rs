@@ -2303,6 +2303,86 @@ pub trait UiAdapter: WindowAdapter {
     /// Take a web page away.
     fn close_web_page(&self, _page: u64) {}
 
+    /// Set a window's menu bar (IC-1002): a Mac's top bar, a bar in the
+    /// window elsewhere. `app` names the app in the standard items. What
+    /// the person chooses is pushed as a [`crate::menus::MenuSignal`].
+    fn set_menu_bar(
+        &self,
+        _window: WindowId,
+        _bar: &crate::menus::MenuTree,
+        _app: &str,
+    ) -> Result<(), String> {
+        Err("this device has no menu bar Krate can fill yet".to_string())
+    }
+
+    /// Open a menu at a point of a window (points from its top-left) and
+    /// return when it closes; the choice is pushed as a signal.
+    fn popup_menu(
+        &self,
+        _window: WindowId,
+        _x: f32,
+        _y: f32,
+        _menu: &crate::menus::MenuTree,
+        _app: &str,
+    ) -> Result<(), String> {
+        Err("this device cannot open a menu at the pointer yet".to_string())
+    }
+
+    /// The menu a right-click opens in a window, or none (IC-1002).
+    fn set_context_menu(
+        &self,
+        _window: WindowId,
+        _menu: Option<&crate::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        Err("this device cannot open a menu on a right-click yet".to_string())
+    }
+
+    /// Whether this host's menus take their own shortcuts (a Mac's key
+    /// equivalents). Where they do not, the runtime matches key presses
+    /// against the bar itself.
+    fn menu_shortcuts_native(&self) -> bool {
+        false
+    }
+
+    /// Show an icon in the tray (IC-1003): a Mac's menu bar, Windows'
+    /// notification area, Linux's StatusNotifier. Its handle.
+    fn tray_show(&self, _icon: &crate::menus::TrayIcon, _tooltip: &str) -> Result<u64, String> {
+        Err("this device has no tray Krate can put an icon in".to_string())
+    }
+
+    /// Draw a tray icon anew.
+    fn tray_set_icon(&self, _tray: u64, _icon: &crate::menus::TrayIcon) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// A tray icon's tooltip.
+    fn tray_set_tooltip(&self, _tray: u64, _tooltip: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// The text beside a tray icon (a Mac); nothing elsewhere.
+    fn tray_set_title(&self, _tray: u64, _title: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// The menu a tray icon opens, or none.
+    fn tray_set_menu(
+        &self,
+        _tray: u64,
+        _menu: Option<&crate::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Take a tray icon away.
+    fn tray_remove(&self, _tray: u64) {}
+
+    /// Turn the system's input into signals while no window is open (a
+    /// tray app between its windows).
+    fn pump_app(&self) {}
+
     /// Tell the platform's screen reader what the window shows (IC-926).
     fn describe_accessibility(
         &self,

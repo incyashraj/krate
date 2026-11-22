@@ -1187,6 +1187,21 @@ mod real {
             .flatten()
     }
 
+    /// The Win32 window handle under a Krate window, for the menus and
+    /// the web view Krate attaches to it (IC-1002, IC-1004).
+    pub fn native_hwnd(krate: WindowId) -> Option<isize> {
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        with_tracked(krate, |tracked| {
+            match tracked.window.window_handle().ok()?.as_raw() {
+                RawWindowHandle::Win32(h) => Some(h.hwnd.get()),
+                _ => None,
+            }
+        })
+        .ok()
+        .flatten()
+        .flatten()
+    }
+
     /// Ask the native window for a redraw.
     pub fn request_native_redraw(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |tracked| tracked.window.request_redraw())
@@ -1414,6 +1429,10 @@ mod stub {
     }
 
     /// No native window, no scale to report.
+    pub fn native_hwnd(_krate: WindowId) -> Option<isize> {
+        None
+    }
+
     pub fn native_window_scale(_krate: WindowId) -> Option<f32> {
         None
     }

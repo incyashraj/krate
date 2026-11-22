@@ -1096,6 +1096,12 @@ takes this path, so any of them is a model for the wiring.
 - `spelling::check: func(text: string) -> list<misspelling>`
 - `spelling::suggest: func(word: string) -> list<string>`
 - `spelling::learn: func(word: string)`
+- `menus::set-bar: func(window: u64, items: list<item>) -> result<_, ui-error>`
+- `menus::set-context: func(window: u64, items: list<item>) -> result<_, ui-error>`
+- `menus::popup: func(window: u64, x: f32, y: f32, items: list<item>) -> result<_, ui-error>`
+- `menus::set-enabled: func(id: u64, enabled: bool)`
+- `menus::set-checked: func(id: u64, checked: bool)`
+- `menus::checked: func(id: u64) -> bool`
 
 ## `audio`
 

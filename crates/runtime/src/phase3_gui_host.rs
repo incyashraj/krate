@@ -92,7 +92,7 @@ type HeldPointer = (bool, (f32, f32));
 /// Host state for the Phase 3 `gui` world imports.
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
-    windows: Vec<WindowId>,
+    pub(crate) windows: Vec<WindowId>,
     /// Files the person chose in a dialog this run.
     ///
     /// The picker writes here and `fs.open-chosen` reads, so the two halves of
@@ -169,7 +169,7 @@ pub struct Phase3GuiHost {
     /// frame swallowed the window's close request before its own `poll` could
     /// see it, so clicking the close button did nothing. Pumped events wait
     /// here and are handed over by the next `poll` or `wait`.
-    pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
+    pub(crate) pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
     /// An event the check driver took while looking whether the app had
     /// taken its input (K-1192); handed over before anything else.
     peeked_event: std::cell::RefCell<Option<ui::types::Event>>,
@@ -232,6 +232,11 @@ pub struct Phase3GuiHost {
         std::collections::BTreeMap<u64, (u64, krate_adapter_common::ui::WebPageState)>,
     >,
     next_web_page: std::cell::Cell<u64>,
+    /// The menus this run set (IC-1002) and its tray icons (IC-1003).
+    pub(crate) shell: std::cell::RefCell<crate::menus_host::Shell>,
+    /// The person chose Quit in one of the app's menus: the next look for
+    /// input ends the app.
+    pub(crate) quit_asked: std::cell::Cell<bool>,
     /// What each window last told the screen reader (IC-926), for
     /// check-app and `KRATE_ACCESS_DUMP`.
     pub(crate) described: std::cell::RefCell<
@@ -683,6 +688,8 @@ impl Phase3GuiHost {
             described: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             web_pages: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_web_page: std::cell::Cell::new(1),
+            shell: std::cell::RefCell::new(Default::default()),
+            quit_asked: std::cell::Cell::new(false),
             requested_sizes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases_that_asked: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             screen_windows: std::cell::RefCell::new(Vec::new()),
@@ -830,6 +837,19 @@ impl Phase3GuiHost {
                 path: path.to_string(),
             }))
             .is_ok()
+    }
+
+    /// The app's name as the standard menu items say it ("Quit Notes"), or
+    /// empty when the run was not told it.
+    pub(crate) fn app_display_name(&self) -> String {
+        self.app_name.clone().unwrap_or_default()
+    }
+
+    /// Whether the person chose Quit, or Krate's own Close ended the app
+    /// (IC-1002, IC-934): the error the next look for input returns.
+    fn ended_by_person(&self) -> Option<wasmtime::Error> {
+        (self.quit_asked.get() || krate_adapter_common::ui::app_ending())
+            .then(|| wasmtime::Error::new(crate::menus_host::PersonQuit))
     }
 
     pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {
@@ -1030,7 +1050,7 @@ impl Phase3GuiHost {
         }
     }
 
-    fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
+    pub(crate) fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
         self.runtime.dispatcher()
     }
 
@@ -1044,7 +1064,7 @@ impl Phase3GuiHost {
     /// paste puts what they pasted into the field (K-1109), and their copy
     /// or cut lets the app answer it on the clipboard (K-1190). One place,
     /// for a real keyboard and a check task's key step alike.
-    fn persons_keystroke(
+    pub(crate) fn persons_keystroke(
         &self,
         dispatcher: &Phase3UiDispatcher<'_>,
         window: WindowId,
@@ -3785,6 +3805,11 @@ impl Phase3GuiHost {
         // idle game paid ~6ms a frame to ask four times whether anything had
         // happened. pump_native_windows collapses those into one per frame.
         self.pump_native_windows();
+        // What the person chose in a menu (IC-1002), as `action` events.
+        self.drain_menu_signals();
+        if let Some(event) = self.pending_events.borrow_mut().pop_front() {
+            return Ok(Some(event));
+        }
         let dispatcher = self.dispatcher();
         for window in &self.windows {
             self.sync_native_text(*window, &dispatcher);
@@ -3851,6 +3876,12 @@ impl Phase3GuiHost {
                 } else {
                     held.remove(&sample.key);
                 }
+            }
+            // A shortcut of the app's menu bar chooses its item instead of
+            // reaching the app as a key (IC-1002), where the system's own
+            // menus do not take shortcuts themselves.
+            if sample.pressed && self.menu_shortcut(sample.window, &sample.key, sample.modifiers) {
+                continue;
             }
             let focused = dispatcher.focused_widget(sample.window).ok().flatten();
             if let Ok(event) = krate_adapter_common::ui::KeyEvent::new(
@@ -4531,7 +4562,7 @@ impl Phase3GuiHost {
         &mut self.print_pages
     }
 
-    fn window_id(&self, raw: u64) -> Result<WindowId, ui::types::UiError> {
+    pub(crate) fn window_id(&self, raw: u64) -> Result<WindowId, ui::types::UiError> {
         self.windows
             .iter()
             .copied()
@@ -6102,6 +6133,9 @@ impl ui::events::Host for Phase3GuiHost {
         self.sync_changed_trees();
         self.follow_widget_look();
         self.pump_native_windows();
+        if let Some(ended) = self.ended_by_person() {
+            return Err(ended);
+        }
         // A game never calls `wait` -- it polls at the top of every frame and
         // draws regardless. Driving only from `wait` means such an app is never
         // stepped and never released, so the run hangs until the outer
@@ -6140,6 +6174,9 @@ impl ui::events::Host for Phase3GuiHost {
         let event = self
             .poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
+        if let Some(ended) = self.ended_by_person() {
+            return Err(ended);
+        }
         if self.close_ignored_by_guest() {
             // The person clicked close twice and the app kept looping. The
             // doc on close_ignored_by_guest promises the runtime honours the
@@ -6250,6 +6287,9 @@ impl ui::events::Host for Phase3GuiHost {
             let event = self
                 .poll_one_event()
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
+            if let Some(ended) = self.ended_by_person() {
+                return Err(ended);
+            }
             if event.is_some() {
                 if self.close_ignored_by_guest() {
                     // Second unanswered close click; see poll (K-121).
@@ -6892,14 +6932,14 @@ impl ui::clipboard::Host for Phase3GuiHost {
 }
 
 impl ui::menu::Host for Phase3GuiHost {
+    /// The flat menu of Phase 3: one menu of the app's commands in the bar,
+    /// served by the same code as `krate:ui/menus` (IC-1002).
     fn set_items(
         &mut self,
-        _window: u64,
-        _items: Vec<ui::types::MenuItem>,
+        window: u64,
+        items: Vec<ui::types::MenuItem>,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        Ok(Err(ui::types::UiError::Unsupported(
-            "menus are not implemented yet".to_string(),
-        )))
+        Ok(self.set_menu_bar(window, crate::menus_host::items_from_phase3(items)))
     }
 }
 

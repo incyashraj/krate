@@ -14,6 +14,8 @@ mod clipboard;
 mod consent;
 #[cfg(target_os = "macos")]
 mod location;
+#[cfg(target_os = "macos")]
+mod menus;
 mod open_document;
 #[cfg(target_os = "macos")]
 mod reminders;
@@ -943,6 +945,57 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
         web_page::close(page);
     }
 
+    /// The app's menus in the Mac's own menu bar (IC-1002).
+    #[cfg(target_os = "macos")]
+    fn set_menu_bar(
+        &self,
+        _window: WindowId,
+        bar: &krate_adapter_common::menus::MenuTree,
+        app: &str,
+    ) -> Result<(), String> {
+        menus::install_bar(Some(bar), app)
+    }
+
+    /// A right-click menu at the pointer (IC-1002).
+    #[cfg(target_os = "macos")]
+    fn popup_menu(
+        &self,
+        window: WindowId,
+        x: f32,
+        y: f32,
+        menu: &krate_adapter_common::menus::MenuTree,
+        _app: &str,
+    ) -> Result<(), String> {
+        let handle = self
+            .native_window(window)
+            .ok()
+            .flatten()
+            .ok_or("the app's window is not on screen")?;
+        menus::popup(handle.raw_handle, x, y, menu)
+    }
+
+    /// The menu a right-click opens in the window (IC-1002).
+    #[cfg(target_os = "macos")]
+    fn set_context_menu(
+        &self,
+        window: WindowId,
+        menu: Option<&krate_adapter_common::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        let handle = self
+            .native_window(window)
+            .ok()
+            .flatten()
+            .ok_or("the app's window is not on screen")?;
+        menus::set_context(handle.raw_handle, window.get(), menu)
+    }
+
+    /// A Mac's menu items take their own key equivalents.
+    #[cfg(target_os = "macos")]
+    fn menu_shortcuts_native(&self) -> bool {
+        true
+    }
+
     #[cfg(target_os = "macos")]
     fn describe_accessibility(
         &self,
@@ -1036,6 +1089,8 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
 /// Krate mark.
 #[cfg(target_os = "macos")]
 pub fn set_process_identity(name: &str, icon_png: Option<&[u8]>) {
+    // The standard menu items name the app: "About Notes", "Quit Notes".
+    menus::set_app_name(name);
     appkit::set_process_identity(name, icon_png);
 }
 

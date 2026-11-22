@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, menus, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -349,6 +349,50 @@ pub mod ui {
         /// Set the simple top-level menu for a window.
         pub fn set_items(window: u64, items: &[MenuItem]) -> Result<(), UiError> {
             crate::bindings::krate::ui::menu::set_items(window, items)
+        }
+    }
+    /// `krate:ui/menus`.
+    pub mod menus {
+        pub use crate::bindings::krate::ui::menus::{Item, ItemKind, Role, UiError};
+
+        /// Set the window's menu bar: its top-level items are the menus. An
+        /// empty list takes the app's menus away (a Mac keeps its standard ones).
+        /// Refused, with the item named, when the list is not a valid menu.
+        pub fn set_bar(window: u64, items: &[Item]) -> Result<(), UiError> {
+            crate::bindings::krate::ui::menus::set_bar(window, items)
+        }
+
+        /// The menu a right-click opens anywhere in the window (a Control-click
+        /// too, on a Mac), at the pointer. What the person chose arrives as an
+        /// `action` event, and `pointer.position` still says where they clicked,
+        /// so "Delete this note" knows which note. An empty list for none.
+        pub fn set_context(window: u64, items: &[Item]) -> Result<(), UiError> {
+            crate::bindings::krate::ui::menus::set_context(window, items)
+        }
+
+        /// Open a menu at a point of the window yourself (in points from its
+        /// top-left): a "..." button's menu. Returns when the menu closes; what
+        /// the person chose arrives as an `action` event.
+        pub fn popup(window: u64, x: f32, y: f32, items: &[Item]) -> Result<(), UiError> {
+            crate::bindings::krate::ui::menus::popup(window, x, y, items)
+        }
+
+        /// Turn an item of the bar or a tray menu on or off without setting the
+        /// whole menu again.
+        pub fn set_enabled(id: u64, enabled: bool) {
+            crate::bindings::krate::ui::menus::set_enabled(id, enabled)
+        }
+
+        /// Mark or unmark a check or radio item of the bar or a tray menu
+        /// (marking a radio item clears the rest of its group).
+        pub fn set_checked(id: u64, checked: bool) {
+            crate::bindings::krate::ui::menus::set_checked(id, checked)
+        }
+
+        /// Whether a check or radio item of the bar or a tray menu is marked now
+        /// -- the person's last choice included.
+        pub fn checked(id: u64) -> bool {
+            crate::bindings::krate::ui::menus::checked(id)
         }
     }
     /// `krate:ui/motion`.

@@ -60,6 +60,7 @@ world gui {
   import krate:ui/web-page@0.1.0;
   import krate:ui/trash@0.1.0;
   import krate:ui/spelling@0.1.0;
+  import krate:ui/menus@0.1.0;
 
   import krate:gfx/canvas2d@0.1.0;
   import krate:gfx/scene3d@0.1.0;

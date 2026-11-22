@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 86 boundaries reviewed, 77 of them WIT interfaces (77 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 49 optional.
+- 87 boundaries reviewed, 78 of them WIT interfaces (78 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 50 optional.
 - 8 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -79,7 +79,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:ui@0.1.0/image` | wit | the pixel handoff: an image widget shows what the app hands it | any renderer, any format decoded by the app | this is the escape hatch for drawing | no | -- |
 | `krate:ui@0.1.0/launcher` | wit | that opening a link goes through the person's browser and is a grant, not a process capability | which links | show the URL and let the person copy it | yes | recipient-permission |
 | `krate:ui@0.1.0/location` | wit | one fix of where the phone is -- latitude, longitude, how far off it may be, altitude, speed and course when known -- and the three reasons there is none | when to ask, how often, and what to do with the position | none: location.read is opt-in, asked on Krate's sheet and by the phone itself | no | -- |
-| `krate:ui@0.1.0/menu` | wit | nothing yet: menu calls are declared and answer unsupported | any command scheme drawn in the app | the app's own drawn menus and key handling | no | -- |
+| `krate:ui@0.1.0/menu` | wit | that the flat Phase 3 list becomes one menu of the app's commands in the real menu bar, served by krate:ui/menus | which commands, their labels, and which are enabled | the app's own drawn menus and key handling | no | -- |
+| `krate:ui@0.1.0/menus` | wit | that an app's menus are the system's own -- the Mac's top bar with its App, Edit and Window menus kept, a bar in the window on Windows -- that a right-click opens the app's menu at the pointer, that a shortcut chooses its item as a click does, and that the standard items do what the system does | which menus and items, their ids, labels, marks, shortcuts, and what each choice does | draw menus in the app and handle keys itself | no | -- |
 | `krate:ui@0.1.0/motion` | wit | one reading of the phone's sensors -- gravity, the push given it, its turning and the compass heading -- in the screen's own frame however the phone is turned | whether to read, how often, and what tilt or shake means to the app | none needed: no capability, and a device without sensors answers available() false | no | -- |
 | `krate:ui@0.1.0/notifications` | wit | a notification posted under the app's own id, replaced by the next under that id where the system can and taken back by it, attributed to the app's verified lineage, and never answered with whether it was seen or clicked | what to say, when to replace it, and when to take it back | notify for a one-off | no | -- |
 | `krate:ui@0.1.0/notify` | wit | that a notification is attributed to the app the person consented to, never to a title the app chose, and is a grant | when and what | draw the message in the app's own window | yes | recipient-permission |
@@ -119,6 +120,6 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 - `krate:print@0.1.0/printers`: Windows prints PNG pages and raw printer language, not PDF, and uses the printer's own paper setting for a PNG; a browser tab and a phone answer unavailable
 - `krate:serial@0.1.0/ports`: HID devices are not offered yet (raw USB is krate:usb); a browser tab and a phone answer unavailable
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
-- `krate:ui@0.1.0/menu`: set-items answers unsupported on every host (IC-745)
+- `krate:ui@0.1.0/menus`: no bar or right-click menu is drawn on Linux, in a browser tab or on a phone yet (K-1349); shortcuts still work on Linux
 - `krate:usb@0.1.0/devices`: isochronous transfers, alternate settings and standard requests that change the device are not offered; HID devices (security keys) are a later item; a browser tab (WebUSB) and a phone answer unavailable
 - `the WebAssembly component contract`: the SDK and Studio build with cargo-component only; a developer's own build tool is accepted by the validator but not by the make flow (IC-175: custom build tool)

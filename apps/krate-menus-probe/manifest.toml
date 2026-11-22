@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.menus-probe"
+name = "Menus Probe"
+version = "0.1.0"
+entry = "target/wasm32-wasip1/release/krate_menus_probe.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "A window whose menu bar and right-click menu show every kind of item"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report each choice, for automated runs"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated tests"
+required = true

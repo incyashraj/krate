@@ -710,6 +710,35 @@ checker does not know (`start`, `len` in UTF-8 bytes) -- underline them -- \
 `suggest(word)` gives corrections best first and `learn(word)` is \
 \"Add to dictionary\". `available()` is false in a browser tab or on a \
 phone: then mark nothing. Check the lines on screen, not the whole file.\n\n\
+Menus (a notes app, an editor, any app a person expects File and Edit \
+in): `krate::ui::menus::set_bar(win, &items)` with a flat list of \
+`menus::Item { id, parent, kind, label, enabled, checked, shortcut, role }` \
+-- top-level `ItemKind::Submenu` items are the menus (File, Edit, View), \
+each item names its menu in `parent` (0 for the top level), a submenu \
+comes before its items, ids are unique and not 0 (separators and \
+standard items may use 0). Kinds: `Normal`, `Check` (a tick that flips \
+as it is chosen), `Radio` (next-door radio items are one group, one \
+marked), `Separator`, `Submenu`. `shortcut` is `\"CmdOrCtrl+S\"`, \
+`\"CmdOrCtrl+Shift+Z\"`, `\"F5\"` (CmdOrCtrl is Command on a Mac, \
+Ctrl elsewhere; a letter needs CmdOrCtrl, Ctrl or Alt): it is shown and \
+pressing it chooses the item -- the app does not also get the key. \
+`role: Role::Copy` (and `Undo`, `Redo`, `Cut`, `Paste`, `SelectAll`, \
+`Quit`, `About`, `Hide`, `Minimize`, `CloseWindow`) with an empty label is \
+the system's own item: in a text field it edits the field; in an editor \
+the app draws, Copy arrives as the Cmd/Ctrl+C key it already handles. \
+Quit ends the app at once, so save as you go. A choice arrives as \
+`Event::Action(id)` in the ordinary event loop. `menus::checked(id)` is \
+a check or radio item's mark now; `set_checked`/`set_enabled` change one \
+item without setting the bar again. On a Mac the bar is the top menu bar \
+with the App menu (About, Hide, Quit with the app's name), an Edit menu \
+unless you give one, and the Window menu kept; on Windows it sits in the \
+window. `set_context(win, &items)` is the right-click menu (Control-click \
+on a Mac) at the pointer -- `pointer::position(win)` says where it was \
+opened, so \"Delete this note\" knows which note; `popup(win, x, y, &items)` \
+opens a menu yourself under a \"...\" button. Linux, a browser tab and a \
+phone draw no bar yet and answer `Err(Unsupported)` -- keep every command \
+reachable from the app's own buttons too; on Linux the shortcuts still \
+work. No capability.\n\n\
 A PDF (a manual, an invoice, a vault's attachment): read its bytes the \
 ordinary way, then `let d = krate::gfx::pdf::open(&bytes)?`, \
 `page_count(d)`, `page_size(d, i)` in points, and \
