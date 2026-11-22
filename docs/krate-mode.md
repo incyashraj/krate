@@ -425,6 +425,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `locale::utc_offset(millis: u64) -> i32`
 - `locale::weekday_of_day(day_number: i64) -> u8`
 
+### `locale::LocalTime`
+
+- `locale::LocalTime::at_offset(millis: u64, offset_minutes: i32) -> LocalTime`
+
 ### `mem`
 
 - `mem::have_room_for(bytes: usize) -> bool`
@@ -443,6 +447,14 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `motion::smoothstep(t: f32) -> f32`
 - `motion::stagger(elapsed_ms: u64, index: usize, step_ms: u64, duration_ms: u64) -> f32`
 
+### `motion::BouncySpring`
+
+- `motion::BouncySpring::rest_at(value: f32, stiffness: f32, bounce: f32) -> BouncySpring`
+
+### `motion::Spring`
+
+- `motion::Spring::rest_at(value: f32, stiffness: f32) -> Spring`
+
 ### `net`
 
 - `net::begin(req: Request) -> Result<u64, NetError>`
@@ -455,6 +467,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 ### `net::listen`
 
 - `net::listen::words(err: &ListenError) -> &str`
+
+### `net::listen::Listener`
+
+- `net::listen::Listener::open(port: u16, scope: Scope) -> Result<Listener, ListenError>`
 
 ### `net::ws`
 
@@ -493,6 +509,12 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `process::run(program: &str, args: &[&str], cwd: &str) -> Result<Finished, ProcessError>`
 - `process::words(err: &ProcessError) -> &str`
 
+### `process::Process`
+
+- `process::Process::start(program: &str, args: &[&str], cwd: &str) -> Result<Process, ProcessError>`
+- `process::Process::start_with_env(program: &str, args: &[&str], cwd: &str, env: &[(&str, &str)]) -> Result<Process, ProcessError>`
+- `process::Process::terminal(cwd: &str, cols: u16, rows: u16) -> Result<Process, ProcessError>`
+
 ### `random`
 
 - `random::below(bound: u64) -> Result<u64, RandomError>`
@@ -514,6 +536,10 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 
 - `serial::pick(title: &str) -> Result<Option<Port>, SerialError>`
 - `serial::words(err: &SerialError) -> &str`
+
+### `serial::Settings`
+
+- `serial::Settings::baud(baud: u32) -> Settings`
 
 ### `shared`
 
@@ -573,6 +599,32 @@ These are not paths. Get the value first -- `io::stdio::stdout()`,
 - `<>.rem_euclid(rhs: $t) -> $t`
 - `<>.sin_cos() -> ($t, $t)`
 
+`BouncySpring`
+
+- `<BouncySpring>.settled(target: f32) -> bool`
+- `<BouncySpring>.tick(target: f32, dt: f32) -> ()`
+
+`Connection`
+
+- `<Connection>.handle() -> u64`
+- `<Connection>.peer() -> Option<String>`
+- `<Connection>.read(max_bytes: u32) -> ReadResult`
+- `<Connection>.write(bytes: &[u8]) -> Result<u32, NetError>`
+
+`Device`
+
+- `<Device>.bulk_in(endpoint: u8, max: u32, timeout_ms: u32) -> Result<Vec<u8>, UsbError>`
+- `<Device>.bulk_out(endpoint: u8, bytes: &[u8], timeout_ms: u32) -> Result<(), UsbError>`
+- `<Device>.claim(number: u8) -> Result<(), UsbError>`
+- `<Device>.control_in(setup: ControlSetup, length: u16, timeout_ms: u32) -> Result<Vec<u8>, UsbError>`
+- `<Device>.control_out(setup: ControlSetup, data: &[u8], timeout_ms: u32) -> Result<(), UsbError>`
+- `<Device>.handle() -> u64`
+- `<Device>.interrupt_in(endpoint: u8, max: u32, timeout_ms: u32) -> Result<Vec<u8>, UsbError>`
+- `<Device>.interrupt_out(endpoint: u8, bytes: &[u8], timeout_ms: u32) -> Result<(), UsbError>`
+- `<Device>.name() -> &str`
+- `<Device>.product_id() -> u16`
+- `<Device>.vendor_id() -> u16`
+
 `File`
 
 - `<File>.read_text() -> Result<String, FsError>`
@@ -585,11 +637,51 @@ These are not paths. Get the value first -- `io::stdio::stdout()`,
 - `<InputStream>.read_text() -> Result<String, IoError>`
 - `<InputStream>.read_to_end() -> Result<Vec<u8>, IoError>`
 
+`Listener`
+
+- `<Listener>.accept() -> Result<Option<Connection>, ListenError>`
+- `<Listener>.addresses() -> Result<Vec<ListenAddress>, ListenError>`
+- `<Listener>.announce(service_type: &str) -> Result<Announcement, ListenError>`
+- `<Listener>.handle() -> u64`
+- `<Listener>.port() -> Result<u16, ListenError>`
+
 `OutputStream`
 
 - `<OutputStream>.write_bytes(bytes: &[u8]) -> Result<(), IoError>`
 - `<OutputStream>.write_line(value: &str) -> Result<(), IoError>`
 - `<OutputStream>.write_text(value: &str) -> Result<(), IoError>`
+
+`Port`
+
+- `<Port>.handle() -> u64`
+- `<Port>.name() -> &str`
+- `<Port>.open(settings: &Settings) -> Result<(), SerialError>`
+- `<Port>.read(max: u32, timeout_ms: Option<u32>) -> Result<Vec<u8>, SerialError>`
+- `<Port>.write(bytes: &[u8]) -> Result<(), SerialError>`
+
+`Printer`
+
+- `<Printer>.handle() -> u64`
+- `<Printer>.name() -> &str`
+- `<Printer>.pdf(bytes: &[u8], copies: u32, paper: PaperSize, title: &str) -> Result<PrintOutcome, PrintError>`
+- `<Printer>.png(bytes: &[u8], copies: u32, paper: PaperSize, title: &str) -> Result<PrintOutcome, PrintError>`
+- `<Printer>.raw(bytes: &[u8], copies: u32, title: &str) -> Result<PrintOutcome, PrintError>`
+
+`Process`
+
+- `<Process>.close_stdin() -> Result<(), ProcessError>`
+- `<Process>.handle() -> u64`
+- `<Process>.kill() -> Result<(), ProcessError>`
+- `<Process>.read_stderr(max: u32) -> Result<Output, ProcessError>`
+- `<Process>.read_stdout(max: u32) -> Result<Output, ProcessError>`
+- `<Process>.resize(cols: u16, rows: u16) -> Result<(), ProcessError>`
+- `<Process>.wait(timeout_ms: u32) -> Result<Option<ExitStatus>, ProcessError>`
+- `<Process>.write(bytes: &[u8]) -> Result<(), ProcessError>`
+
+`Spring`
+
+- `<Spring>.settled(target: f32) -> bool`
+- `<Spring>.tick(target: f32, dt: f32) -> ()`
 
 ## Spreadsheets: `krate::sheets` (Excel, LibreOffice, CSV)
 
@@ -772,7 +864,7 @@ people can send. check-app ends with a note naming any it found.
 | `fs.remove:<path-glob>` | no | computer only | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | computer only | make folders |
 | `net.connect:<host>:<port>` | no | yes | reach a host and port |
-| `net.listen:<port>` | no | computer only | let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (section 2c, rule 7b) |
+| `net.listen:<port>` | no | computer only | let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (`net::listen::Listener`: `open`, `accept`, `addresses`, `announce`) |
 | `net.connection:<connection-name>` | no | computer only | an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8) |
 | `time.clock` | yes | yes | wall-clock time |
 | `time.monotonic` | yes | yes | a monotonic timer |

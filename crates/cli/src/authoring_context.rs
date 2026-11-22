@@ -1239,7 +1239,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "store.secret" => "secrets encrypted at rest (passwords, tokens); not the OS keychain",
         "random.bytes" => "entropy (also what getrandom/rand need)",
         "net.connect" => "reach a host and port",
-        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (section 2c, rule 7b)",
+        "net.listen" => "let other devices on the network open the app on one port, 1024 or above (`net.listen:8080`); this computer alone needs only the declaration; the same yes lets the app show its network address and be found by name (`net::listen::Listener`: `open`, `accept`, `addresses`, `announce`)",
         "net.connection" => "an organisation's company connection by name: its API, with a credential Krate adds and the app never sees (section 2c, rule 8)",
         "time.clock" => "wall-clock time",
         "time.monotonic" => "a monotonic timer",

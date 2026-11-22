@@ -130,6 +130,24 @@ fn collect(body: &str, prefix: &str, out: &mut Vec<SdkFunction>) {
                 ..func
             });
         }
+        for func in inherent_methods_in(&inner) {
+            // An associated function is written through its type
+            // (`net::listen::Listener::open`), a method on a value.
+            let module = if func.is_method {
+                path.clone()
+            } else {
+                format!("{path}::{}", func.receiver)
+            };
+            out.push(SdkFunction {
+                module,
+                receiver: if func.is_method {
+                    func.receiver.clone()
+                } else {
+                    String::new()
+                },
+                ..func
+            });
+        }
         collect(&inner, &path, out);
     }
 }
@@ -261,7 +279,13 @@ fn signatures(body: &str, needle: &str) -> Vec<SdkFunction> {
                 }
             }
             if let Some(close) = close {
-                let params = rest[open + 1..close].trim().to_string();
+                // A signature split across lines keeps rustfmt's trailing
+                // comma, which reads as `(timeout_ms: u32,)` in a reference.
+                let params = rest[open + 1..close]
+                    .trim()
+                    .trim_end_matches(',')
+                    .trim()
+                    .to_string();
                 let tail = &rest[close + 1..];
                 // A free function's return type ends at its body; a trait
                 // method has no body and ends at `;`. Take whichever comes
@@ -332,6 +356,99 @@ fn trait_methods_in(body: &str) -> Vec<SdkFunction> {
         at = start + inner.len();
     }
 
+    out
+}
+
+/// The `pub fn`s of every `impl Type { .. }` directly in this module: how a
+/// guest opens a `Listener`, reads a `Workbook`, asks a `Printer`. Skipping
+/// impl blocks kept every one of them out of the guide, so a model told to
+/// declare net.listen was never told how to listen (K-1307).
+///
+/// `impl Trait for Type` is left to [`trait_methods_in`]; an impl inside a
+/// nested module is reached when the walk gets there.
+fn inherent_methods_in(body: &str) -> Vec<SdkFunction> {
+    let nested: Vec<(usize, usize)> = module_starts(body)
+        .into_iter()
+        .map(|(start, _)| (start, start + module_body(body, start).len()))
+        .collect();
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while let Some(found) = body[at..].find("impl") {
+        let idx = at + found;
+        at = idx + 4;
+        // A whole word at the start of an item: not `implement`, not inside
+        // a nested module.
+        let before_ok = idx == 0
+            || body[..idx]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_whitespace() || c == '}' || c == ';');
+        let rest = &body[idx + 4..];
+        let after_ok = rest.starts_with(' ') || rest.starts_with('<');
+        if !before_ok || !after_ok || nested.iter().any(|(s, e)| idx >= *s && idx < *e) {
+            continue;
+        }
+        let Some(brace) = rest.find('{') else { break };
+        let head = rest[..brace].trim();
+        // Generic parameters on the impl itself, then the type.
+        let head = if head.starts_with('<') {
+            match head.find('>') {
+                Some(close) => head[close + 1..].trim(),
+                None => continue,
+            }
+        } else {
+            head
+        };
+        if head.contains(" for ") || head.contains(" where") {
+            continue;
+        }
+        let type_name: String = head
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if type_name.is_empty() {
+            continue;
+        }
+        let start = idx + 4 + brace + 1;
+        let inner = module_body(body, start);
+        for mut func in signatures(&inner, "pub fn ") {
+            let takes_self = func.params.starts_with("&self")
+                || func.params.starts_with("&mut self")
+                || func.params.starts_with("self")
+                || func.params.starts_with("mut self");
+            if takes_self {
+                func.params = strip_receiver(func.params.trim_start_matches("mut "));
+                func.is_method = true;
+            }
+            // `Self` read in the reference is a question; the type's name is
+            // the answer a guest writes.
+            func.returns = replace_self(&func.returns, &type_name);
+            func.params = replace_self(&func.params, &type_name);
+            func.receiver = type_name.clone();
+            out.push(func);
+        }
+        at = start + inner.len();
+    }
+    out
+}
+
+/// `Self` as a whole word, replaced by the type it stands for.
+fn replace_self(text: &str, type_name: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("Self") {
+        let before = rest[..at].chars().next_back();
+        let after = rest[at + 4..].chars().next();
+        let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        out.push_str(&rest[..at]);
+        if word(before) || word(after) {
+            out.push_str("Self");
+        } else {
+            out.push_str(type_name);
+        }
+        rest = &rest[at + 4..];
+    }
+    out.push_str(rest);
     out
 }
 
@@ -610,6 +727,46 @@ pub mod store {
 "#;
 
     #[test]
+    fn a_types_own_functions_and_methods_are_listed() {
+        // K-1307: the way to listen is on the Listener type, in an impl.
+        let source = r#"
+pub mod net {
+    pub mod listen {
+        pub struct Listener { id: u64 }
+        impl Listener {
+            pub fn open(port: u16, scope: Scope) -> Result<Listener, ListenError> { todo!() }
+            pub fn accept(&mut self) -> Result<Option<Connection>, ListenError> { todo!() }
+            pub fn addresses(&self) -> Result<Vec<ListenAddress>, ListenError> { todo!() }
+            fn private_helper(&self) -> u32 { 0 }
+        }
+        impl Drop for Listener {
+            fn drop(&mut self) {}
+        }
+        pub fn words(err: &ListenError) -> &str { todo!() }
+    }
+}
+"#;
+        let found: Vec<String> = parse_sdk(source).iter().map(|f| f.signature()).collect();
+        for want in [
+            "net::listen::Listener::open(port: u16, scope: Scope) -> Result<Listener, ListenError>",
+            "<Listener>.accept() -> Result<Option<Connection>, ListenError>",
+            "<Listener>.addresses() -> Result<Vec<ListenAddress>, ListenError>",
+            "net::listen::words(err: &ListenError) -> &str",
+        ] {
+            assert!(
+                found.iter().any(|f| f == want),
+                "missing {want} in {found:#?}"
+            );
+        }
+        assert!(
+            !found
+                .iter()
+                .any(|f| f.contains("private_helper") || f.contains("drop")),
+            "{found:#?}"
+        );
+    }
+
+    #[test]
     fn it_finds_what_a_guest_can_call() {
         let fns = parse_sdk(SAMPLE);
         let names: Vec<_> = fns.iter().map(|f| f.signature()).collect();
@@ -772,11 +929,29 @@ pub mod store {
 
         // A trait method's declaration ends at `;` rather than a body, which
         // is what once made every method look like it returned nothing.
+        // A method that really returns nothing (`Spring::tick` moves the
+        // spring) is listed as `-> ()`; one whose declaration names a return
+        // type must keep it.
+        let declares_return = |f: &&SdkFunction| {
+            let at = REAL_SDK
+                .find(&format!("fn {}(", f.name))
+                .expect("listed methods are in the source");
+            let decl = &REAL_SDK[at..];
+            let end = [decl.find('{'), decl.find(';')]
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or(decl.len());
+            decl[..end].contains("->")
+        };
         assert!(
-            !fns.iter().any(|f| f.is_method && f.returns == "()"),
+            !fns.iter()
+                .filter(|f| f.is_method && f.returns == "()")
+                .any(|f| declares_return(&f)),
             "a method lost its return type: {:?}",
             fns.iter()
                 .filter(|f| f.is_method && f.returns == "()")
+                .filter(|f| declares_return(f))
                 .map(|f| f.signature())
                 .collect::<Vec<_>>()
         );
