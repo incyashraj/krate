@@ -71,6 +71,8 @@ pub struct Doc {
     pub extra: Vec<(Option<Pos>, Pos)>,
     /// Find and replace in this note, while its bar is open.
     pub find: Option<crate::find::Find>,
+    /// A property being edited inside the Properties block.
+    pub prop_edit: Option<crate::propedit::PropEdit>,
     /// Edits made while several carets type, so each caret can follow the
     /// edits made before it.
     edit_log: Option<Vec<(Pos, Pos, Pos)>>,
@@ -182,6 +184,7 @@ impl Doc {
             callouts_flipped: BTreeSet::new(),
             extra: Vec::new(),
             find: None,
+            prop_edit: None,
             edit_log: None,
             fold_cache: RefCell::new((u64::MAX, Vec::new())),
             notes_cache: RefCell::new(None),
@@ -328,6 +331,11 @@ impl Doc {
 
     fn set_cursor(&mut self, p: Pos, extend: bool) {
         self.fresh = false;
+        // Placing the caret in the note ends a property edit, kept.
+        if self.prop_edit.is_some() {
+            let now = self.dirty_since.unwrap_or(0);
+            crate::propedit::commit(self, now, false);
+        }
         if extend {
             self.anchor.get_or_insert(self.cur);
         } else {

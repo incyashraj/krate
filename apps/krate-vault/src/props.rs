@@ -45,10 +45,12 @@ pub struct Prop {
 
 fn unquote(s: &str) -> String {
     let t = s.trim();
-    if t.len() >= 2
-        && ((t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')))
-    {
-        return String::from(t.get(1..t.len() - 1).unwrap_or(""));
+    if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        let inner = t.get(1..t.len() - 1).unwrap_or("");
+        return inner.replace("\\\"", "\"").replace("\\\\", "\\");
+    }
+    if t.len() >= 2 && t.starts_with('\'') && t.ends_with('\'') {
+        return t.get(1..t.len() - 1).unwrap_or("").replace("''", "'");
     }
     String::from(t)
 }
@@ -239,6 +241,178 @@ pub fn new_key(props: &[Prop]) -> String {
     }
 }
 
+/// A YAML scalar as a notes app writes it: plain when it reads back as
+/// the same text, double-quoted otherwise.
+pub fn yaml_scalar(s: &str) -> String {
+    let risky = s.is_empty()
+        || s.starts_with([
+            ' ', '[', '{', '#', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`', '-', '?',
+        ])
+        || s.ends_with(' ')
+        || s.contains(": ")
+        || s.contains(" #")
+        || matches!(s, "true" | "false" | "null" | "~" | "yes" | "no")
+        || is_number(s);
+    if !risky {
+        return String::from(s);
+    }
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The YAML lines a property is written as.
+pub fn render(key: &str, kind: Kind, value: &Value) -> String {
+    let mut s = yaml_key(key);
+    s.push(':');
+    match value {
+        Value::List(items) => {
+            for it in items {
+                s.push_str("\n  - ");
+                let it = if kind == Kind::Tags {
+                    it.trim_start_matches('#')
+                } else {
+                    it.as_str()
+                };
+                s.push_str(&yaml_scalar(it));
+            }
+        }
+        Value::Bool(b) => s.push_str(if *b { " true" } else { " false" }),
+        Value::Number(n) => {
+            s.push(' ');
+            s.push_str(n);
+        }
+        Value::Date(d) => {
+            s.push(' ');
+            s.push_str(d);
+        }
+        Value::Text(t) => {
+            s.push(' ');
+            s.push_str(&yaml_scalar(t));
+        }
+        Value::Empty => {}
+    }
+    s
+}
+
+fn yaml_key(k: &str) -> String {
+    if k.is_empty() || k.contains(':') || k.starts_with([' ', '-', '#', '"', '\'']) {
+        yaml_scalar(k)
+    } else {
+        String::from(k)
+    }
+}
+
+/// A value after its property's type is changed in the type menu.
+pub fn convert(v: &Value, to: Kind) -> Value {
+    let text = match v {
+        Value::List(items) => items.join(", "),
+        other => other.shown_raw(),
+    };
+    match to {
+        Kind::List | Kind::Tags | Kind::Aliases => match v {
+            Value::List(items) => Value::List(items.clone()),
+            Value::Empty => Value::List(Vec::new()),
+            _ if text.is_empty() => Value::List(Vec::new()),
+            _ => Value::List(alloc::vec![text]),
+        },
+        Kind::Number => {
+            if is_number(text.trim()) {
+                Value::Number(String::from(text.trim()))
+            } else {
+                Value::Empty
+            }
+        }
+        Kind::Checkbox => Value::Bool(matches!(text.trim(), "true" | "yes" | "1")),
+        Kind::Date => {
+            let d = text.get(..10).unwrap_or("");
+            if is_date(d) {
+                Value::Date(String::from(d))
+            } else {
+                Value::Empty
+            }
+        }
+        Kind::DateTime => {
+            if is_datetime(&text) {
+                Value::Date(text)
+            } else if is_date(&text) {
+                let mut t = text;
+                t.push_str("T00:00");
+                Value::Date(t)
+            } else {
+                Value::Empty
+            }
+        }
+        Kind::Text => {
+            if text.is_empty() {
+                Value::Empty
+            } else {
+                Value::Text(text)
+            }
+        }
+    }
+}
+
+/// What typing `text` into a value field means for a property of `kind`.
+pub fn from_input(kind: Kind, text: &str) -> Value {
+    let t = text.trim();
+    if t.is_empty() {
+        return Value::Empty;
+    }
+    match kind {
+        Kind::Number if is_number(t) => Value::Number(String::from(t)),
+        Kind::Date | Kind::DateTime if is_date(t.get(..10).unwrap_or("")) => {
+            Value::Date(String::from(t))
+        }
+        Kind::Checkbox => Value::Bool(t == "true"),
+        _ => Value::Text(String::from(t)),
+    }
+}
+
+impl Value {
+    /// The value as written (dates as YYYY-MM-DD), for editing.
+    pub fn shown_raw(&self) -> String {
+        match self {
+            Value::Date(d) => d.clone(),
+            other => other.shown(),
+        }
+    }
+}
+
+/// The day of the week of a date, 0 Monday to 6 Sunday.
+pub fn weekday(y: i32, m: u32, d: u32) -> u32 {
+    // Days from the civil calendar (Howard Hinnant's), 1970-01-01 a Thursday.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as i64;
+    let mp = (i64::from(m) + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = i64::from(era) * 146_097 + doe - 719_468;
+    (((days % 7) + 7 + 3) % 7) as u32
+}
+
+pub fn days_in_month(y: i32, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => {
+            if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +464,70 @@ mod tests {
         assert_eq!(p[8].value.shown(), "wide, dark");
         let one_line = parse(&["tags: a, b c"], 1);
         assert_eq!(one_line[0].value.shown(), "a, b, c");
+    }
+
+    #[test]
+    fn values_write_back_as_yaml() {
+        assert_eq!(
+            render(
+                "title",
+                Kind::Text,
+                &Value::Text(String::from("Render test"))
+            ),
+            "title: Render test"
+        );
+        assert_eq!(
+            render("t", Kind::Text, &Value::Text(String::from("a: b"))),
+            "t: \"a: b\""
+        );
+        assert_eq!(
+            render("t", Kind::Text, &Value::Text(String::from("42"))),
+            "t: \"42\""
+        );
+        assert_eq!(
+            render(
+                "tags",
+                Kind::Tags,
+                &Value::List(alloc::vec![String::from("#a"), String::from("b c")])
+            ),
+            "tags:\n  - a\n  - b c"
+        );
+        assert_eq!(
+            render("n", Kind::Number, &Value::Number(String::from("4"))),
+            "n: 4"
+        );
+        assert_eq!(render("e", Kind::Text, &Value::Empty), "e:");
+        // Written and read again, a value is the same.
+        let lines = ["q: \"He said \\\"hi\\\"\""];
+        assert_eq!(parse(&lines, 1)[0].value.shown(), "He said \"hi\"");
+        let back = render(
+            "q",
+            Kind::Text,
+            &Value::Text(String::from("He said \"hi\"")),
+        );
+        assert_eq!(
+            parse(&[back.as_str()], 1)[0].value.shown(),
+            "He said \"hi\""
+        );
+        assert_eq!(
+            convert(&Value::Text(String::from("x")), Kind::List),
+            Value::List(alloc::vec![String::from("x")])
+        );
+        assert_eq!(
+            convert(&Value::Text(String::from("2026-11-22")), Kind::Date),
+            Value::Date(String::from("2026-11-22"))
+        );
+        assert_eq!(
+            convert(&Value::Text(String::from("abc")), Kind::Number),
+            Value::Empty
+        );
+        assert_eq!(
+            from_input(Kind::Number, " 7 "),
+            Value::Number(String::from("7"))
+        );
+        assert_eq!(weekday(2026, 11, 22), 6, "a Sunday");
+        assert_eq!(weekday(2024, 2, 29), 3, "a Thursday");
+        assert_eq!(days_in_month(2024, 2), 29);
     }
 
     #[test]

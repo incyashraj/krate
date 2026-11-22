@@ -1142,7 +1142,10 @@ pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<L
             // A table is edited inside the drawn table, never as its source
             // (outside source mode), as Obsidian 1.15 does.
             let active = !reading
-                && span.kind != crate::editor::SpanKind::Table
+                && !matches!(
+                    span.kind,
+                    crate::editor::SpanKind::Table | crate::editor::SpanKind::Front
+                )
                 && doc.caret_in(span.first, span.last);
             if !active {
                 if n != span.first {
@@ -1190,7 +1193,10 @@ pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<L
     let ctx = Ctx {
         block,
         mode: doc.mode,
-        active: ((n >= a && n <= b) || extra_active) && !reading && !doc.fresh,
+        active: ((n >= a && n <= b) || extra_active)
+            && !reading
+            && !doc.fresh
+            && doc.prop_edit.is_none(),
         width: v.width,
         body: v.sz.body,
         code: v.sz.code,
@@ -1415,7 +1421,8 @@ fn move_one(
             }
         } else if row > 0 {
             row -= 1;
-        } else if line > 0 {
+        } else if line > 0 && doc.front.is_none_or(|f| line > f + 1) {
+            // (The Properties block is edited in place: Up stops below it.)
             line -= 1;
             while line > 0 && doc.folded_away(line) {
                 line -= 1;
@@ -1556,7 +1563,7 @@ pub fn draw(
                     look::text(c, &s, v.x - 14.0 - w, y + rl.base, size, 400, t.faint);
                 }
             }
-            if caret_on && doc.mode != Mode::Reading && !doc.fresh {
+            if caret_on && doc.mode != Mode::Reading && !doc.fresh && doc.prop_edit.is_none() {
                 if n == doc.cur.line {
                     draw_caret(c, &l, text, v, y, doc.cur.col, t);
                 }
@@ -1578,9 +1585,11 @@ pub fn draw(
                     fill(c, r(v.x + cx - 0.5, y + cy, 1.6 * v.sz.scale, ch), t.text);
                 }
             }
-            let s = w.said();
-            if !s.is_empty() {
-                said.text(r(v.x, y, v.width, l.h), &s);
+            if !w.say_parts(v.x, y, said) {
+                let s = w.said();
+                if !s.is_empty() {
+                    said.text(r(v.x, y, v.width, l.h), &s);
+                }
             }
         } else if vi == 0 {
             said.heading(r(v.x, y, v.width, l.h), &doc.title);
@@ -1588,6 +1597,14 @@ pub fn draw(
         shown.rows.push((vi, y, l.clone()));
         y += l.h;
         vi += 1;
+    }
+    // An open date picker lies over the lines under its block.
+    if doc.prop_edit.as_ref().is_some_and(|e| e.picker.is_some()) {
+        for (_, y, l) in &shown.rows {
+            if let Some(w) = l.widget.as_ref() {
+                widgets::draw_picker(c, w, v.x, *y, t);
+            }
+        }
     }
     let _ = canvas2d::clear_clip(c);
     // The scroll bar, when the note is longer than the view.
@@ -2076,10 +2093,15 @@ pub fn press(c: u64, doc: &Doc, shown: &Shown, px: f32, py: f32, follow: bool) -
             .and_then(|w| widgets::press(c, w, lx, ly, shown.width, n));
     }
     if l.deco == Deco::Widget {
-        return l
+        // A menu opens where it was pressed.
+        let act = l
             .widget
             .as_ref()
             .and_then(|w| widgets::press(c, w, lx, ly, shown.width, n));
+        return match act {
+            Some(Act::PropMenu(line, _, _)) => Some(Act::PropMenu(line, px, py)),
+            other => other,
+        };
     }
     let text = doc.line(n);
     let row = l.row_at(ly);

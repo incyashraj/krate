@@ -1071,6 +1071,10 @@ pub enum MenuAction {
     CardOpen(String),
     /// The table menu on a cell (src/tables.rs).
     Table(crate::tables::Op),
+    /// A property's type menu (src/propedit.rs): turn it into a kind, or
+    /// remove it.
+    PropKind(usize, crate::props::Kind),
+    PropRemove(usize),
 }
 
 pub struct Menu {
@@ -4147,6 +4151,18 @@ impl App {
             MenuAction::CardColor(id, c) => self.canvas_color(&id, c),
             MenuAction::CardRemove(id) => self.canvas_remove(&id),
             MenuAction::CardOpen(p) => self.open_file(&p, true),
+            MenuAction::PropKind(line, kind) => {
+                let now = self.now;
+                if let Some(d) = self.doc_mut() {
+                    crate::propedit::set_kind(d, line, kind, now);
+                }
+            }
+            MenuAction::PropRemove(line) => {
+                let now = self.now;
+                if let Some(d) = self.doc_mut() {
+                    crate::propedit::remove(d, line, now);
+                }
+            }
             MenuAction::Table(op) => {
                 let now = self.now;
                 if let Some(d) = self.doc_mut() {

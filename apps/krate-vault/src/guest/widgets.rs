@@ -194,9 +194,17 @@ pub struct PropRow {
     pub kind: Kind,
     pub y: f32,
     pub line: usize,
-    pub value_col: usize,
     pub value: Value,
+    /// A list's chips: where each starts and how wide it is (from the
+    /// value column), the cross at its right end.
+    pub chips: Vec<(f32, f32)>,
+    /// Being edited: which field, and what it holds.
+    pub edit: Option<(crate::propedit::Field, crate::app::Input)>,
 }
+
+/// The date picker's geometry: 7 columns of 32 px under a 40 px header.
+pub const PICK_W: f32 = 7.0 * 32.0 + 16.0;
+pub const PICK_H: f32 = 40.0 + 6.0 * 28.0 + 12.0;
 
 pub enum Widget {
     Table {
@@ -227,6 +235,8 @@ pub enum Widget {
     Props {
         rows: Vec<PropRow>,
         add_y: f32,
+        /// The date picker, open under a row: its line and month.
+        picker: Option<(usize, i32, u32)>,
     },
     Image {
         target: String,
@@ -259,6 +269,37 @@ pub enum Widget {
 }
 
 impl Widget {
+    /// Tell the screen reader (and check-app) the parts a person presses
+    /// one by one: each table cell, each property's name and value. True
+    /// when it did (else the whole block is said as one).
+    pub fn say_parts(&self, ox: f32, oy: f32, said: &mut krate::layout::Said) -> bool {
+        match self {
+            Widget::Table { cells, .. } => {
+                for c in cells {
+                    let t = md::plain(&c.text, 0);
+                    if !t.is_empty() {
+                        said.text(r(ox + c.x, oy + c.y, c.w.max(20.0), c.lay.h.max(20.0)), &t);
+                    }
+                }
+                true
+            }
+            Widget::Props { rows, add_y, .. } => {
+                said.heading(r(ox, oy + 8.0, 140.0, 24.0), "Properties");
+                for p in rows {
+                    said.text(r(ox + 22.0, oy + p.y, 120.0, 30.0), &p.key);
+                    let v = p.value.shown();
+                    said.text(
+                        r(ox + 148.0, oy + p.y, 300.0, 30.0),
+                        if v.is_empty() { "Empty" } else { &v },
+                    );
+                }
+                said.button(r(ox, oy + add_y, 140.0, 30.0), "Add property");
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// What a screen reader (and check-app) is told is here.
     pub fn said(&self) -> String {
         let mut s = String::new();
@@ -362,6 +403,12 @@ pub fn block(cache: &mut LayCache, c: u64, doc: &Doc, span: Span, v: &View) -> R
     fnv(&mut h, &(span.first as u64).to_le_bytes());
     if span.kind == SpanKind::Callout {
         fnv(&mut h, &[u8::from(doc.callout_folded(span.first))]);
+    }
+    if span.kind == SpanKind::Front {
+        if let Some(e) = doc.prop_edit.as_ref() {
+            let st = alloc::format!("{:?}", e);
+            fnv(&mut h, st.as_bytes());
+        }
     }
     // An embed's look depends on what it embeds having arrived.
     let embed = if span.kind == SpanKind::Embed {
@@ -694,31 +741,59 @@ fn diagram(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
     }
 }
 
-fn properties(_c: u64, doc: &Doc, span: Span, _width: f32, sz: &Sizes) -> Rc<Lay> {
+fn properties(c: u64, doc: &Doc, span: Span, _width: f32, sz: &Sizes) -> Rc<Lay> {
     let k = sz.body / 16.0;
     let lines: Vec<&str> = (span.first + 1..span.last).map(|n| doc.line(n)).collect();
     let parsed = props::parse(&lines, span.first + 1);
     let mut rows = Vec::new();
     let mut y = 40.0 * k;
+    let editing = doc.prop_edit.as_ref();
     for p in parsed {
-        let line = doc.line(p.line);
-        let value_col = line.find(':').map_or(line.len(), |i| {
-            let rest = line.get(i + 1..).unwrap_or("");
-            i + 1 + (rest.len() - rest.trim_start().len())
-        });
+        let mut chips = Vec::new();
+        if let Value::List(items) = &p.value {
+            let mut x = 0.0;
+            for it in items {
+                let label = if p.kind == Kind::Tags {
+                    it.trim_start_matches('#')
+                } else {
+                    it.as_str()
+                };
+                let w = look::width(c, label, 15.0, 400);
+                let cw = if p.kind == Kind::Tags {
+                    w + 34.0
+                } else {
+                    w + 20.0
+                };
+                chips.push((x, cw));
+                x += cw + 8.0;
+            }
+        }
+        let edit = editing
+            .filter(|e| e.line == p.line)
+            .map(|e| (e.field, e.input.clone()));
         rows.push(PropRow {
             key: p.key,
             kind: p.kind,
             y,
             line: p.line,
-            value_col,
             value: p.value,
+            chips,
+            edit,
         });
         y += 30.0 * k;
     }
     let add_y = y + 4.0 * k;
     let h = add_y + 30.0 * k + 22.0 * k;
-    widget_lay(Widget::Props { rows, add_y }, h, sz.body)
+    let picker = editing.and_then(|e| e.picker.map(|(yy, m)| (e.line, yy, m)));
+    widget_lay(
+        Widget::Props {
+            rows,
+            add_y,
+            picker,
+        },
+        h,
+        sz.body,
+    )
 }
 
 fn image(
@@ -1086,13 +1161,35 @@ pub fn draw(
         Widget::Math { b, x, base, .. } => {
             draw_math(c, b, ox + x, oy + base, t.text, t);
         }
-        Widget::Props { rows, add_y } => {
+        Widget::Props { rows, add_y, .. } => {
             look::text(c, "Properties", ox, oy + 26.0, 16.0, 600, t.text);
             for p in rows {
                 let cy = oy + p.y + 15.0;
                 prop_icon(c, p.kind, ox + 8.0, cy, t.muted);
-                look::fit(c, &p.key, ox + 26.0, cy + 5.0, 15.0, 400, t.muted, 112.0);
-                draw_value(c, p, ox + 148.0, cy, width - 148.0, t);
+                match &p.edit {
+                    Some((crate::propedit::Field::Key, input)) => {
+                        edit_box(c, input, r(ox + 22.0, cy - 13.0, 120.0, 26.0), t);
+                    }
+                    _ => {
+                        look::fit(c, &p.key, ox + 26.0, cy + 5.0, 15.0, 400, t.muted, 112.0);
+                    }
+                }
+                match &p.edit {
+                    Some((crate::propedit::Field::Value, input)) => {
+                        edit_box(
+                            c,
+                            input,
+                            r(ox + 144.0, cy - 13.0, (width - 150.0).min(360.0), 26.0),
+                            t,
+                        );
+                    }
+                    Some((crate::propedit::Field::NewItem, input)) => {
+                        draw_value(c, p, ox + 148.0, cy, width - 148.0, t);
+                        let after = p.chips.last().map_or(0.0, |(x, w)| x + w + 8.0);
+                        edit_box(c, input, r(ox + 148.0 + after, cy - 13.0, 140.0, 26.0), t);
+                    }
+                    _ => draw_value(c, p, ox + 148.0, cy, width - 148.0, t),
+                }
             }
             let ay = oy + add_y + 15.0;
             look::line(c, ox + 4.0, ay, ox + 14.0, ay, 1.4, t.muted);
@@ -1271,6 +1368,131 @@ pub fn draw(
     }
 }
 
+/// A property's field while it is edited: the text, its selection and
+/// the caret, in a bordered box.
+fn edit_box(c: u64, input: &crate::app::Input, rc: Rect, t: &Theme) {
+    round(c, rc, 4.0, t.bg);
+    look::outline(c, rc, 4.0, 1.0, t.border_focus);
+    let base = rc.y + rc.h * 0.5 + 5.0;
+    let x = rc.x + 6.0;
+    if let Some((a, b)) = input.selection() {
+        let xa = look::width(c, input.text.get(..a).unwrap_or(""), 15.0, 400);
+        let xb = look::width(c, input.text.get(..b).unwrap_or(""), 15.0, 400);
+        fill(c, r(x + xa, rc.y + 4.0, xb - xa, rc.h - 8.0), t.sel);
+    }
+    look::fit(c, &input.text, x, base, 15.0, 400, t.text, rc.w - 12.0);
+    let cx = x + look::width(c, input.text.get(..input.caret).unwrap_or(""), 15.0, 400);
+    fill(c, r(cx, rc.y + 5.0, 1.5, rc.h - 10.0), t.text);
+}
+
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// Where the date picker of the Properties block sits, relative to the
+/// block's top-left: under the row of `line`.
+fn picker_rect(rows: &[PropRow], line: usize) -> Option<Rect> {
+    let row = rows.iter().find(|p| p.line == line)?;
+    Some(r(144.0, row.y + 30.0, PICK_W, PICK_H))
+}
+
+/// Draw the open date picker over whatever is below the block.
+pub fn draw_picker(c: u64, w: &Widget, ox: f32, oy: f32, t: &Theme) {
+    let Widget::Props {
+        rows,
+        picker: Some((line, y, m)),
+        ..
+    } = w
+    else {
+        return;
+    };
+    let Some(pr) = picker_rect(rows, *line) else {
+        return;
+    };
+    let rc = r(ox + pr.x, oy + pr.y, pr.w, pr.h);
+    let _ = canvas2d::drop_shadow_round_rect(
+        c,
+        look::g(r(rc.x, rc.y + 3.0, rc.w, rc.h)),
+        look::radii(8.0),
+        14.0,
+        look::alpha(look::hex(0x000000), 0.4),
+    );
+    round(c, rc, 8.0, t.modal);
+    look::outline(c, rc, 8.0, 1.0, t.border);
+    let title = alloc::format!(
+        "{} {}",
+        MONTHS
+            .get((*m as usize).saturating_sub(1))
+            .copied()
+            .unwrap_or(""),
+        y
+    );
+    look::text(c, &title, rc.x + 14.0, rc.y + 26.0, 15.0, 600, t.text);
+    // The month arrows: back, then on.
+    let (bx, by) = (rc.right() - 44.0, rc.y + 21.0);
+    look::line(c, bx + 1.8, by - 3.5, bx - 1.8, by, 1.4, t.muted);
+    look::line(c, bx - 1.8, by, bx + 1.8, by + 3.5, 1.4, t.muted);
+    look::chevron(c, rc.right() - 18.0, by, false, 1.0, t.muted);
+    let first = crate::props::weekday(*y, *m, 1);
+    let days = crate::props::days_in_month(*y, *m);
+    let current = rows
+        .iter()
+        .find(|p| p.line == *line)
+        .map(|p| p.value.shown_raw())
+        .unwrap_or_default();
+    for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+        .iter()
+        .enumerate()
+    {
+        look::text(
+            c,
+            d,
+            rc.x + 8.0 + i as f32 * 32.0 + 8.0,
+            rc.y + 52.0,
+            11.0,
+            400,
+            t.faint,
+        );
+    }
+    for day in 1..=days {
+        let slot = first + day - 1;
+        let (col, row) = (slot % 7, slot / 7);
+        let cell = r(
+            rc.x + 8.0 + col as f32 * 32.0,
+            rc.y + 58.0 + row as f32 * 26.0,
+            30.0,
+            24.0,
+        );
+        let this = alloc::format!("{y:04}-{m:02}-{day:02}");
+        let on = current.starts_with(&this);
+        if on {
+            round(c, cell, 5.0, t.accent);
+        }
+        let s = alloc::format!("{day}");
+        let w = look::width(c, &s, 13.0, 400);
+        look::text(
+            c,
+            &s,
+            cell.x + (cell.w - w) * 0.5,
+            cell.y + 16.5,
+            13.0,
+            400,
+            if on { t.on_accent } else { t.text },
+        );
+    }
+}
+
 fn draw_value(c: u64, p: &PropRow, x: f32, cy: f32, room: f32, t: &Theme) {
     let base = cy + 5.0;
     match (&p.value, p.kind) {
@@ -1295,27 +1517,25 @@ fn draw_value(c: u64, p: &PropRow, x: f32, cy: f32, room: f32, t: &Theme) {
             }
         }
         (Value::List(items), Kind::Tags | Kind::Aliases | Kind::List) => {
-            let mut px = x;
-            for it in items {
+            for (it, (cx, cw)) in items.iter().zip(p.chips.iter()) {
+                if cx + cw > room {
+                    break;
+                }
+                let px = x + cx;
                 let label = if p.kind == Kind::Tags {
                     it.trim_start_matches('#')
                 } else {
                     it.as_str()
                 };
-                let w = look::width(c, label, 15.0, 400);
-                if px + w + 30.0 > x + room {
-                    break;
-                }
                 if p.kind == Kind::Tags {
-                    round(c, r(px, cy - 12.0, w + 34.0, 24.0), 12.0, t.tag_bg);
+                    round(c, r(px, cy - 12.0, *cw, 24.0), 12.0, t.tag_bg);
                     look::text(c, label, px + 10.0, base, 15.0, 400, t.link);
-                    look::text(c, "×", px + w + 14.0, base, 15.0, 400, t.link);
+                    lucide(c, crate::lucide::X, px + cw - 13.0, cy, 11.0, t.link);
                 } else {
                     // Aliases and lists are plain words with a cross, no pill.
                     look::text(c, label, px, base, 15.0, 400, t.text);
-                    look::text(c, "×", px + w + 4.0, base, 15.0, 400, t.muted);
+                    lucide(c, crate::lucide::X, px + cw - 9.0, cy, 11.0, t.muted);
                 }
-                px += w + 42.0;
             }
         }
         (Value::Date(d), _) => {
@@ -1491,16 +1711,59 @@ pub fn press(c: u64, w: &Widget, lx: f32, ly: f32, _width: f32, line: usize) -> 
         }
         Widget::Math { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
         Widget::Diagram { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
-        Widget::Props { rows, add_y } => {
+        Widget::Props {
+            rows,
+            add_y,
+            picker,
+        } => {
+            // The open date picker first: it lies over everything.
+            if let Some((line, y, m)) = picker {
+                if let Some(pr) = picker_rect(rows, *line) {
+                    if pr.contains(lx, ly) {
+                        let (px, py) = (lx - pr.x, ly - pr.y);
+                        if py < 40.0 {
+                            if px > pr.w - 56.0 {
+                                return Some(Act::DateMonth(px > pr.w - 30.0));
+                            }
+                            return Some(Act::Nothing);
+                        }
+                        let col = ((px - 8.0) / 32.0).floor();
+                        let row = ((py - 58.0) / 26.0).floor();
+                        if (0.0..7.0).contains(&col) && row >= 0.0 {
+                            let slot = row as u32 * 7 + col as u32;
+                            let first = crate::props::weekday(*y, *m, 1);
+                            if slot >= first {
+                                let d = slot - first + 1;
+                                if d <= crate::props::days_in_month(*y, *m) {
+                                    return Some(Act::DatePick(*line, *y, *m, d));
+                                }
+                            }
+                        }
+                        return Some(Act::Nothing);
+                    }
+                }
+            }
             if ly >= *add_y && ly < add_y + 30.0 && lx < 140.0 {
                 return Some(Act::AddProperty);
             }
             for p in rows {
                 if ly >= p.y && ly < p.y + 30.0 {
-                    if matches!(p.value, Value::Bool(_)) && (140.0..176.0).contains(&lx) {
-                        return Some(Act::Property(p.line));
+                    if lx < 22.0 {
+                        return Some(Act::PropMenu(p.line, 0.0, 0.0));
                     }
-                    return Some(Act::Place(Pos::new(p.line, p.value_col)));
+                    if lx < 144.0 {
+                        return Some(Act::PropEdit(p.line, crate::propedit::Field::Key));
+                    }
+                    let vx = lx - 148.0;
+                    if matches!(p.value, Value::Bool(_)) {
+                        return (vx < 28.0).then_some(Act::Property(p.line));
+                    }
+                    for (i, (cx, cw)) in p.chips.iter().enumerate() {
+                        if vx >= cx + cw - 22.0 && vx <= cx + cw {
+                            return Some(Act::PropItemRemove(p.line, i));
+                        }
+                    }
+                    return Some(Act::PropEdit(p.line, crate::propedit::Field::Value));
                 }
             }
             None

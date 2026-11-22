@@ -29,6 +29,18 @@ pub enum Act {
     Property(usize),
     /// Add a property to the front matter.
     AddProperty,
+    /// Edit a property's key or value inside the block.
+    PropEdit(usize, crate::propedit::Field),
+    /// Take a chip out of a list property.
+    PropItemRemove(usize, usize),
+    /// The property's type menu (its icon), opened where it was pressed.
+    PropMenu(usize, f32, f32),
+    /// A day picked in the date picker.
+    DatePick(usize, i32, u32, u32),
+    /// The date picker's month arrows (true: on).
+    DateMonth(bool),
+    /// A press that lands on something that does nothing.
+    Nothing,
     /// Put the caret here (a click into a block drawn whole shows its
     /// source there).
     Place(Pos),
@@ -126,6 +138,26 @@ pub fn act_on(app: &mut App, act: Act, m: Mods) -> bool {
                 }
             }
         }
+        Act::PropMenu(line, x, y) => {
+            // Obsidian's property menu: its types, then Remove.
+            let kinds = [
+                ("Text", crate::props::Kind::Text),
+                ("List", crate::props::Kind::List),
+                ("Number", crate::props::Kind::Number),
+                ("Checkbox", crate::props::Kind::Checkbox),
+                ("Date", crate::props::Kind::Date),
+                ("Date & time", crate::props::Kind::DateTime),
+            ];
+            let mut items: Vec<(String, crate::app::MenuAction)> = kinds
+                .iter()
+                .map(|(l, k)| (String::from(*l), crate::app::MenuAction::PropKind(line, *k)))
+                .collect();
+            items.push((
+                String::from("Remove"),
+                crate::app::MenuAction::PropRemove(line),
+            ));
+            app.overlay = Some(crate::app::Overlay::Menu(crate::app::Menu { x, y, items }));
+        }
         other => {
             let Some(d) = app.doc_mut() else {
                 return false;
@@ -142,6 +174,18 @@ pub fn act_on(app: &mut App, act: Act, m: Mods) -> bool {
                 }
                 Act::Property(n) if !reading => toggle_property(d, n, now),
                 Act::AddProperty if !reading => add_property(d, now),
+                Act::PropEdit(line, field) if !reading => {
+                    crate::propedit::commit(d, now, false);
+                    crate::propedit::begin(d, line, field);
+                }
+                Act::PropItemRemove(line, i) if !reading => {
+                    crate::propedit::remove_item(d, line, i, now)
+                }
+                Act::DatePick(line, y, mo, day) if !reading => {
+                    crate::propedit::pick_date(d, line, y, mo, day, now)
+                }
+                Act::DateMonth(fwd) => crate::propedit::turn_month(d, fwd),
+                Act::Nothing => {}
                 Act::Place(p) if !reading => {
                     d.extra.clear();
                     d.place(p, false);
@@ -171,16 +215,21 @@ pub fn add_property(d: &mut Doc, now: u64) {
             (end, crate::props::parse(&lines, 1))
         }
         None => {
+            let cur = d.cur;
             d.replace(Pos::new(0, 0), Pos::new(0, 0), "---\n---\n", now);
+            d.cur = Pos::new(cur.line + 2, cur.col);
             (1, Vec::new())
         }
     };
     let mut key = crate::props::new_key(&existing);
-    key.push_str(": \n");
+    key.push_str(":\n");
+    let cur = d.cur;
     d.replace(Pos::new(at, 0), Pos::new(at, 0), &key, now);
-    let len = d.buf.line_len(at);
+    d.cur = Pos::new(cur.line + usize::from(cur.line >= at), cur.col);
+    d.anchor = None;
     d.extra.clear();
-    d.select_range(Pos::new(at, 0), Pos::new(at, len.saturating_sub(2)));
+    // The new row's name is open for typing, as Obsidian opens it.
+    crate::propedit::begin(d, at, crate::propedit::Field::Key);
 }
 
 /// Choosing completion item `i`, when it is a block: write its new `^id`
@@ -450,6 +499,12 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
     if let Some(used) = find::key(app, key, m) {
         return Some(used);
     }
+    let now0 = app.now;
+    if let Some(d) = app.doc_mut() {
+        if crate::propedit::key(d, key, m, now0) {
+            return Some(true);
+        }
+    }
     let now = app.now;
     let completing = app.completion.is_some();
     let d = app.doc_mut()?;
@@ -524,6 +579,9 @@ pub fn key(app: &mut App, key: &str, m: Mods) -> Option<bool> {
 /// caret's when there are several. True when it was taken.
 pub fn text(app: &mut App, s: &str) -> bool {
     if find::text(app, s) {
+        return true;
+    }
+    if app.doc_mut().is_some_and(|d| crate::propedit::text(d, s)) {
         return true;
     }
     let now = app.now;
@@ -651,12 +709,16 @@ mod tests {
         assert!(a.doc().unwrap().folded_away(5));
         act_on(&mut a, Act::AddProperty, m);
         let d = a.doc().unwrap();
-        assert_eq!(d.line(2), "property: ");
-        assert_eq!(d.selected_text(), "property");
+        assert_eq!(d.line(2), "property:");
+        let e = d.prop_edit.as_ref().unwrap();
+        assert_eq!((e.line, e.field), (2, crate::propedit::Field::Key));
         let mut b = app_with(&[("M.md", "plain")]);
         b.open("M.md", false);
         add_property(b.doc_mut().unwrap(), 0);
-        assert_eq!(b.doc().unwrap().text(), "---\nproperty: \n---\nplain");
+        assert_eq!(b.doc().unwrap().text(), "---\nproperty:\n---\nplain");
+        // The type menu opens on the icon.
+        assert!(act_on(&mut b, Act::PropMenu(1, 10.0, 20.0), m));
+        assert!(matches!(b.overlay, Some(crate::app::Overlay::Menu(_))));
     }
 
     #[test]
