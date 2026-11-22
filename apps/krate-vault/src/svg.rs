@@ -73,6 +73,9 @@ pub struct Text {
     /// 0 start, 1 middle, 2 end.
     pub anchor: u8,
     pub bold: bool,
+    /// SVG text is set in a serif face unless its font-family names a
+    /// sans-serif or monospace one.
+    pub serif: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -684,6 +687,7 @@ struct Style {
     font: f32,
     anchor: u8,
     bold: bool,
+    serif: bool,
 }
 
 fn attr<'a>(e: &'a El<'_>, k: &str) -> Option<&'a str> {
@@ -712,6 +716,21 @@ fn style_of(e: &El<'_>, parent: &Style) -> Style {
             }
         }
         "font-weight" => s.bold = matches!(v.trim(), "bold" | "600" | "700" | "800" | "900"),
+        "font-family" => {
+            let f = v.to_ascii_lowercase();
+            s.serif = ![
+                "sans",
+                "helvetica",
+                "arial",
+                "system-ui",
+                "mono",
+                "inter",
+                "verdana",
+                "segoe",
+            ]
+            .iter()
+            .any(|w| f.contains(w));
+        }
         _ => {}
     };
     for (k, v) in &e.attrs {
@@ -890,6 +909,7 @@ pub fn parse(src: &str) -> Result<Svg, String> {
         font: 16.0,
         anchor: 0,
         bold: false,
+        serif: true,
     };
     let mut stack: Vec<Style> = alloc::vec![init];
     let mut skip_depth = 0usize;
@@ -990,6 +1010,7 @@ pub fn parse(src: &str) -> Result<Svg, String> {
                         color: [c[0], c[1], c[2], c[3] * st.opacity * st.fill_op],
                         anchor: st.anchor,
                         bold: st.bold,
+                        serif: st.serif,
                     });
                 }
                 if e.name == "text" && !e.selfclose {

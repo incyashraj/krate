@@ -1352,7 +1352,16 @@ pub fn draw(
                 let k = *w / (*px_w as f32).max(1.0);
                 for tx in texts {
                     let size = tx.size * k;
-                    let st = look::style(if tx.bold { 700 } else { 400 }, false, false);
+                    let st = krate::gfx::types::TextStyle {
+                        weight: if tx.bold { 700 } else { 400 },
+                        italic: false,
+                        letter_spacing: 0.0,
+                        family: if tx.serif {
+                            krate::gfx::types::FontFamily::Serif
+                        } else {
+                            krate::gfx::types::FontFamily::Sans
+                        },
+                    };
                     let tw = look::width_styled(c, &tx.text, size, st);
                     let dx = match tx.anchor {
                         1 => tw * 0.5,
