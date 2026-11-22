@@ -320,6 +320,19 @@ pub fn line(c: u64, x0: f32, y0: f32, x1: f32, y1: f32, w: f32, col: Rgba) {
     }
 }
 
+/// A folder's chevron centred on (x, y): pointing right when closed,
+/// down when open.
+pub fn chevron(c: u64, x: f32, y: f32, open: bool, k: f32, col: Rgba) {
+    let s = 1.4 * k;
+    if open {
+        line(c, x - 3.5 * k, y - 1.8 * k, x, y + 1.8 * k, s, col);
+        line(c, x, y + 1.8 * k, x + 3.5 * k, y - 1.8 * k, s, col);
+    } else {
+        line(c, x - 1.8 * k, y - 3.5 * k, x + 1.8 * k, y, s, col);
+        line(c, x + 1.8 * k, y, x - 1.8 * k, y + 3.5 * k, s, col);
+    }
+}
+
 /// An icon centred on (x, y), about 16 px.
 pub fn icon(c: u64, which: Icon, x: f32, y: f32, k: f32, col: Rgba) {
     let s = 1.5 * k;
@@ -436,7 +449,7 @@ pub fn icon(c: u64, which: Icon, x: f32, y: f32, k: f32, col: Rgba) {
             fill(c, r(bx - s * 0.5, y - 6.0 * k, s, 12.0 * k), col);
         }
         Icon::Back | Icon::Forward => {
-            let d = if which == Icon::Back { -1.0 } else { 1.0 };
+            let d = if which == Icon::Back { 1.0 } else { -1.0 };
             line(
                 c,
                 x + 2.0 * k * d,

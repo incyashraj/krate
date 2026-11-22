@@ -601,13 +601,12 @@ impl Ui {
             let base = y + row_h * 0.5 + sz.ui * 0.36;
             if *is_folder {
                 let open = self.app.explorer.expanded.contains(path);
-                text(
+                look::chevron(
                     self.c,
-                    if open { "\u{25BE}" } else { "\u{25B8}" },
-                    tx,
-                    base,
-                    sz.ui * 0.85,
-                    400,
+                    tx + 4.0 * sz.scale,
+                    y + row_h * 0.5,
+                    open,
+                    sz.scale,
                     t.faint,
                 );
             }
@@ -644,7 +643,16 @@ impl Ui {
         }
         let _ = canvas2d::clear_clip(self.c);
         if rows.is_empty() {
-            let msg = "No notes yet";
+            let unreadable = self
+                .app
+                .vault
+                .as_ref()
+                .is_some_and(|v| !v.problems.is_empty());
+            let msg = if unreadable {
+                "This folder could not be read"
+            } else {
+                "No notes yet"
+            };
             text(
                 self.c,
                 msg,
@@ -851,13 +859,12 @@ impl Ui {
                 round(self.c, hr, 4.0, t.hover);
             }
             let base = yy + row_h * 0.5 + sz.ui * 0.36;
-            text(
+            look::chevron(
                 self.c,
-                if collapsed { "\u{25B8}" } else { "\u{25BE}" },
-                hr.x + 6.0,
-                base,
-                sz.ui * 0.85,
-                400,
+                hr.x + 10.0,
+                yy + row_h * 0.5,
+                !collapsed,
+                sz.scale,
                 t.faint,
             );
             let badge = grouped(*n);
@@ -1720,9 +1727,9 @@ impl Ui {
                     ListKind::MoveTo(_) => "Choose a folder...",
                 };
                 let footer = match &p.kind {
-                    ListKind::Switcher => "\u{2191}\u{2193} to navigate    \u{21b5} to open    Cmd+\u{21b5} in a new tab    Shift+\u{21b5} to create    esc to dismiss",
-                    ListKind::Palette => "\u{2191}\u{2193} to navigate    \u{21b5} to run    esc to dismiss",
-                    ListKind::MoveTo(_) => "\u{2191}\u{2193} to navigate    \u{21b5} to move    esc to dismiss",
+                    ListKind::Switcher => "\u{2191}\u{2193} to navigate    Enter to open    Cmd+Enter in a new tab    Shift+Enter to create    esc to dismiss",
+                    ListKind::Palette => "\u{2191}\u{2193} to navigate    Enter to run    esc to dismiss",
+                    ListKind::MoveTo(_) => "\u{2191}\u{2193} to navigate    Enter to move    esc to dismiss",
                 };
                 let _ = canvas2d::drop_shadow_round_rect(
                     self.c,

@@ -644,7 +644,7 @@ mod tests {
             "Ideas link [[Projects/Plan]] #work #idea",
         );
         fs.put("Archive/Old/Plan.md", "older plan");
-        fs.put(".obsidian/app.json", "{}");
+        fs.put(".settings/app.json", "{}");
         fs.put("image.png", "x");
         Vault::open("Sample", Box::new(fs))
     }
@@ -659,7 +659,7 @@ mod tests {
         assert_eq!(v.note_count(), 4);
         assert_eq!(v.folder_count(), 3);
         assert!(v.note("Projects/Plan.md").is_some());
-        assert!(v.note(".obsidian/app.json").is_none());
+        assert!(v.note(".settings/app.json").is_none());
         let root = &v.folders[0];
         // Folders first, by name; then notes.
         let names: Vec<&str> = root
