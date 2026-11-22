@@ -1379,6 +1379,124 @@ This section is for a piece -- a game, a toy, a visualiser, a demo. The DECORATI
 
 **Pick three colours and stop.** A dark background, one bright accent for the thing you want clicked, and one ink colour for text. Every extra hue makes it look less designed, not more.
 
+## Making a window that actually works
+
+The API list above says what you may call. This says what an interactive app has to do with it, because getting this wrong produces an app that builds, passes every check, and is useless in a person's hands.
+
+**Lay out from the real canvas size, never from constants.** A window can be resized. If you hard-code `WIDTH`/`HEIGHT` and hit-test against them, the canvas stretches while your click targets stay where they were, and every click lands in the wrong place or nowhere. Ask the canvas how big it is, compute the layout from that, and recompute when it changes:
+
+    let size = canvas2d::canvas_size(canvas)?;   // width, height right now
+
+**Handle the resize event.** The runtime sends `Event::Resized(window-size)` when the window changes. Re-read the canvas size, recompute the layout, and redraw. An app that ignores it is only correct at its opening size.
+
+**Fill the space you were given. Leftover emptiness is a bug, not a style.** Laying out from the canvas size is only half the job -- the other half is making the content actually consume it. A generated seating planner drew its eight tables at a fixed radius from the top and left a third of the window dead at the bottom, which reads as unfinished no matter how good the drawing is. Three rules that fix this for any app:
+
+  1. **Divide the space, then fill each division.** Decide the regions as fractions of the real canvas ("the list takes the left 62%, the detail panel the rest"), not as pixel constants. Then size what is inside each region from that region, so a taller window makes rows taller or shows more of them -- it never just adds blank space at the bottom.
+
+  2. **Grids compute their cell size from the area, never the other way round.** For `n` items in a region `w` by `h`: pick the column count that best fills it, then `cell = (w - gaps) / cols` and let the cell drive the item's radius or height. A table drawn at a hardcoded 90px radius in a 1400px-wide room is the same bug as a hardcoded window size.
+
+  3. **Give the leftover to the element that can use it.** One region should be elastic -- usually the list, the canvas, or the feed -- and absorb whatever is left after the fixed chrome (header, footer, toolbar) is placed. If nothing is elastic, the window grows and the app does not.
+
+  A list is the usual elastic region, so it shows as many rows as its region holds: `visible = (list_h / row_h).floor()`, computed from the real height every frame. Never cap it at a number you picked. A generated habit tracker drew 3 rows and "+1 more (scroll)" with half its card empty below them. Scroll only what truly does not fit, and if the rows fit with room to spare, the card ends where the last row ends, or the rows grow to fill it.
+
+  This applies inside a row of things as much as to the whole window. A generated table measured each column to its widest cell -- correctly, with `measure_text` -- summed them, found the total narrower than the window, and centred the table. That left a 157px strip down the right side with nothing in it for the full height of the window, and the bottom row clipped, in an app whose whole subject was fitting to content. Measuring to content is the right first step and the wrong last one: once every column has its minimum, hand the surplus to whichever column benefits, usually the one holding the longest free text.
+
+    let natural: f32 = widths.iter().sum();
+    let surplus = (avail - natural).max(0.0);
+    widths[longest_text_column] += surplus;
+
+  4. **Draw inside the region you were given, and derive every position from it.** Reserving a band is only half of it -- the drawing has to stay in the band. Two generated games got this wrong in two different ways, and both looked broken at a glance.
+
+  A tic tac toe put its board at y 132 with height 380, so its score card started at 536 and ran to 612. Its "New round" button was a constant, `y: 556` -- computed sensibly on its own, never checked against what came before it, and it landed on top of the word "Draws". A memory game did reserve a footer and gave the rest to the cards correctly, then drew its hint text at `size.height - FOOTER_H - 6.0`, meaning "just above the footer" -- which is *outside* the footer, in the band already given to the cards, so the hint printed across the bottom row.
+
+  The fix for both is the same. Compute the regions once, in one function, and let every draw take its coordinates from the region it belongs to:
+
+    // `gfx::Rect` is a plain record -- x, y, width, height, no methods --
+    // so name the edge you need as you go.
+    let header_h = 96.0;
+    let footer_h = 84.0;
+    let header = rect(0.0, 0.0, w, header_h);
+    let footer = rect(0.0, h - footer_h, w, footer_h);
+    let board  = rect(0.0, header_h, w, footer.y - header_h);
+
+  Then the button is `footer.y + 16.0`, never a literal, and the hint is *inside* the footer too, not six pixels above it. If a value that positions one element is a number you typed rather than a field of a region, it is the tic tac toe bug waiting to happen. Two elements may share a region only when you stack them within it and their heights add up to less than the region's.
+
+  Check it the way a person would: text is the thing that shows a collision first, so for every string you draw, name the region it sits in. If you cannot, it has no home and will land on something.
+
+**Measure from the outermost edge, not the shape's own size.** When decorations stick out past a shape -- chairs around a table, a badge on a card corner, a glow, a selection ring -- the next element must clear the *decoration*, not the shape. A generated seating planner placed its guest names at `centre.y + table_radius + gap` while its chairs sat at `table_radius + chair_radius + 3`, so the first name landed exactly on the bottom chair in every table. Compute one `outer` value and lay out against it:
+
+    let outer = ring + decoration_r;   // what the shape really occupies
+    let text_y = centre.y + outer + gap;
+
+Reserve space for the same `outer` when you compute how big the shape may be, so the two calculations cannot disagree. Anything that overlaps text is a defect, however good it looks in one window size.
+
+**Weight the space by importance.** Within a region, the thing the app is *for* gets the most room: a chart app is mostly chart, a list app is mostly list. Headers and footers are chrome -- 8-14% of the height each is plenty. An app that spends a third of its window on a title is telling the person the title matters more than their data.
+
+**Never block the window on a request a person is watching.** `net::get` and `net::fetch` block until the response is complete, and an app is single threaded -- so a slow server freezes everything: no frame, no click, no cancel button. Measured against a server that stalled three seconds, a blocking fetch did zero work in that time; the same request through the calls below did 258 turns of it.
+
+Use `net::begin` for anything a person waits on. It returns a handle at once, and `net::poll` answers immediately every time:
+
+    let handle = net::begin(req)?;   // returns in ~1ms
+    loop {
+        match net::poll(handle) {
+            FetchStatus::Pending => {}            // draw a spinner
+            FetchStatus::Ready(res) => { show(res); break }
+            FetchStatus::Failed(e) => { show_error(e); break }
+            FetchStatus::UnknownHandle => break,
+        }
+        drain_events();  draw_frame();          // the app stays alive
+    }
+
+`net::cancel(handle)` is what a cancel button calls, and it is safe to call twice. The permission check happens at `begin`, so an ungranted host fails there rather than at a later poll. Blocking `net::get` is still right for a one-shot CLI tool where nobody is looking at a window.
+
+**If the app has live data, fetch it when it starts.** Sample data is a fallback for when the network fails, never the state a person sees first. An app asked for "open source news" declared `net.connect:hnrss.org:443`, wrote a correct fetch, and put it behind a Refresh button -- so it opened showing fifteen hardcoded headlines and looked like it was faking. Fetch on startup, show what you got, and fall back to samples only after a real failure, saying so.
+
+**Do not close yourself. This is the most common way a generated app fails.** A real session ends when the person closes the window (`Event::CloseRequested`), and only then. Do NOT put a round limit, a frame count, or an idle timeout on the interactive loop.
+
+Eight apps were written from this pack by an AI and every single one bounded its loop -- `const MAX_ROUNDS: u32 = 800` at 50ms a round, so each app quit itself after forty seconds while somebody was using it. A flashcard app that closes during revision is not a working app, however well the rest is written. The bound is only ever correct on the `quick` path, where nobody is watching:
+
+    if quick {
+        // seed state, draw one frame, print key:value, exit 0
+    }
+    // interactive: loop with no round limit at all
+    loop {
+        match events::wait(None) {
+            Some(Event::CloseRequested(_)) => break,
+            // ... handle the rest, redraw when something changed
+            _ => {}
+        }
+    }
+
+**Hit-test against what you actually drew.** There is no widget tree behind a canvas: a drawn button is only clickable because you compare the pointer position to the same rectangle you filled. Keep the layout in one place so the drawing and the hit-testing cannot disagree.
+
+**Make content taller than the window scroll.** A list that outgrows the window is the normal case, not an edge case, and an app that draws six of thirty-two rows and a "+ 26 more" label has lost the other twenty-six for good. Judge this by what the app SHOWS -- rows, cards, a feed, a document -- not by whether your own layout maths happens to overflow today: a fixed design size never overflows itself, and skipping the wheel on that reasoning ships an app that ignores every scroll gesture a person makes at it. The runtime sends `Event::Wheel(wheel-event)` for a mouse wheel, a trackpad, or a scroll gesture, with `dx` and `dy` in logical pixels (positive `dy` scrolls down, further into the list) already normalized across all three systems. Keep one scroll offset, add the delta, clamp it, and redraw:
+
+    Some(types::Event::Wheel(w)) => {
+        // content_height is the height of everything you would draw;
+        // view_height is the region you draw it into.
+        let max = (content_height - view_height).max(0.0);
+        scroll = (scroll + w.dy).clamp(0.0, max);
+        dirty = true;
+    }
+
+Then subtract `scroll` from every row's y when you draw it, and **subtract it again when you hit-test** -- the two must use the same number or clicks land on the wrong row the moment somebody scrolls.
+
+**Text views scroll by pixels too -- never round the offset to whole lines.** The natural way to draw a document is by line index, and the natural mistake is `first_line = scroll / line_height` with the remainder thrown away: every wheel tick then REPLACES a row of text instead of gliding it, which reads as a 90s terminal next to any real editor. Keep the offset in pixels and split it only at draw time:
+
+    let first = (scroll / line_height) as usize; // which line starts on screen
+    let within = scroll % line_height;         // how far INTO it we are
+    let mut y = list_y - within;            // first line starts above the top
+
+Draw from `first` until y passes the bottom. A partly-visible line at the top and bottom is the smoothness; the clip region above trims them.
+
+**Clip the list region before you draw the rows.** Without it a row scrolled past the top paints over your header. Set the clip to the list's rectangle, draw every row including the partly-visible ones, then clear it:
+
+    canvas2d::set_clip(canvas, list_x, list_y, list_w, list_h);
+    // draw every row; the ones outside the rectangle are trimmed
+    canvas2d::clear_clip(canvas);
+
+Do not try to skip out-of-view rows by hand instead. It works until rows have different heights, and then it cannot be done correctly at all.
+
 ---
 
 # Worked examples

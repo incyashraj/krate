@@ -63,6 +63,7 @@ pub fn generate() -> String {
     // decorative cards, a soft gradient behind somebody's data. People can
     // tell, and they say so.
     out.push_str(authoring_context::design_guidance_section());
+    out.push_str(authoring_context::WINDOW_LAYOUT_SECTION);
     out.push_str(&worked_examples_section());
     out.push_str(HANDOFF);
     out

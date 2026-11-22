@@ -65,6 +65,8 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(APP_DESIGN_SECTION);
     out.push_str(GAME_FEEL_SECTION);
     out.push_str(NO_STD_SECTION);
+    out.push_str(WINDOW_LAYOUT_SECTION);
+    out.push_str(PACKING_SECTION);
     out.push_str(&gui_world_section());
     out.push_str(&types_section());
     out.push_str(&example_index_section(app_dir));
@@ -2029,7 +2031,13 @@ a block of text) must be read from standard input instead:\n\n\
 Read stdin to end, do the work, print the result. This is how a formatter or a \
 pretty-printer should take its input -- the same shape as `column`, `jq`, or \
 `sort`, where you pipe data in. An app that tries to take a multi-line document \
-as an argument will be refused before it runs.\n\n\
+as an argument will be refused before it runs.\n\n";
+
+/// How an interactive window lays itself out. Its own section so the
+/// connector guide (`krate krate-mode`) carries it too: K-1300 was a
+/// claude.ai app that showed 3 rows and "+1 more" above empty space,
+/// because these rules lived only in the local pack.
+pub(crate) const WINDOW_LAYOUT_SECTION: &str = "\
 ## Making a window that actually works\n\n\
 The API list above says what you may call. This says what an interactive app \
 has to do with it, because getting this wrong produces an app that builds, \
@@ -2063,6 +2071,12 @@ the item's radius or height. A table drawn at a hardcoded 90px radius in a \
 region should be elastic -- usually the list, the canvas, or the feed -- and \
 absorb whatever is left after the fixed chrome (header, footer, toolbar) is \
 placed. If nothing is elastic, the window grows and the app does not.\n\n\
+\u{20}\u{20}A list is the usual elastic region, so it shows as many rows as its \
+region holds: `visible = (list_h / row_h).floor()`, computed from the real \
+height every frame. Never cap it at a number you picked. A generated habit \
+tracker drew 3 rows and \"+1 more (scroll)\" with half its card empty below \
+them. Scroll only what truly does not fit, and if the rows fit with room to \
+spare, the card ends where the last row ends, or the rows grow to fill it.\n\n\
 \u{20}\u{20}This applies inside a row of things as much as to the whole \
 window. A generated table measured each column to its widest cell -- \
 correctly, with `measure_text` -- summed them, found the total narrower than \
@@ -2218,7 +2232,9 @@ draw every row including the partly-visible ones, then clear it:\n\n\
 \u{20}\u{20}\u{20}\u{20}// draw every row; the ones outside the rectangle are trimmed\n\
 \u{20}\u{20}\u{20}\u{20}canvas2d::clear_clip(canvas);\n\n\
 Do not try to skip out-of-view rows by hand instead. It works until rows have \
-different heights, and then it cannot be done correctly at all.\n\n\
+different heights, and then it cannot be done correctly at all.\n\n";
+
+const PACKING_SECTION: &str = "\
 ## Packing\n\n\
 `krate pack <built.wasm> --manifest manifest.toml --output app.krate` takes \
 your development manifest as-is: inside a bundle the component is stored as \
@@ -3101,6 +3117,8 @@ THE ESSENTIALS, INLINED. Everything below is authoritative and          identica
         out.push_str(GAME_FEEL_SECTION);
     }
     out.push_str(NO_STD_SECTION);
+    out.push_str(WINDOW_LAYOUT_SECTION);
+    out.push_str(PACKING_SECTION);
     out.push_str(&format!(
         "
 ---
