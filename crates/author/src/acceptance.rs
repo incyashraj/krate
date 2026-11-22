@@ -249,6 +249,34 @@ fn content_terms(clause: &str) -> Vec<String> {
     terms
 }
 
+/// Whether a request asks only that a build or compile error be fixed. Narrow
+/// on purpose: "fix the save button so it keeps the list" names behaviour and
+/// is judged as any request is; "fix this build error in src/lib.rs at line
+/// 1: ..." names the compiler's complaint and is judged by building.
+pub fn is_repair_request(request: &str) -> bool {
+    let text = request.trim().to_lowercase();
+    let asks_to_fix = ["fix", "repair", "make it build", "make this build"]
+        .iter()
+        .any(|verb| text.starts_with(verb));
+    let names_the_build = [
+        "build error",
+        "compile error",
+        "compiler error",
+        "compilation error",
+        "build failure",
+        "does not build",
+        "doesn't build",
+        "won't build",
+        "fails to build",
+        "does not compile",
+        "doesn't compile",
+        "error[e",
+    ]
+    .iter()
+    .any(|phrase| text.contains(phrase));
+    asks_to_fix && names_the_build
+}
+
 /// Judge an authored app against the request that asked for it.
 ///
 /// `source` is the app's own source text -- what the authoring step actually
@@ -265,6 +293,18 @@ fn content_terms(clause: &str) -> Vec<String> {
 /// synonym table -- being generous here is right, because a false failure
 /// wastes a person's build and a false pass is the bug this exists to stop.
 pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
+    // A request to repair a build is served by an app that builds, and
+    // nothing reaches the judge without building. Its words are the
+    // compiler's -- "expected one of `!` or `::`, found `is`" -- which no
+    // repaired code spells, so judging them failed every "Fix with AI" in
+    // Studio as "not what you asked for" (K-1320).
+    if is_repair_request(request) {
+        return Acceptance {
+            requirements: Vec::new(),
+            accepted: true,
+            summary: "a repair is judged by the build, and the app builds".to_string(),
+        };
+    }
     let reqs = requirements(request);
     // Comments are stripped first. A no-op edit that adds
     // `// an image editor with layers and undo` above an untouched starter
@@ -683,6 +723,37 @@ fn mentions(haystack: &str, term: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    /// K-1320: Studio's "Fix with AI" sends the compiler's own words; a
+    /// repaired app that builds is accepted, whatever those words were.
+    #[test]
+    fn a_build_repair_is_judged_by_the_build_not_the_compilers_words() {
+        let request =
+            "Fix this build error in src/lib.rs at line 1: expected one of `!` or `::`, found `is`";
+        assert!(is_repair_request(request));
+        let verdict = judge(request, "bin-labels", "fn main() { let items = 3; }");
+        assert!(verdict.accepted, "{}", verdict.summary);
+        assert!(is_repair_request(
+            "make it build again, error[E0425] in lib.rs"
+        ));
+    }
+
+    /// Narrow: a fix that names behaviour is still judged by its words, so
+    /// an untouched app does not pass a request for a change.
+    #[test]
+    fn a_behaviour_fix_is_still_judged_by_what_it_asks_for() {
+        assert!(!is_repair_request(
+            "Fix the save button so it remembers the shopping list"
+        ));
+        assert!(!is_repair_request("Add a build number to the footer"));
+        let verdict = judge(
+            "Fix the save button so it remembers the shopping list",
+            "notes",
+            "fn draw() { let title = 1; }",
+        );
+        assert!(!verdict.accepted, "{}", verdict.summary);
+    }
+
     use super::*;
 
     /// A time converter that does almost everything asked but has no way to
