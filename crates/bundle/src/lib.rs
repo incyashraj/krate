@@ -4168,6 +4168,12 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | ".git"
                 | ".agent-transcript.txt"
                 | "KRATE_AUTHORING.md"
+                // The model app the engine puts beside the AI while it
+                // works, with the guide above: reference, never the app.
+                // Packed, every app an AI changed carried 30 KB of another
+                // app's source back into the person's project (K-1322).
+                | "EXAMPLE.rs"
+                | "EXAMPLE.manifest.toml"
                 // The attachment inbox: files the person handed the AI to
                 // read. Packing them shipped a founder's benchmark
                 // screenshots inside the app -- 1.4MB of a "210KB" bundle
@@ -5392,6 +5398,35 @@ fn fetch_small(url: &str, response: ureq::Response) -> Result<Fetched> {
 
 #[cfg(test)]
 mod tests {
+
+    /// What the engine leaves beside the AI while it works is not the app:
+    /// the guide, the model app and its manifest stay out of the source a
+    /// bundle carries, and the app's own files go in (K-1322).
+    #[test]
+    fn the_ais_reference_files_are_never_packed_as_the_app() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "// the app").unwrap();
+        fs::write(root.join("Cargo.toml"), "[package]").unwrap();
+        for reference in ["EXAMPLE.rs", "EXAMPLE.manifest.toml", "KRATE_AUTHORING.md"] {
+            fs::write(root.join(reference), "reference").unwrap();
+        }
+        let names: Vec<String> = collect_source(root)
+            .unwrap()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.iter().any(|n| n.ends_with("src/lib.rs")), "{names:?}");
+        assert!(names.iter().any(|n| n.ends_with("Cargo.toml")), "{names:?}");
+        for reference in ["EXAMPLE.rs", "EXAMPLE.manifest.toml", "KRATE_AUTHORING.md"] {
+            assert!(
+                !names.iter().any(|n| n.ends_with(reference)),
+                "{reference} was packed: {names:?}"
+            );
+        }
+    }
+
     /// A change to an app must see the app's own files (K-851).
     ///
     /// `revise` edits the tree `open` writes from `source/`. Assets used to
