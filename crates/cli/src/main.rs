@@ -11079,11 +11079,10 @@ impl Wall {
                  result where you need it."
             }
             Wall::Hardware => {
-                "Krate has no capability for MIDI or Bluetooth devices, game \
-                 controllers, or USB keyboards, mice, drives, cameras and \
-                 microphones (the computer's own drivers keep those), so an app \
-                 cannot reach one. I can build the same idea driven by the \
-                 keyboard, the mouse, or a file you give it."
+                "Krate has no capability for MIDI devices, or for a USB \
+                 keyboard, mouse, drive or security key below the computer's \
+                 own driver, so an app cannot reach one. I can build the same \
+                 idea driven by the keyboard, the mouse, or a file you give it."
             }
             Wall::Background => {
                 "A Krate app is one window and one run: it cannot keep working \
@@ -11160,6 +11159,12 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     // So is a USB device the computer has no driver for (device.usb,
     // IC-988): a radio dongle, an instrument; the USB devices the computer
     // keeps for itself are the wall below.
+    //
+    // A USB webcam, microphone or headset is reached the way every camera
+    // and microphone is (camera.capture, audio.capture: the computer's
+    // driver presents it), a game controller through the gamepad events
+    // (IC-936), and a Bluetooth device through bluetooth.connect (IC-917):
+    // none of those is a wall (K-1294).
     if any(&[" usb", "usb "])
         && any(&[
             "keyboard",
@@ -11169,20 +11174,14 @@ fn wall_in_request(request: &str) -> Option<Wall> {
             "usb stick",
             "usb drive",
             "hard drive",
-            "webcam",
-            "microphone",
-            "headset",
             "security key",
             "yubikey",
-            "gamepad",
-            "game controller",
-            "joystick",
         ])
     {
         return Some(Wall::Hardware);
     }
     if !any(&["serial"])
-        && any(&["midi", "bluetooth", "gamepad", "game controller"])
+        && any(&["midi"])
         && any(&[
             "connect",
             "connected",
@@ -30581,14 +30580,12 @@ mod wall_tests {
                 "a MIDI keyboard app that plays my connected piano",
                 Wall::Hardware,
             ),
-            ("read my bluetooth heart rate device", Wall::Hardware),
             // The USB devices the computer keeps for itself (IC-988).
             (
                 "an app that remaps the keys on my usb keyboard",
                 Wall::Hardware,
             ),
             ("read the files on my usb stick directly", Wall::Hardware),
-            ("a game I play with my usb game controller", Wall::Hardware),
             (
                 "a background timer that keeps running after I close the window",
                 Wall::Background,
@@ -30645,6 +30642,13 @@ mod wall_tests {
             // (device.usb, IC-988).
             "an app that talks to my crazyradio usb dongle and sends it packets",
             "a tool that reads my usb spectrometer and plots the spectrum",
+            // Bluetooth (bluetooth.connect, IC-917), a game controller (the
+            // gamepad events, IC-936), and a USB camera or microphone, which
+            // the computer's driver presents like any other (K-1294).
+            "read my bluetooth heart rate device",
+            "a game I play with my usb game controller",
+            "an app that records from my usb microphone",
+            "a booth app that takes photos with my usb webcam",
         ];
         for request in buildable {
             assert_eq!(
