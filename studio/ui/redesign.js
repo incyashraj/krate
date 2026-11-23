@@ -186,6 +186,26 @@
     }
   }
 
+  /* ---- Home: + is the one door for files, a spreadsheet included -------- */
+  // "Start from a spreadsheet" used to be a line of its own under the box,
+  // on show to everyone and used by few (founder, 2026-11-23). It is a way
+  // to Create, so it lives behind the box's +, beside adding a file. Where
+  // the spreadsheet start is not offered (the desktop; app.js only wires it
+  // in a tab), + keeps opening the file picker straight away.
+  (function plusMenu() {
+    const plus = $("homeAttachBtn");
+    if (!plus) return;
+    const sheetOn = () => { const line = $("homeSheetLine"); return !!line && !line.hasAttribute("hidden") && !!$("homeSheet"); };
+    plus.addEventListener("click", (e) => {
+      if (bypass || !sheetOn()) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      openPop(plus, [
+        { icon: "file", label: "Add a file or picture", sub: "the AI reads it with your request", run: () => press(plus) },
+        { icon: "grid", label: "Start from a spreadsheet", sub: "a .csv or .xlsx becomes an app around its rows", run: () => press($("homeSheet")) },
+      ], { big: true });
+    }, true);
+  })();
+
   /* ---- Home: one example in the box, written there and still ---------- */
   // It used to type ideas out and erase them, which the founder called a
   // distraction (2026-11-04): the box holds one plain example now. The

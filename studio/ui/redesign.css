@@ -3317,6 +3317,9 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
  * sheet so a wide spreadsheet never widens the page. Tokens only. */
 #viewHome .home-sheet { margin: 14px 0 0; text-align: center; font: 400 12.5px/1.5 var(--sans); color: var(--ink-3); }
 #viewHome .home-sheet[hidden] { display: none; }
+/* The line stays in the page as the spreadsheet start's anchor (app.js
+ * wires it), but it is no longer shown: the box's + offers it. */
+#viewHome .home-sheet { display: none; }
 #viewHome .home-sheet a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--hair); }
 #viewHome .home-sheet a:hover { color: var(--ink); border-bottom-color: var(--line-strong); }
 #sheetSheet .sheet-start { width: min(640px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); overflow-y: auto; text-align: left; }
