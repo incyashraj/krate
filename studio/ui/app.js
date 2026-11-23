@@ -375,6 +375,8 @@ async function checkForNewerKrate() {
     // And the bell says there is something to read.
     $("sideBellDot")?.classList.remove("hidden");
     chip.onclick = () => openUpdatePrompt(latest, mine, rel.body);
+    // The inbox, which the bell opens, leads with it.
+    window.krInboxUpdate = { label: `Krate v${latest} is ready`, run: () => openUpdatePrompt(latest, mine, rel.body) };
     if (!updatePromptDue(latest)) return;
     // Never on top of another sheet (the welcome, a plan): wait for a clear screen.
     const ask = () => {
@@ -3355,7 +3357,8 @@ async function sendReport() {
       note: $("repNote").value.trim(),
     });
     $("reportSheet").classList.add("hidden");
-    say("KRATE", `Report sent (${said}). Thank you: this is how the next person avoids it.`, null, { variant: "ask" });
+    // A reply comes back in the inbox, the bell.
+    say("KRATE", `Report sent (${takeReportKey(said)}). Thank you: this is how the next person avoids it. A reply from Krate shows up in your inbox, under the bell.`, null, { variant: "ask" });
   } catch (err) {
     $("repResult").textContent = `It did not send: ${String(err && err.message ? err.message : err).replace(/^error:\s*/i, "")}. Try again, or save it and email it.`;
     $("repSend").disabled = false;
@@ -9014,7 +9017,7 @@ $("supSend")?.addEventListener("click", async () => {
   try {
     if (state.session) {
       const info = await invoke("report_collect", { session: state.session.id });
-      const said = await invoke("report_send", { path: info.path, session: state.session.id, note: subject });
+      const said = takeReportKey(await invoke("report_send", { path: info.path, session: state.session.id, note: subject }));
       attached = `\n\n[${said}: ${(info.files || []).join(", ")}]`;
     }
   } catch (e) {
@@ -9844,10 +9847,14 @@ function setShelfOpen(open) {
      action was to sign out. */
   $("sideAccount")?.addEventListener("click", () => openSettings("Profile"));
   $("sideSettings")?.addEventListener("click", openSettings);
-  /* The bell looked live and did nothing. It opens the place that actually
-     answers "what is new": the Updates block in Settings, which carries the
-     version and the release notes. */
+  /* The bell is the inbox: what Krate wrote to you, replies to your
+     reports, and a newer Krate when one is ready (it leads the list). */
   $("sideBell")?.addEventListener("click", () => {
+    if (window.krInbox && $("inboxSheet")) {
+      $("sideBellDot")?.classList.add("hidden");
+      window.krInbox.open();
+      return;
+    }
     openSettings();
     // Straight to Updates. Sections are switched rather than scrolled past
     // now, so this picks the section instead of hunting for a y position.
@@ -11524,3 +11531,267 @@ $("aiRefresh")?.addEventListener("click", async () => {
 
 
 
+
+/* ---- the inbox: what Krate says to you ---------------------------------
+ *
+ * The founder can write to everyone, to one person, or reply to a report
+ * someone sent; it shows up here, on the web and on the desktop, however
+ * the person signed in, or with no account at all (a report sent signed out
+ * hands back a secret, kept below, that reads its replies). The bell holds
+ * it, with the count of what is unread; the drawer's toggle carries a dot
+ * when the drawer is shut.
+ *
+ * Asked for gently: at launch, when the window comes back, and every five
+ * minutes while it is in front. Never in the way: a failure, offline or an
+ * older shell without the command, is silent and the next try is the same.
+ *
+ * Every message is set as text, never HTML. */
+const INBOX_POLL_MS = 5 * 60 * 1000;
+const INBOX_KEYS = "krate-report-keys";
+const INBOX_READ = "krate-inbox-read";
+const inbox = { data: null, known: null, at: 0, busy: false, open: null };
+
+function inboxKeys() {
+  try { return JSON.parse(lsGet(INBOX_KEYS) || "[]").filter((k) => k && k.id && k.key); } catch (e) { return []; }
+}
+
+/* A report send answers "sent -- reference <id>" and, from a hub that
+ * keeps replies, "reply key <secret>" on its own line. The secret is kept
+ * here and never shown; the rest is what the person reads. */
+function takeReportKey(said) {
+  const text = String(said || "");
+  const key = /reply key ([0-9a-f]{32})/.exec(text);
+  const id = /\b([0-9a-f]{16})\b/.exec(text.replace(/reply key [0-9a-f]{32}/, ""));
+  if (key && id) {
+    const keep = [{ id: id[1], key: key[1] }, ...inboxKeys().filter((k) => k.id !== id[1])].slice(0, 20);
+    lsSet(INBOX_KEYS, JSON.stringify(keep));
+    // Just sent: look again soon, so a reply on the same day shows promptly.
+    setTimeout(() => inboxPoll(true), 1500);
+  }
+  return text.replace(/\s*reply key [0-9a-f]{32}\s*/, " ").trim();
+}
+
+function inboxLocalRead() {
+  const n = Number(lsGet(INBOX_READ));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function inboxWhen(ms) {
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  if (s < 7 * 86400) return `${Math.round(s / 86400)} d ago`;
+  return new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function inboxBadge() {
+  const n = (inbox.data && inbox.data.unread) || 0;
+  const count = $("inboxCount");
+  if (count) {
+    count.textContent = n > 9 ? "9+" : String(n);
+    count.classList.toggle("hidden", n === 0);
+  }
+  const bell = $("sideBell");
+  if (bell) bell.title = n ? `Inbox, ${n} unread` : "Inbox";
+  // The drawer is shut on a phone and on a narrow window: its toggles
+  // say there is something inside.
+  document.querySelectorAll(".side-toggle").forEach((b) => {
+    if (b.id !== "sideCloseToggle") b.classList.toggle("has-unread", n > 0);
+  });
+}
+
+async function inboxPoll(force) {
+  if (inbox.busy) return;
+  if (!force && (document.hidden || Date.now() - inbox.at < 60 * 1000)) return;
+  inbox.busy = true;
+  inbox.at = Date.now();
+  try {
+    const data = await invoke("inbox_list", { reports: inboxKeys(), read: inboxLocalRead() });
+    if (!data || !Array.isArray(data.messages)) return;
+    // Signed out, this browser keeps the read mark. Its first visit counts
+    // what is already there as read: what was sent to everyone before shows
+    // in the list, without a dot. The mark is the hub's own time on the
+    // newest message, never this computer's clock, which can be off.
+    // Signed in, the account's mark rules.
+    if (!data.signed_in && !lsGet(INBOX_READ)) {
+      const mark = Math.max(1, ...data.messages.map((m) => m.at || 0));
+      lsSet(INBOX_READ, String(mark));
+      data.read = Math.max(data.read || 0, mark);
+      data.unread = data.messages.filter((m) => m.at > data.read).length;
+    }
+    const before = inbox.known;
+    inbox.data = data;
+    inbox.known = new Set(data.messages.map((m) => m.id));
+    inboxBadge();
+    // Something arrived while Studio was open: say so once, quietly.
+    const fresh = before ? data.messages.filter((m) => !before.has(m.id) && m.at > data.read) : [];
+    if (fresh.length && window.krToast && $("inboxSheet")?.classList.contains("hidden")) {
+      window.krToast(fresh[0].kind === "report" ? "Krate replied to your report. It is in your inbox." : "New message from Krate. It is in your inbox.");
+    }
+    if (!$("inboxSheet")?.classList.contains("hidden")) inboxRender();
+  } catch (e) {
+    // Offline, signed out of an old shell, or a hub without the inbox:
+    // nothing to show, and nothing to say about it.
+  } finally {
+    inbox.busy = false;
+  }
+}
+
+function inboxReport(id) {
+  return ((inbox.data && inbox.data.reports) || []).find((r) => r.id === id) || null;
+}
+
+function inboxOpen() {
+  const sheet = $("inboxSheet");
+  if (!sheet) return;
+  inbox.open = null;
+  sheet.classList.remove("hidden");
+  // The read mark this sheet opened with: what is newer than it gets a dot.
+  inbox.shownRead = inbox.data ? inbox.data.read : inboxLocalRead();
+  inboxRender();
+  inboxPoll(true).then(() => inboxMarkRead());
+  inboxMarkRead();
+}
+
+async function inboxMarkRead() {
+  const d = inbox.data;
+  if (!d || !d.messages.length) return;
+  const newest = Math.max(...d.messages.map((m) => m.at || 0));
+  if (newest <= d.read) return;
+  lsSet(INBOX_READ, String(Math.max(newest, inboxLocalRead())));
+  d.read = newest;
+  d.unread = 0;
+  inboxBadge();
+  try { await invoke("inbox_read", { at: newest }); } catch (e) { /* the browser remembers it */ }
+}
+
+function inboxRender() {
+  const list = $("inboxList");
+  const thread = $("inboxThread");
+  if (!list || !thread) return;
+  const update = $("inboxUpdate");
+  if (update) {
+    update.hidden = !window.krInboxUpdate;
+    if (window.krInboxUpdate) {
+      update.querySelector("b").textContent = window.krInboxUpdate.label;
+      update.querySelector("button").onclick = () => { $("inboxSheet").classList.add("hidden"); window.krInboxUpdate.run(); };
+    }
+  }
+  // In a conversation the heading names it; the way back says where it goes.
+  $("inboxTitle").textContent = inbox.open ? "Your report" : "Inbox";
+  if (inbox.open) {
+    list.classList.add("hidden");
+    thread.classList.remove("hidden");
+    inboxRenderThread(inbox.open);
+    return;
+  }
+  thread.classList.add("hidden");
+  list.classList.remove("hidden");
+  list.textContent = "";
+  const messages = (inbox.data && inbox.data.messages) || [];
+  if (!messages.length) {
+    const p = document.createElement("p");
+    p.className = "inbox-empty";
+    p.textContent = inbox.data
+      ? "Nothing here yet. When Krate writes to you, or answers a report you sent, it shows up here."
+      : "Your messages from Krate show up here. Connect to the internet to see them.";
+    list.appendChild(p);
+    return;
+  }
+  // A report's replies are one conversation: one row for it, at its newest.
+  const rows = [];
+  const seenReports = new Set();
+  for (const m of messages) {
+    if (m.kind === "report") {
+      if (seenReports.has(m.report)) continue;
+      seenReports.add(m.report);
+    }
+    rows.push(m);
+  }
+  for (const m of rows) {
+    const row = document.createElement(m.kind === "report" ? "button" : "div");
+    row.className = "inbox-row" + (m.at > (inbox.shownRead || 0) ? " unread" : "") + (m.kind === "report" ? " is-report" : "");
+    const head = document.createElement("div");
+    head.className = "inbox-row-head";
+    const who = document.createElement("b");
+    who.textContent = m.kind === "report" ? "Reply to your report" : m.kind === "everyone" ? "Krate, to everyone" : "Krate, to you";
+    const when = document.createElement("span");
+    when.className = "inbox-when";
+    when.textContent = inboxWhen(m.at);
+    head.append(who, when);
+    const body = document.createElement("p");
+    body.className = "inbox-text";
+    body.textContent = m.text;
+    row.append(head, body);
+    if (m.kind === "report") {
+      row.type = "button";
+      const more = document.createElement("span");
+      more.className = "inbox-more";
+      more.textContent = inboxReport(m.report) ? "Open the conversation" : "";
+      row.appendChild(more);
+      row.addEventListener("click", () => { if (inboxReport(m.report)) { inbox.open = m.report; inboxRender(); } });
+    }
+    list.appendChild(row);
+  }
+}
+
+function inboxRenderThread(id) {
+  const r = inboxReport(id);
+  const box = $("inboxThreadMsgs");
+  box.textContent = "";
+  $("inboxThreadNote").textContent = "";
+  if (!r) { inbox.open = null; inboxRender(); return; }
+  $("inboxThreadWhen").textContent = `Sent ${inboxWhen((r.received || 0) * 1000)}. Krate reads every answer.`;
+  const bubble = (who, text, at) => {
+    const b = document.createElement("div");
+    b.className = "inbox-bubble " + (who === "krate" ? "from-krate" : "from-you");
+    const t = document.createElement("p");
+    t.textContent = text;
+    const meta = document.createElement("span");
+    meta.className = "inbox-when";
+    meta.textContent = (who === "krate" ? "Krate" : "You") + " · " + inboxWhen(at);
+    b.append(t, meta);
+    box.appendChild(b);
+  };
+  bubble("you", r.note ? `Sent a report: ${r.note}` : "Sent a report with this session.", (r.received || 0) * 1000);
+  for (const m of r.thread) bubble(m.who, m.text, m.at);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function inboxAnswer() {
+  const id = inbox.open;
+  const field = $("inboxReply");
+  const text = field.value.trim();
+  if (!id || !text) return;
+  const send = $("inboxReplySend");
+  send.disabled = true;
+  $("inboxThreadNote").textContent = "";
+  try {
+    const ref = inboxKeys().find((k) => k.id === id);
+    const out = await invoke("inbox_answer", { report: id, key: ref ? ref.key : "", text });
+    const r = inboxReport(id);
+    if (r && out && out.report) r.thread = out.report.thread;
+    field.value = "";
+    inboxRenderThread(id);
+    $("inboxThreadNote").textContent = "Sent. Krate gets it now, and the answer comes back here.";
+  } catch (e) {
+    $("inboxThreadNote").textContent = `It did not send: ${String((e && e.message) || e).replace(/^error:\s*/i, "")}. Try again in a moment.`;
+  } finally {
+    send.disabled = false;
+  }
+}
+
+(function inboxStart() {
+  if (!$("inboxSheet")) return;
+  $("inboxBack")?.addEventListener("click", () => { inbox.open = null; inboxRender(); });
+  $("inboxReplySend")?.addEventListener("click", inboxAnswer);
+  $("inboxReply")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); inboxAnswer(); }
+  });
+  setTimeout(() => inboxPoll(true), 2500);
+  setInterval(() => inboxPoll(false), INBOX_POLL_MS);
+  window.addEventListener("focus", () => inboxPoll(false));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) inboxPoll(false); });
+  window.krInbox = { open: inboxOpen, poll: inboxPoll };
+})();

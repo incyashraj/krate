@@ -191,9 +191,10 @@
           <img id="sideAvatarImg" class="hidden" alt="" />
           <span id="sideInitial">·</span>
         </button>
-        <button class="side-bell" id="sideBell" title="What is new">
+        <button class="side-bell" id="sideBell" title="Inbox" aria-haspopup="dialog">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.6a3.7 3.7 0 013.7 3.7c0 3 1 3.9 1 3.9H3.3s1-.9 1-3.9A3.7 3.7 0 018 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.6 12.6a1.5 1.5 0 002.8 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           <span class="bell-dot hidden" id="sideBellDot"></span>
+          <span class="inbox-count hidden" id="inboxCount" aria-live="polite"></span>
         </button>
       </div>
     </div>
@@ -1375,6 +1376,29 @@
     </div>
   </div>
 
+
+  <!-- The inbox: what Krate wrote to you, and replies to a report you sent,
+       with a box to answer. The bell opens it (app.js, "the inbox"). -->
+  <div class="sheet-wrap hidden" id="inboxSheet">
+    <div class="sheet sheet-inbox" role="dialog" aria-modal="true" aria-labelledby="inboxTitle">
+      <div class="inbox-top">
+        <h2 id="inboxTitle">Inbox</h2>
+        <button class="icon-btn inbox-x" data-close="inboxSheet" title="Close" aria-label="Close"><svg width="14" height="14"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="inbox-update" id="inboxUpdate" hidden><b></b><button class="btn btn-primary">Update</button></div>
+      <div class="inbox-list" id="inboxList"></div>
+      <div class="inbox-thread hidden" id="inboxThread">
+        <button class="link-btn inbox-back" id="inboxBack"><svg width="13" height="13"><use href="#i-left"/></svg>All messages</button>
+        <p class="inbox-thread-when" id="inboxThreadWhen"></p>
+        <div class="inbox-msgs" id="inboxThreadMsgs"></div>
+        <textarea class="makeit-email inbox-reply" id="inboxReply" rows="2" maxlength="2000" placeholder="Reply to Krate"></textarea>
+        <div class="inbox-reply-row">
+          <p class="inbox-note" id="inboxThreadNote" role="status"></p>
+          <button class="btn btn-primary" id="inboxReplySend">Reply</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- The first time somebody presses Run it in a browser.
        A tab cannot open a native app, and it cannot tell whether this

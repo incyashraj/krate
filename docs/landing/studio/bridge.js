@@ -2810,7 +2810,9 @@ const COMMANDS = {
     if (!res.ok) throw new Error((await res.text().catch(() => "")) || `the report was not accepted (${res.status})`);
     const out = await res.json().catch(() => ({}));
     reportsInMemory.delete(path);
-    return `report ${out.id || "sent"}`;
+    // The reply secret rides on its own line, as the desktop's engine
+    // prints it; app.js keeps it for the inbox and never shows it.
+    return `report ${out.id || "sent"}` + (out.key ? `\nreply key ${out.key}` : "");
   },
 
   async support_list({ keys } = {}) {
@@ -2823,6 +2825,26 @@ const COMMANDS = {
     return hub("/support/reply", {
       method: "POST",
       body: JSON.stringify({ id, key: key || "", text: message || "" }),
+    });
+  },
+
+  /* ---- the inbox: what Krate wrote, read signed in or not (inbox.js) ---
+   * Signed in, the hub knows whose it is; signed out, the report secrets
+   * this browser holds read their replies. POST, so a secret is never in
+   * a URL. */
+  async inbox_list({ reports, read } = {}) {
+    return hub("/inbox", {
+      method: "POST",
+      body: JSON.stringify({ reports: Array.isArray(reports) ? reports : [], read: Number(read) || 0 }),
+    });
+  },
+  async inbox_read({ at } = {}) {
+    return hub("/inbox/read", { method: "POST", body: JSON.stringify({ at: Number(at) || 0 }) });
+  },
+  async inbox_answer({ report, key, text } = {}) {
+    return hub("/inbox/answer", {
+      method: "POST",
+      body: JSON.stringify({ report: report || "", key: key || "", text: text || "" }),
     });
   },
 
