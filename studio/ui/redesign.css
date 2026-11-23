@@ -998,7 +998,10 @@ body:not(.light) .kr-pop { background: #1c1c1f; }
 .side-nav > .side-search input::placeholder { color: var(--ink-2); }
 .side-nav > .side-search .side-key { margin-left: auto; font-size: 11px; color: var(--ink-4); padding: 1px 6px; border-radius: 6px; }
 .kr-gap { display: block; height: 10px; }
-.side-label { margin: 22px 12px 6px; }
+/* Recents is a section title, a step up from the rows under it, and its
+ * empty line starts where the title does. */
+.side-label { margin: 22px 12px 6px; padding: 0; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
+.side-sessions .side-empty { padding: 4px 12px; }
 .side-brandrow { padding: 0 2px; margin-bottom: 8px; }
 .side-mark { padding: 0 10px; gap: 8px; }
 .side-mark img { width: 18px; height: 18px; }
@@ -2064,7 +2067,9 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 #viewApps .head-actions { display: flex; align-items: center; gap: 8px; }
 .kr-remix { display: inline-flex; align-items: center; gap: 6px; }
 .kr-remix .kr-ico { width: 14px; height: 14px; }
-@media (max-width: 600px) { .kr-find { width: 100%; } #viewApps .head-actions { flex-wrap: wrap; } }
+/* On a phone the search and the count drop under the title and start where
+ * it does; margin-left: auto pushed the wrapped row to the right half. */
+@media (max-width: 600px) { .kr-find { width: 100%; } #viewApps .head-actions { flex-wrap: wrap; margin-left: 0; width: 100%; } }
 /* One gallery app: the way back reads as where you came from. */
 #viewApp #appCrumb::before { content: "Gallery  \203A  "; white-space: pre; color: var(--ink-3); }
 
@@ -2260,12 +2265,22 @@ body:not(.light) .kr-still .iso { --gap: #2a2016; }
 /* ================================================================ the Gallery, as the design has it */
 #viewCloud.kr-galon .cloud-head, #viewCloud.kr-galon .cloud-controls, #viewCloud.kr-galon .cloud-count,
 #viewCloud.kr-galon #cloudLoading, #viewCloud.kr-galon #cloudGrid { display: none !important; }
-#viewCloud.kr-galon main.cloud { max-width: 1120px; margin: 0 auto; padding: 18px 36px 60px; }
+/* min-width 0: the view is a flex row, and without it the chip row's full
+ * width set the gallery's, 510px on a 433px phone -- a sideways scroll and
+ * an error line centred off the screen. */
+#viewCloud.kr-galon main.cloud { width: 100%; max-width: 1120px; margin: 0 auto; padding: 18px 36px 60px; min-width: 0; }
+#viewCloud.kr-galon .kr-galbar { min-width: 0; }
+/* No categories yet (the gallery has not loaded): no empty pill. */
+.kr-cats:empty { display: none; }
+/* A gallery that did not load says so where the apps would start. */
+#viewCloud.kr-galon .cloud-error { max-width: none; margin: 22px 0; text-align: left; }
 .kr-gal { animation: krFadeUp .45s var(--ease) both; }
 .kr-galh { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .kr-galh h1 { margin: 0; font: 600 30px/1.1 var(--sans); letter-spacing: -.04em; color: var(--ink); }
 .kr-galh p { margin: 6px 0 0; font-size: 14px; color: var(--ink-3); }
 .kr-galq { width: min(330px, 100%); }
+/* On a phone the gallery's search spans the column, as Your apps' does. */
+@media (max-width: 600px) { .kr-galq { width: 100%; } }
 .kr-galbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
 .kr-cats, .kr-sorts { display: inline-flex; gap: 2px; padding: 3px; border-radius: 99px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hair); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .kr-cats::-webkit-scrollbar { display: none; }
