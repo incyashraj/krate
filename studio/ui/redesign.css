@@ -1000,7 +1000,7 @@ body:not(.light) .kr-pop { background: #1c1c1f; }
 .kr-gap { display: block; height: 10px; }
 /* Recents is a section title, a step up from the rows under it, and its
  * empty line starts where the title does. */
-.side-label { margin: 22px 12px 6px; padding: 0; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
+.side-label { margin: 22px 12px 6px; padding: 0; font-size: 14px; font-weight: 500; color: var(--ink-2); }
 .side-sessions .side-empty { padding: 4px 12px; }
 .side-brandrow { padding: 0 2px; margin-bottom: 8px; }
 .side-mark { padding: 0 10px; gap: 8px; }
@@ -1008,7 +1008,10 @@ body:not(.light) .kr-pop { background: #1c1c1f; }
 .side-mark span { font-size: 14.5px; font-weight: 500; letter-spacing: -.02em; color: var(--ink-2); }
 
 /* recents: plain rows, the open one raised, the one being made pulsing */
-.sess-row { height: 34px; min-height: 0; padding: 0 6px 0 12px; gap: 8px; border-radius: 10px; font: 400 14px var(--sans); color: var(--ink-2); }
+/* Recents are quieter than the menu above them: a step smaller and a step
+ * dimmer, brightening on hover and for the open session, so the list reads
+ * as history rather than a wall of equal sentences. */
+.sess-row { height: 32px; min-height: 0; padding: 0 6px 0 12px; gap: 8px; border-radius: 10px; font: 400 13.5px var(--sans); color: var(--ink-3); }
 .sess-row:hover { background: var(--row-hover); color: var(--ink); }
 .sess-row.on, body.light .sess-row.on { background: var(--selected); color: var(--ink); box-shadow: none; }
 .sess-row.on:hover, body.light .sess-row.on:hover { background: var(--selected-hover); }
@@ -3031,7 +3034,7 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 .ip-miss { margin: 2px 0 8px 22px; font: 400 12px var(--sans); color: var(--ink-3); }
-.sess-more { display: block; width: 100%; margin: 2px 0 6px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font: 500 12.5px var(--sans); color: var(--ink-3); }
+.sess-more { display: block; width: 100%; margin: 2px 0 6px; padding: 6px 12px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left; font: 500 12.5px var(--sans); color: var(--ink-3); }
 .sess-more:hover { color: var(--ink); background: var(--hover); }
 /* The gallery's own empty state says "nothing matches"; app.js's line would say it twice. */
 #viewCloud.kr-galon #cloudError[data-kind="empty"] { display: none !important; }

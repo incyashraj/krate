@@ -11243,7 +11243,9 @@ $("aiRefresh")?.addEventListener("click", async () => {
   const label = $("sideSessLabel");
   if (!list) return;
 
-  const MAX_ROWS = 14;
+  // Eight, not fourteen: fourteen long titles read as a wall of text under
+  // the menu (2026-11-23). The rest stay one click away.
+  const MAX_ROWS = 8;
   let showAll = false;
 
   function clean(title) {
@@ -11261,8 +11263,8 @@ $("aiRefresh")?.addEventListener("click", async () => {
     }
     if (label) label.classList.remove("hidden");
     list.innerHTML = "";
-    // Fourteen at a glance; the rest one click away (a draft past the
-    // fourteenth could not be reached at all).
+    // A handful at a glance; the rest one click away (a draft past the
+    // last row shown could not be reached at all before "Show all").
     const rows = showAll ? sessions : sessions.slice(0, MAX_ROWS);
     if (sessions.length > MAX_ROWS) {
       queueMicrotask(() => {
