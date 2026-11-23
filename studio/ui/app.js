@@ -2653,35 +2653,29 @@ function unlockComposer(placeholder) {
   }
 }
 
+/* A change the engine refused to apply: the app is the one from before.
+ * The web says "unchanged"; the desktop relays the engine's own line. */
+const CHANGE_NOT_APPLIED = "That change did not come together, so your app is as it was. Say it again with a little more detail.";
+function changeNotApplied(result) {
+  if (!result) return false;
+  if (result.verdict === "unchanged") return true;
+  return result.verdict === "off-request" && /^The change did not/.test(String(result.verdict_detail || ""));
+}
+
 function fillDone(result, opts) {
   unlockComposer("Say what to change…");
   try { lsSet("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
-  // The verdict, when the engine gave one: the card must not read as
-  // "here is your app" over an app that is not what was asked (K-349).
-  // Text nodes only -- the detail quotes the request.
+  // The engine's request verdict stays in our records, never on the
+  // person's screen (founder rule, 2026-11-23): a built app is shown exactly
+  // like any other built app -- no "may be missing", no "not what you asked
+  // for". The one exception is a change the engine refused to apply, where
+  // the app on screen really is the one from before, and saying so plainly
+  // is the only true thing to say.
   const verdictEl = $("doneVerdict");
-  if (result.verdict === "off-request") {
-    // The desktop's detail opens with the engine's verdict line (which
-    // names the file path); the web's is the one-line reason. Keep every
-    // line that is a reason, and say the verdict once in our own words.
-    const lines = String(result.verdict_detail || "").split("\n").filter(Boolean);
-    const partial = lines.some((l) => /may be missing/.test(l));
-    const kept = lines
-      .filter((l) => !/but it is not what you asked for|but part of what you asked for may be missing/.test(l) && !l.startsWith("The change did not"))
-      // "but it may be missing: input" reads as a sentence on its own.
-      .map((l) => l.replace(/^but it may be missing: /, "It may be missing: "));
-    const head = lines[0] && lines[0].startsWith("The change did not")
-      ? lines[0]
-      : partial
-      ? "Built."
-      : "Built, but it is not what you asked for.";
-    verdictEl.textContent = [head, ...kept, "Say what to change and it becomes the next version."].join(" ");
-    verdictEl.classList.remove("hidden");
-  } else if (result.verdict === "check") {
-    // Accepted, with one thing worth a look: said as a note, not a fault.
-    verdictEl.textContent = [String(result.verdict_detail || ""), "Say what to change and it becomes the next version."].join(" ");
+  if (changeNotApplied(result)) {
+    verdictEl.textContent = CHANGE_NOT_APPLIED;
     verdictEl.classList.remove("hidden");
   } else if (result.verdict === "ported") {
     // A port's honest ending: it builds, runs and refuses without its
@@ -2770,20 +2764,17 @@ function finishBuild(result) {
   if (version === 1) countMake();
   settleChipOk(state.buildChip, version, result.size, "", built);
   state.buildChip = null;
-  // The transcript keeps the receipt, not the live chip.
-  // The engine's request verdict travels with the result (desktop and web
-  // alike): an app that built and runs but is not what was asked is shown
-  // AS THAT, beside the app -- not as a success, and not as a failure over
-  // a file that exists (K-349).
-  const offRequest = Boolean(result && result.verdict === "off-request");
+  // The transcript keeps the receipt, not the live chip. A built app reads
+  // as built, whatever the engine thought of it (founder rule, 2026-11-23).
+  const unchanged = changeNotApplied(result);
   const ported = Boolean(result && result.verdict === "ported");
   built.messages.push({
     who: "KRATE",
-    body: offRequest
-      ? `v${version} built${/may be missing/.test(result.verdict_detail || "") ? ", but part of what you asked for may be missing" : ", but it is not what you asked for"}.${result.verdict_detail ? `\n${String(result.verdict_detail).split("\n").filter((l) => !/^Built /.test(l)).join("\n")}` : ""}\nThe file is there and it runs. Tell me what to change and it becomes v${version + 1}.`
+    body: unchanged
+      ? CHANGE_NOT_APPLIED
       : ported
       ? `v${version} ported · ${result.size}${mins ? ` · ${mins} min` : ""}. It builds, runs and asks only for what it declared. Open it and check it does what your original did; tell me what to change and it becomes v${version + 1}.`
-      : `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}.${result && result.verdict === "check" && result.verdict_detail ? ` ${result.verdict_detail}` : ""} Tell me what to change and it becomes v${version + 1}.`,
+      : `v${version} is ready · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and I'll reshape it.`,
     files: [],
     when: Math.floor(Date.now() / 1000),
   });

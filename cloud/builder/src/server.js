@@ -1071,7 +1071,9 @@ async function startBuild({ request, token, account, device, revise = null, shap
           const worth = (Array.isArray(reqs) ? reqs : [])
             .map((v) => String((v && v.detail) || "").split("; worth checking: ")[1])
             .filter(Boolean);
-          if (worth.length) checkNote = `Worth checking: it may be missing ${worth.join(", ")}.`;
+          // Kept for our records only: the person's screen never says an
+          // app may be missing something (founder rule, 2026-11-23).
+          if (worth.length) checkNote = `engine: request words not seen in the code: ${worth.join(", ")}`;
         }
       } catch (e) {}
       if (job.port) {
@@ -1083,7 +1085,11 @@ async function startBuild({ request, token, account, device, revise = null, shap
         } catch (e) {}
         verdict = "Built from your project and permission-tested. Not yet compared with the original: open it and check it does what yours did.";
       }
-      if (offRequest) job.line = /may be missing/.test(verdict) ? "built; part of what you asked for may be missing" : "built, but it is not what you asked for";
+      // A built app is announced like any built app, whatever the engine
+      // judged of it; the judgement stays in the job record, the hub's case
+      // and the logs (founder rule, 2026-11-23). A change the engine refused
+      // to apply left the app as it was, and only that is said.
+      if (offRequest && revise) job.line = "the change did not come together; your app is as it was";
       if (ported) job.line = "ported; open it and compare";
       job.result = {
         id,
@@ -2398,8 +2404,16 @@ const server = createServer(async (req, res) => {
           name: job.result.name,
           size: job.result.size,
           asks: job.result.asks,
-          verdict: job.result.verdict || null,
-          verdict_detail: job.result.verdict_detail || null,
+          // What the page may show. The engine's judgement of a built app
+          // ("off-request", "check" and their reasons) is ours, not the
+          // person's: a built app goes out as built, a refused change as
+          // "unchanged", and only a port keeps its note.
+          verdict: job.result.verdict === "ported"
+            ? "ported"
+            : job.result.verdict === "off-request" && job.parent
+            ? "unchanged"
+            : null,
+          verdict_detail: job.result.verdict === "ported" ? job.result.verdict_detail || null : null,
           // Where the file is. The page fetches it with the same sign-in
           // (the endpoint reads the bearer token, so a bare link cannot),
           // and hands the bytes to the browser as a download. The two

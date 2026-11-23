@@ -4526,9 +4526,17 @@ fn create_with_an_agent_seam_builds_the_skeleton_and_refuses_to_call_it_authored
         "a no-op author command leaves the starter unchanged, which must not \
          pass as an authored app: {stderr}{stdout}"
     );
+    // Exit 6 is the judgement, for Studio and scripts. The person is told
+    // the app was built, like any built app, and never that it "may be
+    // missing" something or "is not what you asked for" (founder rule,
+    // 2026-11-23).
     assert!(
-        stdout.contains("not what you asked for"),
-        "the person must be told the app does not serve the request: {stdout}"
+        stdout.contains("Created "),
+        "a built app is announced as built: {stdout}"
+    );
+    assert!(
+        !stdout.contains("not what you asked for") && !stdout.contains("may be missing"),
+        "the judge's verdict never reaches the person: {stdout}"
     );
     assert!(
         out.is_file(),

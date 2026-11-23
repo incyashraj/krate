@@ -392,9 +392,10 @@ for (const round of [1, 2]) {
 }
 
 /* ---- built, and not what was asked ----------------------------------- */
-// The engine's request verdict (exit 6) is a result with a verdict, not a
-// failure: the file is there, the page is told why it falls short, and the
-// funded case is not spent by it.
+// The engine's request verdict (exit 6) is a result, not a failure: the
+// file is there and the funded case is not spent by it. What the engine
+// thought of it stays ours -- the hub's case record and the job record --
+// and the page sees a built app like any other (founder rule, 2026-11-23).
 // The build above reached `done` before this line, but its own
 // /case/attempt POST is a separate call and may not have landed yet. Wait
 // for THAT build's attempt by name -- not for a count, which would have to
@@ -410,8 +411,9 @@ assert.strictEqual(off.status, 200, `off-request start: ${off.body}`);
 const offId = JSON.parse(off.body).id;
 const offStatus = await settled(offId, asAlice, casesBeforeOff);
 assert.strictEqual(offStatus.state, "done", `an off-request app is a result, not a failure: ${JSON.stringify(offStatus)}`);
-assert.strictEqual(offStatus.result.verdict, "off-request");
-assert.match(offStatus.result.verdict_detail, /asked for a timer/, "the engine's reason reaches the page");
+assert.strictEqual(offStatus.result.verdict, null, "a built app reaches the page as built");
+assert.strictEqual(offStatus.result.verdict_detail, null, "the engine's reason never reaches the page");
+assert.ok(!/asked for|may be missing|not what you asked/.test(String(offStatus.line || "")), `the progress line says nothing of it either: ${offStatus.line}`);
 assert.strictEqual((await get(`/build/${offId}/file`, asAlice)).status, 200, "and the file is still theirs");
 const offAttempts = caseCalls.filter((c) => c.path === "/case/attempt").slice(casesBeforeOff);
 // "not-as-asked", which is the word the HUB knows (its CASE_OUTCOMES set).
@@ -427,9 +429,8 @@ assert.deepStrictEqual(
   ["not-as-asked"],
   "recorded in the hub's own vocabulary, never as made",
 );
-// The verdict the PERSON sees keeps the engine's word; only the wire word
-// had to change.
-assert.strictEqual(offStatus.result.verdict, "off-request");
+// The reason is kept where we can read it: the hub's case record.
+assert.match(offAttempts[0].body.note, /asked for a timer/, "the engine's reason is kept in the hub's record");
 // And the wire word has to be one the hub actually accepts. Checked
 // against the hub's own list rather than repeated here, so this cannot
 // drift into agreeing with a typo a second time.
