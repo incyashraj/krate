@@ -17,6 +17,7 @@ use krate::gfx::{canvas2d, canvas_images, pdf, types as gfx, video};
 use krate::layout::Rect;
 #[allow(unused_imports)]
 use krate::prelude::*;
+use krate::ui::window;
 
 /// Pages kept drawn, over every open PDF.
 const KEEP_PAGES: usize = 8;
@@ -50,6 +51,34 @@ pub enum FileCtl {
     Scrub,
     /// The picture itself: a click plays or pauses.
     Picture,
+    /// Full screen, in or out.
+    Full,
+    /// An item of the player's three-dots menu.
+    MenuItem(u8),
+}
+
+/// The player's three-dots menu, as Chromium lists it in the notes app: a
+/// video has Download, Playback speed and Picture-in-Picture, a sound the
+/// first two. Krate has no playback rate (K-1357) and no floating video
+/// window (K-1358), so those are drawn greyed out, as Chromium greys an
+/// item it cannot do.
+const MENU_ITEMS: [(&str, bool); 3] = [
+    ("Download", true),
+    ("Playback speed", false),
+    ("Picture-in-Picture", false),
+];
+const MENU_W: f32 = 200.0;
+const MENU_ROW: f32 = 46.0;
+
+/// The "group" a full-screen player's controls are in.
+pub const FULL: usize = usize::MAX;
+
+/// A video shown full screen: its handle, the window it fills, and
+/// whether it is silenced.
+pub struct Full {
+    pub video: u64,
+    pub win: u64,
+    pub muted: bool,
 }
 
 struct Doc {
@@ -102,6 +131,11 @@ pub struct Files {
     pub stirred: u64,
     /// The scrubber as drawn: its group and track.
     track: Option<(usize, Rect)>,
+    /// A video filling the screen (src/guest/media.rs `toggle_fullscreen`).
+    pub fullscreen: Option<Full>,
+    /// The three-dots menu open on a player: its group ([`FULL`] for the
+    /// full-screen one).
+    pub menu: Option<usize>,
 }
 
 pub use crate::popout::is_sound;
@@ -177,6 +211,23 @@ fn speaker_glyph(c: u64, muted: bool, cx: f32, cy: f32, k: f32, col: Rgba) {
     } else {
         let _ = canvas2d::stroke_arc(c, p(cx, cy), 4.0 * k, -50.0, 100.0, 2.0 * k, col);
         let _ = canvas2d::stroke_arc(c, p(cx, cy), 8.0 * k, -55.0, 110.0, 2.0 * k, col);
+    }
+}
+
+/// Full screen: four corners at the edges (enter), or tucked in with
+/// their arms out (exit), as the player draws them.
+fn full_glyph(c: u64, exit: bool, cx: f32, cy: f32, k: f32, col: Rgba) {
+    let w = 2.0 * k;
+    for (sx, sy) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+        if exit {
+            let (x, y) = (cx + sx * 2.5 * k, cy + sy * 2.5 * k);
+            look::stroke(c, x, y, x + sx * 4.5 * k, y, w, col);
+            look::stroke(c, x, y, x, y + sy * 4.5 * k, w, col);
+        } else {
+            let (x, y) = (cx + sx * 7.0 * k, cy + sy * 7.0 * k);
+            look::stroke(c, x, y, x - sx * 4.5 * k, y, w, col);
+            look::stroke(c, x, y, x, y - sy * 4.5 * k, w, col);
+        }
     }
 }
 
@@ -292,10 +343,11 @@ impl Ui {
 
     /// A sound or video in view is playing or still loading.
     pub(super) fn files_busy(&self) -> bool {
-        self.files.players.iter().any(|p| {
-            p.seen + 2 >= self.files.frame
-                && p.state.as_ref().is_some_and(|s| s.playing || !s.ready)
-        })
+        self.files.fullscreen.is_some()
+            || self.files.players.iter().any(|p| {
+                p.seen + 2 >= self.files.frame
+                    && p.state.as_ref().is_some_and(|s| s.playing || !s.ready)
+            })
     }
 
     /// Before a frame: close players whose tab is gone.
@@ -875,6 +927,20 @@ impl Ui {
         if st.playing && !near {
             return;
         }
+        self.video_controls(pane, v, &st, muted);
+    }
+
+    /// The player's controls over the foot of a picture `v`: play, the
+    /// clock, mute, full screen, more, and the seek bar. `pane` is the
+    /// tab's group, or [`FULL`] for the full-screen player.
+    pub(super) fn video_controls(
+        &mut self,
+        pane: usize,
+        v: Rect,
+        st: &video::VideoState,
+        muted: bool,
+    ) {
+        let k = self.sz.scale;
         // The controls over the bottom of the picture.
         let shade = r(v.x, v.bottom() - 72.0 * k, v.w, 72.0 * k);
         let _ = canvas2d::linear_gradient(
@@ -912,18 +978,39 @@ impl Ui {
         dots_glyph(self.c, more.x + 16.0 * k, row, k, white);
         self.hit(more, Zone::File(pane, FileCtl::More));
         self.said.button(more, "Show more media controls");
-        let mute = r(v.right() - 88.0 * k, row - 16.0 * k, 32.0 * k, 32.0 * k);
+        let full = r(v.right() - 88.0 * k, row - 16.0 * k, 32.0 * k, 32.0 * k);
+        full_glyph(self.c, pane == FULL, full.x + 16.0 * k, row, k, white);
+        self.hit(full, Zone::File(pane, FileCtl::Full));
+        self.said.button(
+            full,
+            if pane == FULL {
+                "Exit full screen"
+            } else {
+                "Enter full screen"
+            },
+        );
+        let mute = r(v.right() - 136.0 * k, row - 16.0 * k, 32.0 * k, 32.0 * k);
         speaker_glyph(self.c, muted, mute.x + 16.0 * k, row, k, white);
         self.hit(mute, Zone::File(pane, FileCtl::Mute));
         self.said
             .button(mute, if muted { "Unmute" } else { "Mute" });
+        if self.files.menu == Some(pane) {
+            let h = 3.0 * MENU_ROW * k;
+            let at = r(
+                v.right() - (MENU_W + 4.0) * k,
+                (v.bottom() - 28.0 * k - h).max(v.y + 4.0 * k),
+                MENU_W * k,
+                h,
+            );
+            self.player_menu(pane, at, false);
+        }
         let track = r(
             v.x + 16.0 * k,
             v.bottom() - 24.0 * k,
             v.w - 32.0 * k,
             4.0 * k,
         );
-        self.scrubber(pane, track, &st, white, look::alpha(white, 0.4));
+        self.scrubber(pane, track, st, white, look::alpha(white, 0.4));
     }
 
     fn draw_audio(
@@ -964,6 +1051,22 @@ impl Ui {
         dots_glyph(self.c, more.x + 16.0 * k, cy, k, t.text);
         self.hit(more, Zone::File(pane, FileCtl::More));
         self.said.button(more, "Show more media controls");
+        if self.files.menu == Some(pane) {
+            let h = 2.0 * MENU_ROW * k;
+            let at = r(
+                bx.right() - (MENU_W + 4.0) * k,
+                bx.y - h - 4.0 * k,
+                MENU_W * k,
+                h,
+            );
+            // Below the bar when there is no room above it.
+            let at = if at.y < 0.0 {
+                r(at.x, bx.bottom() + 4.0 * k, at.w, h)
+            } else {
+                at
+            };
+            self.player_menu(pane, at, true);
+        }
         let mute = r(bx.right() - 75.0 * k, cy - 16.0 * k, 32.0 * k, 32.0 * k);
         speaker_glyph(self.c, muted, mute.x + 16.0 * k, cy, k, t.text);
         self.hit(mute, Zone::File(pane, FileCtl::Mute));
@@ -1024,6 +1127,133 @@ impl Ui {
         self.files.track = Some((pane, track));
     }
 
+    /// The three-dots menu at `at`, in Chromium's dark menu look.
+    pub(super) fn player_menu(&mut self, pane: usize, at: Rect, audio: bool) {
+        let k = self.sz.scale;
+        let c = self.c;
+        round(c, at, 2.0 * k, look::hex(0x3B3B3B));
+        let n = if audio { 2 } else { 3 };
+        for (i, (label, on)) in MENU_ITEMS.iter().take(n).enumerate() {
+            let y = at.y + i as f32 * MENU_ROW * k;
+            let row = r(at.x, y, at.w, MENU_ROW * k);
+            let ink = if *on {
+                look::hex(0xFFFFFF)
+            } else {
+                look::alpha(look::hex(0xFFFFFF), 0.38)
+            };
+            let z = Zone::File(pane, FileCtl::MenuItem(i as u8));
+            if *on && self.hover.as_ref() == Some(&z) {
+                fill(c, row, look::alpha(look::hex(0xFFFFFF), 0.1));
+            }
+            let (ix, iy) = (at.x + 28.0 * k, y + MENU_ROW * k * 0.5);
+            match i {
+                0 => {
+                    // An arrow down onto a bar.
+                    look::stroke(c, ix, iy - 8.0 * k, ix, iy + 3.0 * k, 2.0 * k, ink);
+                    look::stroke(
+                        c,
+                        ix - 5.0 * k,
+                        iy - 2.0 * k,
+                        ix,
+                        iy + 3.0 * k,
+                        2.0 * k,
+                        ink,
+                    );
+                    look::stroke(
+                        c,
+                        ix + 5.0 * k,
+                        iy - 2.0 * k,
+                        ix,
+                        iy + 3.0 * k,
+                        2.0 * k,
+                        ink,
+                    );
+                    look::stroke(
+                        c,
+                        ix - 7.0 * k,
+                        iy + 8.0 * k,
+                        ix + 7.0 * k,
+                        iy + 8.0 * k,
+                        2.0 * k,
+                        ink,
+                    );
+                }
+                1 => {
+                    // A dashed circle round a play triangle.
+                    for d in 0..8 {
+                        let _ = canvas2d::stroke_arc(
+                            c,
+                            gfx::Point { x: ix, y: iy },
+                            9.0 * k,
+                            d as f32 * 45.0,
+                            28.0,
+                            2.0 * k,
+                            ink,
+                        );
+                    }
+                    triangle(c, ix - 3.0 * k, iy - 4.5 * k, 7.0 * k, 9.0 * k, ink);
+                }
+                _ => {
+                    // A screen with a small one in its corner.
+                    look::outline(
+                        c,
+                        r(ix - 10.0 * k, iy - 8.0 * k, 20.0 * k, 16.0 * k),
+                        2.0,
+                        2.0 * k,
+                        ink,
+                    );
+                    fill(c, r(ix, iy - 1.0 * k, 7.0 * k, 6.0 * k), ink);
+                }
+            }
+            text(c, label, at.x + 56.0 * k, iy + 5.0 * k, 14.0 * k, 400, ink);
+            if *on {
+                self.hit(row, z);
+                self.said.button(row, label);
+            } else {
+                self.said.text(row, label);
+            }
+        }
+    }
+
+    /// Download, as Chromium's menu does it: the person picks where, and
+    /// the file is copied there.
+    fn download(&mut self, path: &str) {
+        let name = String::from(crate::vfs::file_name(path));
+        let chosen = match krate::ui::dialog::save_file(self.win, "Download", &name, "") {
+            Ok(Some(f)) => f,
+            Ok(None) => return,
+            Err(_) => {
+                self.app
+                    .say("Krate did not let this app save a file where you choose");
+                return;
+            }
+        };
+        let Some(v) = self.app.vault.as_mut() else {
+            return;
+        };
+        let done =
+            v.fs.read_bytes(path)
+                .map_err(|_| ())
+                .and_then(|b| krate::fs::write_chosen(&chosen.token, &b).map_err(|_| ()));
+        if done.is_err() {
+            self.app.say("The file could not be saved there");
+        }
+    }
+
+    /// A right-click on a player: Loop, as the player's own menu has it.
+    pub(super) fn player_context(&mut self, x: f32, y: f32) {
+        let looping = self.file_tab(self.app.pane).is_some_and(|f| f.looping);
+        let mut l = String::from("Loop");
+        if looping {
+            l.push_str(TICKED);
+        }
+        self.app.overlay = Some(Overlay::Menu(Menu {
+            x,
+            y,
+            items: alloc::vec![(l, MenuAction::MediaLoop)],
+        }));
+    }
+
     // ---- presses, the wheel and keys ------------------------------------------------
 
     fn file_tab(&self, pane: usize) -> Option<&crate::app::FileTab> {
@@ -1035,13 +1265,17 @@ impl Ui {
     }
 
     pub(super) fn file_press(&mut self, pane: usize, ctl: FileCtl, px: f32, py: f32) {
+        if pane == FULL {
+            self.full_press(ctl, px);
+            return;
+        }
         if pane != self.app.pane {
             self.app.focus_pane(pane);
         }
         let Some(f) = self.file_tab(pane) else {
             return;
         };
-        let (path, zoom, thumbs, looping) = (f.path.clone(), f.zoom, f.thumbs, f.looping);
+        let (path, zoom, thumbs) = (f.path.clone(), f.zoom, f.thumbs);
         if ctl != FileCtl::PageBox {
             self.files.page_edit = None;
         }
@@ -1117,6 +1351,17 @@ impl Ui {
                 }
             }
             FileCtl::Play | FileCtl::Picture => self.toggle_play(&path),
+            FileCtl::Full => {
+                if let Some(id) = self
+                    .files
+                    .players
+                    .iter()
+                    .find(|p| p.path == path)
+                    .and_then(|p| p.id.as_ref().ok().copied())
+                {
+                    self.toggle_fullscreen(id);
+                }
+            }
             FileCtl::Mute => {
                 if let Some(p) = self.files.players.iter_mut().find(|p| p.path == path) {
                     p.muted = !p.muted;
@@ -1126,15 +1371,17 @@ impl Ui {
                 }
             }
             FileCtl::More => {
-                let mut l = String::from("Loop");
-                if looping {
-                    l.push_str(TICKED);
+                self.files.menu = if self.files.menu == Some(pane) {
+                    None
+                } else {
+                    Some(pane)
+                };
+            }
+            FileCtl::MenuItem(i) => {
+                self.files.menu = None;
+                if i == 0 {
+                    self.download(&path);
                 }
-                self.app.overlay = Some(Overlay::Menu(Menu {
-                    x: px - 190.0,
-                    y: py + 14.0,
-                    items: alloc::vec![(l, MenuAction::MediaLoop)],
-                }));
             }
             FileCtl::Scrub => {
                 self.seek_to(&path, px);
@@ -1156,12 +1403,21 @@ impl Ui {
     }
 
     fn toggle_play(&mut self, path: &str) {
-        let Some(p) = self.files.players.iter_mut().find(|p| p.path == path) else {
+        let Some(id) = self
+            .files
+            .players
+            .iter()
+            .find(|p| p.path == path)
+            .and_then(|p| p.id.as_ref().ok().copied())
+        else {
             return;
         };
-        let Ok(id) = p.id else {
-            return;
-        };
+        self.toggle_play_id(id);
+    }
+
+    /// Play or pause a video by its handle (from the start again once it
+    /// ended).
+    pub(super) fn toggle_play_id(&mut self, id: u64) {
         let st = video::state(id).ok();
         if st.as_ref().is_some_and(|s| s.playing) {
             let _ = video::pause(id);
@@ -1171,7 +1427,141 @@ impl Ui {
             }
             let _ = video::play(id);
         }
-        p.state = video::state(id).ok();
+        let now = video::state(id).ok();
+        if let Some(p) = self
+            .files
+            .players
+            .iter_mut()
+            .find(|p| p.id.as_ref().ok() == Some(&id))
+        {
+            p.state = now;
+        }
+    }
+
+    /// Show a video across the whole window (the window goes full screen),
+    /// or bring it back. Shared with a video embedded in a note: give it
+    /// the video's handle.
+    pub(super) fn toggle_fullscreen(&mut self, video: u64) {
+        let state = if self.files.fullscreen.take().is_some() {
+            window::WindowState::Normal
+        } else {
+            let muted = self
+                .files
+                .players
+                .iter()
+                .find(|p| p.id.as_ref().ok() == Some(&video))
+                .is_some_and(|p| p.muted);
+            self.files.fullscreen = Some(Full {
+                video,
+                win: self.win,
+                muted,
+            });
+            window::WindowState::Fullscreen
+        };
+        let _ = window::set_state(self.win, state);
+    }
+
+    /// Whether the window being drawn shows a video full screen.
+    pub(super) fn showing_fullscreen(&self) -> bool {
+        self.files
+            .fullscreen
+            .as_ref()
+            .is_some_and(|f| f.win == self.win)
+    }
+
+    /// The full-screen player: the picture fitted to the window on black,
+    /// the controls over its foot while paused or under the pointer.
+    pub(super) fn draw_fullscreen(&mut self, w: f32, h: f32) {
+        let Some((id, muted)) = self.files.fullscreen.as_ref().map(|f| (f.video, f.muted)) else {
+            return;
+        };
+        let _ = canvas2d::clear(self.c, look::hex(0x000000));
+        let st = match video::state(id) {
+            Ok(st) => st,
+            Err(_) => {
+                self.files.fullscreen = None;
+                return;
+            }
+        };
+        let (vw, vh) = if st.width > 0 {
+            (st.width as f32, st.height as f32)
+        } else {
+            (16.0, 9.0)
+        };
+        let f = (w / vw).min(h / vh);
+        let (dw, dh) = (vw * f, vh * f);
+        let v = r((w - dw) * 0.5, (h - dh) * 0.5, dw, dh);
+        let _ = video::draw(self.c, id, look::g(v));
+        let whole = r(0.0, 0.0, w, h);
+        self.hit(whole, Zone::File(FULL, FileCtl::Picture));
+        self.said.text(whole, "Video, full screen");
+        let near = self.app.now.saturating_sub(self.files.stirred) < 3000;
+        if st.playing && !near {
+            return;
+        }
+        self.video_controls(FULL, whole, &st, muted);
+    }
+
+    /// A press on the full-screen player's controls.
+    fn full_press(&mut self, ctl: FileCtl, px: f32) {
+        let Some(id) = self.files.fullscreen.as_ref().map(|f| f.video) else {
+            return;
+        };
+        match ctl {
+            FileCtl::Play | FileCtl::Picture => self.toggle_play_id(id),
+            FileCtl::Full => self.toggle_fullscreen(id),
+            FileCtl::Mute => {
+                if let Some(f) = self.files.fullscreen.as_mut() {
+                    f.muted = !f.muted;
+                    let m = f.muted;
+                    let _ = video::set_muted(id, m);
+                    if let Some(p) = self
+                        .files
+                        .players
+                        .iter_mut()
+                        .find(|p| p.id.as_ref().ok() == Some(&id))
+                    {
+                        p.muted = m;
+                    }
+                }
+            }
+            FileCtl::Scrub => {
+                self.seek_id(id, px);
+                self.drag = Drag::Scrub(FULL);
+            }
+            FileCtl::More => {
+                self.files.menu = if self.files.menu == Some(FULL) {
+                    None
+                } else {
+                    Some(FULL)
+                };
+            }
+            FileCtl::MenuItem(i) => {
+                self.files.menu = None;
+                let path = self
+                    .files
+                    .players
+                    .iter()
+                    .find(|p| p.id.as_ref().ok() == Some(&id))
+                    .map(|p| p.path.clone());
+                if let (0, Some(p)) = (i, path) {
+                    self.download(&p);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Seek a video by its handle to where `px` is on the drawn seek bar.
+    fn seek_id(&mut self, id: u64, px: f32) {
+        let Some((_, track)) = self.files.track else {
+            return;
+        };
+        let Ok(st) = video::state(id) else {
+            return;
+        };
+        let f = ((px - track.x) / track.w.max(1.0)).clamp(0.0, 1.0);
+        let _ = video::seek(id, (st.duration_millis as f32 * f) as u64);
     }
 
     fn seek_to(&mut self, path: &str, px: f32) {
@@ -1189,6 +1579,12 @@ impl Ui {
     }
 
     pub(super) fn file_drag(&mut self, pane: usize, px: f32) {
+        if pane == FULL {
+            if let Some(id) = self.files.fullscreen.as_ref().map(|f| f.video) {
+                self.seek_id(id, px);
+            }
+            return;
+        }
         if let Some(path) = self.file_tab(pane).map(|f| f.path.clone()) {
             self.seek_to(&path, px);
         }
@@ -1234,6 +1630,24 @@ impl Ui {
     pub(super) fn file_key(&mut self, key: &str, m: crate::app::Mods) -> bool {
         if self.app.overlay.is_some() || m.primary || m.ctrl || m.alt {
             return false;
+        }
+        // The full-screen player: Escape leaves it, Space plays or pauses.
+        if let Some(id) = self.files.fullscreen.as_ref().map(|f| f.video) {
+            match key {
+                "Escape" => self.toggle_fullscreen(id),
+                "Space" | "k" => self.toggle_play_id(id),
+                "ArrowRight" | "ArrowLeft" => {
+                    let pos = video::state(id).map_or(0, |s| s.position_millis);
+                    let to = if key == "ArrowRight" {
+                        pos + 5000
+                    } else {
+                        pos.saturating_sub(5000)
+                    };
+                    let _ = video::seek(id, to);
+                }
+                _ => return false,
+            }
+            return true;
         }
         let pane = self.app.pane;
         if let Some((p, s)) = self.files.page_edit.as_mut() {

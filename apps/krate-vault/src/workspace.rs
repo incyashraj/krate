@@ -818,7 +818,7 @@ impl App {
         self.link_tab(i);
         let group = self.tabs.get(i).and_then(|t| t.group);
         let me = self.pane;
-        let other = self.pane_order().into_iter().find(|p| *p != me);
+        let other = self.window_panes(me).into_iter().find(|p| *p != me);
         match other {
             Some(p) => self.focus_pane(p),
             None => {
@@ -828,7 +828,7 @@ impl App {
                     active: 0,
                     stacked: false,
                 });
-                self.layout.split(me, new, false);
+                self.layout_with_mut(me).split(me, new, false);
                 self.focus_pane(new);
             }
         }

@@ -74,6 +74,11 @@ rationale = "Add a file you pick to the vault as an attachment of the note"
 required = false
 
 [[capabilities]]
+cap = "ui.dialog:file-save"
+rationale = "Download a sound or video from a note to where you choose"
+required = false
+
+[[capabilities]]
 cap = "net.connect:*:443"
 rationale = "Show pictures a note embeds from the web, and the title of a page a canvas card links to"
 required = false

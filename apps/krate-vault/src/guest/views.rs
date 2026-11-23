@@ -1327,7 +1327,7 @@ impl Ui {
         // The toolbar.
         let bar = r(a.x, a.y, a.w, 40.0 * k);
         let cy = bar.y + bar.h * 0.5;
-        icon(self.c, Icon::Table, bar.x + 20.0 * k, cy, k, t.text);
+        icon(self.c, base_icon(&w.kind), bar.x + 20.0 * k, cy, k, t.text);
         let nw = width(self.c, &w.name, sz.medium, 500);
         text(
             self.c,
@@ -1365,33 +1365,44 @@ impl Ui {
             400,
             t.muted,
         );
+        // The view's actions, lit when the view uses them (its own sort,
+        // its groups, its own filters), as the notes app lights them.
         let actions = [
-            (Icon::Sort, "Sort", !w.sort.is_empty()),
-            (Icon::LayoutList, "Group", false),
-            (
-                Icon::Filter,
-                "Filter",
-                w.filters.is_some() || base.filters.is_some(),
-            ),
+            (Icon::ArrowUpDown, "Sort", !w.sort.is_empty()),
+            (Icon::Rows, "Group", w.group_by.is_some()),
+            (Icon::Filter, "Filter", w.filters.is_some()),
             (Icon::List, "Properties", false),
             (Icon::Search, "Search", false),
             (Icon::Plus, "New", false),
         ];
+        let count_end = vb.right() + 12.0 * k + width(self.c, &count, sz.ui, 400);
+        let labels_w: f32 = actions
+            .iter()
+            .map(|(_, l, _)| width(self.c, l, sz.ui, 400) + 34.0 * k)
+            .sum();
+        // Too narrow for the words: the icons alone, as the notes app does.
+        let words = bar.right() - 8.0 * k - labels_w > count_end + 12.0 * k;
         let mut x = bar.right() - 8.0 * k;
         for (ic, label, on) in actions.iter().rev() {
-            let lw = width(self.c, label, sz.ui, 400);
+            let lw = if words {
+                width(self.c, label, sz.ui, 400)
+            } else {
+                -12.0 * k
+            };
             x -= lw + 28.0 * k;
             let c = if *on { t.link } else { t.muted };
             icon(self.c, *ic, x + 9.0 * k, cy, k, c);
-            text(
-                self.c,
-                label,
-                x + 22.0 * k,
-                cy + sz.ui * 0.36,
-                sz.ui,
-                400,
-                c,
-            );
+            if words {
+                text(
+                    self.c,
+                    label,
+                    x + 22.0 * k,
+                    cy + sz.ui * 0.36,
+                    sz.ui,
+                    400,
+                    c,
+                );
+            }
             self.said.text(r(x, bar.y, lw + 28.0 * k, bar.h), label);
             x -= 6.0 * k;
         }
@@ -1441,6 +1452,14 @@ impl Ui {
         let rh = 30.0 * k;
         let top = bar.bottom();
         let tbl = r(a.x, top, a.w, a.bottom() - top);
+        if w.kind == "list" {
+            self.draw_base_list(&cols, &rows_vals, &groups, &w, &base, tbl, scroll, focused);
+            return;
+        }
+        if w.kind == "kanban" {
+            self.draw_base_kanban(&cols, &rows_vals, &groups, &w, &base, tbl, scroll, focused);
+            return;
+        }
         if w.kind == "cards" {
             // Cards: a grid, each card the note's name and its properties.
             let cw = 220.0 * k;
@@ -1517,6 +1536,8 @@ impl Ui {
             let name = base.column_name(c);
             let ic = if c == "file.name" {
                 Icon::Info
+            } else if bool_col(&rows_vals, i) {
+                Icon::SquareCheck
             } else if rows_vals.iter().any(|r| {
                 r.get(i)
                     .is_some_and(|v| v.len() == 10 && v.as_bytes().get(4) == Some(&b'-'))
@@ -1526,7 +1547,7 @@ impl Ui {
                 r.get(i)
                     .is_some_and(|v| !v.is_empty() && v.parse::<f64>().is_ok())
             }) {
-                Icon::Hash
+                Icon::Binary
             } else {
                 Icon::Text
             };
@@ -1548,7 +1569,7 @@ impl Ui {
                     if *desc {
                         Icon::ChevronDown
                     } else {
-                        Icon::ArrowLeft
+                        Icon::ChevronUp
                     },
                     x + 40.0 * k + nwid,
                     ys + rh * 0.5,
@@ -1632,7 +1653,31 @@ impl Ui {
                 let base_y = y + rh * 0.5 + fsz * 0.36;
                 let is_name = cols.get(i).is_some_and(|c| c == "file.name");
                 let numeric = !v.is_empty() && v.parse::<f64>().is_ok();
-                if is_name {
+                if bool_col(&rows_vals, i) && (v == "true" || v == "false") {
+                    // A checkbox, ticked in the accent, as the notes app
+                    // shows a checkbox property.
+                    let bx = r(
+                        x + cw * 0.5 - 8.0 * k,
+                        y + rh * 0.5 - 8.0 * k,
+                        16.0 * k,
+                        16.0 * k,
+                    );
+                    if v == "true" {
+                        round(self.c, bx, 4.0 * k, t.accent);
+                        icon(
+                            self.c,
+                            Icon::Check,
+                            bx.x + bx.w * 0.5,
+                            bx.y + bx.h * 0.5,
+                            k * 0.8,
+                            t.on_accent,
+                        );
+                    } else {
+                        look::outline(self.c, bx, 4.0 * k, 1.0, t.faint);
+                    }
+                    self.said
+                        .toggle(r(x, y, cw, rh), &base.column_name(&cols[i]), v == "true");
+                } else if is_name {
                     let lw = fit(
                         self.c,
                         v,
@@ -1693,6 +1738,46 @@ impl Ui {
             }
             fill(self.c, r(tbl.x, y + rh, tbl.w, 1.0), t.border);
         }
+        // The summaries under their columns, right-aligned, the name muted
+        // and the value after it, clipped to the column.
+        if !w.summaries.is_empty() {
+            let fy = ys + rh * (rows_vals.len() + 1) as f32 + extra;
+            let mut x = tbl.x;
+            for (i, c) in cols.iter().enumerate() {
+                let cw = widths[i];
+                let sum = w.summaries.iter().find(|(p, _)| {
+                    p == c
+                        || p.strip_prefix("note.").unwrap_or(p)
+                            == c.strip_prefix("note.").unwrap_or(c)
+                });
+                if let (Some((_, name)), Some(v)) = (sum, self.app.vault.as_ref()) {
+                    let vals = base.column_values(v, &rows, c);
+                    if let Some(out) = crate::bases::summarize(name, &vals) {
+                        let vw = width(self.c, &out, fsz, 400);
+                        let nwid = width(self.c, name, fsz, 400);
+                        let right = x + cw - 14.0 * k;
+                        let base_y = fy + rh * 0.5 + fsz * 0.36;
+                        let _ = canvas2d::set_clip(self.c, x, fy, cw, rh);
+                        text(self.c, &out, right - vw, base_y, fsz, 400, t.text);
+                        text(
+                            self.c,
+                            name,
+                            right - vw - 8.0 * k - nwid,
+                            base_y,
+                            fsz,
+                            400,
+                            t.muted,
+                        );
+                        let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
+                        let mut said = String::from(name.as_str());
+                        said.push(' ');
+                        said.push_str(&out);
+                        self.said.text(r(x, fy, cw, rh), &said);
+                    }
+                }
+                x += cw;
+            }
+        }
         let _ = canvas2d::clear_clip(self.c);
         if choosing && focused {
             let mh = base.views.len() as f32 * 30.0 * k + 12.0;
@@ -1711,7 +1796,7 @@ impl Ui {
                 }
                 icon(
                     self.c,
-                    Icon::Table,
+                    base_icon(&v.kind),
                     ir.x + 14.0 * k,
                     ir.y + ir.h * 0.5,
                     k * 0.9,
@@ -2805,4 +2890,27 @@ impl Ui {
     pub(super) fn after_draw(&mut self) {
         self.fit_views();
     }
+}
+
+/// A base view's icon, by its kind, as the notes app marks them.
+pub(super) fn base_icon(kind: &str) -> Icon {
+    match kind {
+        "list" => Icon::List,
+        "cards" => Icon::LayoutGrid,
+        "kanban" => Icon::Kanban,
+        _ => Icon::Table,
+    }
+}
+
+/// A column of checkboxes: every value it has is true or false.
+fn bool_col(rows: &[Vec<String>], i: usize) -> bool {
+    let mut any = false;
+    for r in rows {
+        match r.get(i).map(String::as_str) {
+            Some("true" | "false") => any = true,
+            Some("") | None => {}
+            _ => return false,
+        }
+    }
+    any
 }

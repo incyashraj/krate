@@ -1302,6 +1302,8 @@ pub struct App {
     pub next_float: u64,
     /// Bringing the workspace file back: do not write it meanwhile.
     pub restoring: bool,
+    /// The link groups read from workspace.json, by their id there.
+    pub group_ids: Vec<String>,
     /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
     pub closed: Vec<String>,
     pub settings: Settings,
@@ -1397,6 +1399,7 @@ impl App {
             floating: Vec::new(),
             next_float: 0,
             restoring: false,
+            group_ids: Vec::new(),
             closed: Vec::new(),
             settings: Settings::new(),
             bookmarks: Vec::new(),
@@ -1642,7 +1645,7 @@ impl App {
             stacked: false,
         });
         let at = self.pane;
-        self.layout.split(at, new, down);
+        self.layout_with_mut(at).split(at, new, down);
         self.focus_pane(new);
         if let Some(p) = path {
             self.open_file(&p, false);
@@ -1652,36 +1655,33 @@ impl App {
     /// Take away a group that has no tabs left (never the last group of
     /// the main window; a window of its own closes with its last tab).
     pub(crate) fn drop_pane_if_empty(&mut self) {
-        if let Some(id) = self.float_of(self.pane).map(|f| f.id) {
-            if self.tabs.is_empty() {
-                self.close_floating(id);
-            }
-            return;
-        }
-        let only = self.pane_order().len() <= 1;
-        if !self.tabs.is_empty() || only {
+        let float = self.float_of(self.pane).map(|f| f.id);
+        let order = self.window_panes(self.pane);
+        let only = order.len() <= 1;
+        if !self.tabs.is_empty() || (only && float.is_none()) {
             if self.tabs.is_empty() {
                 self.tabs.push(Tab::empty());
                 self.active = 0;
             }
             return;
         }
+        if let (true, Some(id)) = (only, float) {
+            self.close_floating(id);
+            return;
+        }
         let gone = self.pane;
-        self.layout.remove(gone);
-        let next = self.pane_order().first().copied().unwrap_or(0);
-        // Focus a neighbour, then delete the empty group's slot.
+        let next = order.into_iter().find(|p| *p != gone).unwrap_or(0);
+        self.layout_with_mut(gone).remove(gone);
+        // Focus a neighbour in the same window, then delete the empty
+        // group's slot.
         self.pane = usize::MAX;
         if let Some(slot) = self.panes.get_mut(next) {
             self.tabs = core::mem::take(&mut slot.tabs);
             self.active = slot.active;
+            self.stacked = slot.stacked;
         }
         self.panes.remove(gone);
-        self.layout.renumber_after(gone);
-        for f in &mut self.floating {
-            if f.pane > gone {
-                f.pane -= 1;
-            }
-        }
+        self.renumber_all(gone);
         self.pane = if next > gone { next - 1 } else { next };
         if self.tabs.is_empty() {
             self.tabs.push(Tab::empty());
@@ -2053,7 +2053,7 @@ impl App {
             active: 0,
             stacked: false,
         });
-        self.layout.split(at_pane, new, down);
+        self.layout_with_mut(at_pane).split(at_pane, new, down);
         if self.tabs.is_empty() {
             self.drop_pane_if_empty();
             let n = self.panes.len() - 1;
@@ -4533,10 +4533,11 @@ impl App {
         if !self.floating.is_empty() {
             put("windows", &num(self.floating.len() + 1));
             for f in &self.floating {
-                let paths: Vec<&str> = self
-                    .pane_tabs(f.pane)
-                    .0
+                let mut ps = Vec::new();
+                f.layout.panes(&mut ps);
+                let paths: Vec<&str> = ps
                     .iter()
+                    .flat_map(|p| self.pane_tabs(*p).0.iter())
                     .filter_map(Tab::path)
                     .collect();
                 put("window", &paths.join(","));

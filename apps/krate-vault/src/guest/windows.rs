@@ -212,13 +212,18 @@ impl Ui {
         self.dividers.clear();
         self.tab_rects.clear();
         self.view_areas.clear();
-        if self.app.pane != f.pane {
+        let here = f.layout.contains(self.app.pane);
+        if !here {
             self.view = None;
             self.shown.area = None;
         }
         let _ = canvas2d::clear(self.c, t.side);
-        self.draw_pane(f.pane, r(0.0, 0.0, w, h), LIGHTS, 0.0);
-        if self.app.pane == f.pane {
+        if self.showing_fullscreen() {
+            self.draw_fullscreen(w, h);
+        } else {
+            self.draw_panes(r(0.0, 0.0, w, h), LIGHTS);
+        }
+        if here {
             self.draw_editor_extras(w, h);
         }
         if self.overlay_in == id {
@@ -228,7 +233,10 @@ impl Ui {
         self.said.send(self.win);
         // The window's title is its tab's, as the notes app titles it.
         let mut want = String::new();
-        let (tabs, act) = self.app.pane_tabs(f.pane);
+        let mut ps = Vec::new();
+        f.layout.panes(&mut ps);
+        let shown = if here { self.app.pane } else { ps[0] };
+        let (tabs, act) = self.app.pane_tabs(shown);
         if let Some(tb) = tabs.get(act) {
             want.push_str(tb.title());
             want.push_str(" - ");

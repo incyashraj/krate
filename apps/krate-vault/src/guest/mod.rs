@@ -8,6 +8,7 @@
 //! a 40 px tab bar and a 40 px view header, and a small status bar in the
 //! bottom-right corner.
 
+mod boards;
 mod disk;
 mod editor;
 mod look;
@@ -237,6 +238,13 @@ fn tab_kind(tb: &crate::app::Tab) -> u8 {
             crate::vault::FileKind::Media => 8,
             _ => 10,
         },
+        // A base's tab shows its view's kind, as the notes app marks it.
+        Some(View::Base(b)) => match b.base.views.get(b.view).map(|v| v.kind.as_str()) {
+            Some("list") => 14,
+            Some("kanban") => 15,
+            Some("cards") => 16,
+            _ => 3,
+        },
         _ => view_kind(tb),
     }
 }
@@ -371,7 +379,9 @@ impl Ui {
                 t.side
             },
         );
-        if self.app.vault.is_none() {
+        if self.showing_fullscreen() {
+            self.draw_fullscreen(w, h);
+        } else if self.app.vault.is_none() {
             self.draw_welcome(w, h);
         } else {
             self.draw_workspace(w, h);
@@ -1328,7 +1338,10 @@ impl Ui {
         let t = self.t();
         let mut placed = Vec::new();
         let mut divs = Vec::new();
-        self.app.layout.place(area(main), &mut placed, &mut divs);
+        // The main window's split, or the window of its own drawn now.
+        let id = self.in_window;
+        let layout = self.app.window_layout_mut(id).clone();
+        layout.place(area(main), &mut placed, &mut divs);
         let top_right = placed
             .iter()
             .filter(|(_, a)| a.y <= main.y + 0.5)
@@ -1345,7 +1358,7 @@ impl Ui {
             } else {
                 0.0
             };
-            let reserve = if Some(*p) == top_right && !self.app.right_open {
+            let reserve = if Some(*p) == top_right && !self.app.right_open && id == 0 {
                 44.0 * self.sz.scale
             } else {
                 0.0
@@ -1459,6 +1472,9 @@ impl Ui {
                 7 => Some(Icon::FileText),
                 9 => Some(Icon::Headphones),
                 8 | 10 => Some(Icon::File),
+                14 => Some(Icon::List),
+                15 => Some(Icon::Kanban),
+                16 => Some(Icon::LayoutGrid),
                 _ => None,
             };
             let tcol = if is_active && focused {
@@ -3491,7 +3507,10 @@ impl Ui {
             Drag::Divider(i) => {
                 if let Some(d) = self.dividers.get(i).cloned() {
                     let pos = if d.down { py } else { px };
-                    self.app.layout.drag(&d.path, d.after, d.whole, pos);
+                    let id = self.in_window;
+                    self.app
+                        .window_layout_mut(id)
+                        .drag(&d.path, d.after, d.whole, pos);
                 }
             }
             Drag::Graph { .. } | Drag::Slider(_) | Drag::Canvas { .. } => self.view_drag(px, py),
@@ -3551,6 +3570,13 @@ impl Ui {
     /// A tab let go: onto a tab bar (to that place), or onto the edge of a
     /// group (a new group there).
     fn drop_tab(&mut self, from_pane: usize, tab: usize, px: f32, py: f32) {
+        // Let go outside the window: a window of its own, as the notes app
+        // does. (Onto another window's tab bar needs where the windows are,
+        // which Krate cannot tell an app yet: K-1352.)
+        if px < 0.0 || py < 0.0 || px > self.w || py > self.h {
+            self.app.move_tab_to_new_window(from_pane, tab);
+            return;
+        }
         // Onto a tab bar.
         if let Some((p, _, strip)) = self
             .pane_areas
@@ -3597,6 +3623,12 @@ impl Ui {
         };
         if !matches!(z, Zone::File(_, media::FileCtl::PageBox)) {
             self.files.page_edit = None;
+        }
+        if !matches!(
+            z,
+            Zone::File(_, media::FileCtl::More | media::FileCtl::MenuItem(_))
+        ) {
+            self.files.menu = None;
         }
         match z {
             Zone::Editor => {
@@ -4247,6 +4279,15 @@ impl krate::Guest for Component {
                 }
             }
         }
+        // `view=<name>`: a base tab shows its view of that name.
+        if let Some(name) = arg(&raw, "view") {
+            if let Some(View::Base(b)) = ui.app.view_mut() {
+                if let Some(i) = b.base.views.iter().position(|v| v.name == name) {
+                    b.view = i;
+                    b.generation = 0;
+                }
+            }
+        }
         // `page=<n>`: a PDF tab goes to that page; `zoom=<percent>` zooms it.
         if let Some(n) = arg(&raw, "page").and_then(|n| n.parse::<u32>().ok()) {
             if let Some(View::File(f)) = ui.app.view_mut() {
@@ -4355,7 +4396,7 @@ impl krate::Guest for Component {
                     | types::Event::ThemeChanged(_) => changed = true,
                     types::Event::Key(k)
                         if k.pressed
-                            && ui.app.focus == Focus::Editor
+                            && (ui.app.focus == Focus::Editor || ui.files.fullscreen.is_some())
                             && ui.file_key(&k.key, mods(k.modifiers)) =>
                     {
                         if k.key == "Space" {
@@ -4462,6 +4503,12 @@ impl krate::Guest for Component {
                                         }));
                                     }
                                     Some(Zone::Canvas(_)) => ui.canvas_context(p.x, p.y),
+                                    Some(Zone::File(pane, _)) => {
+                                        if pane != media::FULL {
+                                            ui.app.focus_pane(pane);
+                                        }
+                                        ui.player_context(p.x, p.y);
+                                    }
                                     _ => {}
                                 }
                                 changed = true;

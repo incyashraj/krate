@@ -63,6 +63,8 @@ pub struct View {
     pub limit: Option<usize>,
     /// Rows grouped by this property (`groupBy`), descending when true.
     pub group_by: Option<(String, bool)>,
+    /// `summaries`: a property and the summary shown under its column.
+    pub summaries: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -75,6 +77,8 @@ pub struct Base {
     pub formulas: Vec<(String, String)>,
     /// Today, `YYYY-MM-DD`, set by the app before rows are worked out.
     pub today: String,
+    /// The base's own `summaries`: a name and a formula over `values`.
+    pub custom_summaries: Vec<(String, String)>,
 }
 
 /// One note, as a base sees it.
@@ -143,6 +147,13 @@ impl Base {
                                 .is_some_and(|d| d.eq_ignore_ascii_case("desc"));
                             Some((p, desc))
                         }),
+                        summaries: match w.get("summaries") {
+                            Some(Value::Obj(kv)) => kv
+                                .iter()
+                                .filter_map(|(k, n)| Some((k.clone(), String::from(n.str()?))))
+                                .collect(),
+                            _ => Vec::new(),
+                        },
                     })
                     .collect()
             })
@@ -156,6 +167,7 @@ impl Base {
                 sort: Vec::new(),
                 limit: None,
                 group_by: None,
+                summaries: Vec::new(),
             });
         }
         let formulas = match v.get("formulas") {
@@ -168,7 +180,31 @@ impl Base {
             views,
             formulas,
             today: String::new(),
+            custom_summaries: match v.get("summaries") {
+                Some(Value::Obj(kv)) => kv.iter().map(|(k, e)| (k.clone(), show(e))).collect(),
+                _ => Vec::new(),
+            },
         }
+    }
+
+    /// The values of one property over some rows.
+    pub fn column_values(&self, v: &Vault, rows: &[String], prop: &str) -> Vec<Value> {
+        let none: Vec<String> = Vec::new();
+        let nolinks: Vec<(String, u32)> = Vec::new();
+        rows.iter()
+            .map(|p| {
+                let meta = v.meta.get(p);
+                let row = Row {
+                    path: p,
+                    tags: meta.map_or(&none, |m| &m.tags),
+                    links: meta.map_or(&nolinks, |m| &m.links),
+                    props: meta.and_then(|m| m.props.as_ref()),
+                    formulas: &self.formulas,
+                    today: &self.today,
+                };
+                value(prop, &row)
+            })
+            .collect()
     }
 
     /// What a column is called: its display name, else the property name
@@ -864,6 +900,97 @@ impl Base {
     }
 }
 
+/// A summary under a column, worked out as the notes app works its
+/// built-in ones out: Average, Min, Max, Sum, Range, Median and Stddev
+/// over numbers; Earliest, Latest and Range over dates; Checked and
+/// Unchecked over checkboxes; Empty, Filled and Unique over anything.
+pub fn summarize(name: &str, values: &[Value]) -> Option<String> {
+    let nums: Vec<f64> = values
+        .iter()
+        .filter_map(|v| match v {
+            Value::Num(n) => Some(*n),
+            Value::Str(s) => s.trim().parse::<f64>().ok(),
+            _ => None,
+        })
+        .collect();
+    let dates: Vec<crate::dates::When> = values.iter().filter_map(as_date).collect();
+    let round2 = |x: f64| (x * 100.0).round() / 100.0;
+    let num = |x: f64| show(&Value::Num(x));
+    let count = |n: usize| num(n as f64);
+    // A date as the notes app's summary prints one: the date object's text.
+    let stamp = |d: &crate::dates::When| {
+        alloc::format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:00",
+            d.year,
+            d.month,
+            d.day,
+            d.hour,
+            d.minute
+        )
+    };
+    let by_day = |a: &&crate::dates::When| (a.day_number(), a.hour, a.minute);
+    Some(match name {
+        "Empty" => count(values.iter().filter(|v| matches!(v, Value::Null)).count()),
+        "Filled" => count(values.iter().filter(|v| !matches!(v, Value::Null)).count()),
+        "Unique" => {
+            let mut seen: Vec<String> = Vec::new();
+            for v in values {
+                let k = crate::json::compact(v);
+                if !seen.contains(&k) {
+                    seen.push(k);
+                }
+            }
+            count(seen.len())
+        }
+        "Checked" => count(
+            values
+                .iter()
+                .filter(|v| matches!(v, Value::Bool(true)))
+                .count(),
+        ),
+        "Unchecked" => count(
+            values
+                .iter()
+                .filter(|v| matches!(v, Value::Bool(false)))
+                .count(),
+        ),
+        "Earliest" => stamp(dates.iter().min_by_key(by_day)?),
+        "Latest" => stamp(dates.iter().max_by_key(by_day)?),
+        "Range" if !dates.is_empty() && nums.is_empty() => {
+            let a = dates.iter().min_by_key(by_day)?.day_number();
+            let b = dates.iter().max_by_key(by_day)?.day_number();
+            let n = b - a;
+            alloc::format!("{n} {}", if n == 1 { "day" } else { "days" })
+        }
+        _ if nums.is_empty() => return None,
+        "Average" => num(round2(nums.iter().sum::<f64>() / nums.len() as f64)),
+        "Sum" => num(round2(nums.iter().sum())),
+        "Min" => num(nums.iter().copied().fold(f64::INFINITY, f64::min)),
+        "Max" => num(nums.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+        "Range" => {
+            let lo = nums.iter().copied().fold(f64::INFINITY, f64::min);
+            let hi = nums.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            num(hi - lo)
+        }
+        "Median" => {
+            let mut v = nums.clone();
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+            let m = v.len() / 2;
+            num(if v.len().is_multiple_of(2) {
+                (v[m - 1] + v[m]) / 2.0
+            } else {
+                v[m]
+            })
+        }
+        "Stddev" => {
+            let mean = nums.iter().sum::<f64>() / nums.len() as f64;
+            let var = nums.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / nums.len() as f64;
+            num(round2(var.sqrt()))
+        }
+        _ => return None,
+    })
+}
+
 /// A new, empty base, as the app writes one.
 pub fn new_base_text() -> &'static str {
     "views:\n  - type: table\n    name: Table\n"
@@ -986,6 +1113,33 @@ mod tests {
         assert_eq!(eval("priority.toFixed(2)", &row), Value::s("3.00"));
         assert_eq!(eval("max(priority, 7)", &row), Value::Num(7.0));
         assert_eq!(eval("due.relative()", &row), Value::s("in 9 days"));
+        let n = |x: f64| Value::Num(x);
+        let vals = [n(3.0), n(5.0), n(2.0), n(4.0), n(1.0)];
+        assert_eq!(summarize("Average", &vals).as_deref(), Some("3"));
+        assert_eq!(summarize("Sum", &vals).as_deref(), Some("15"));
+        assert_eq!(summarize("Median", &vals).as_deref(), Some("3"));
+        assert_eq!(summarize("Range", &vals).as_deref(), Some("4"));
+        assert_eq!(summarize("Stddev", &vals).as_deref(), Some("1.41"));
+        let d = |s: &str| Value::s(s);
+        let days = [d("2026-12-03"), d("2026-12-01"), Value::Null];
+        assert_eq!(
+            summarize("Earliest", &days).as_deref(),
+            Some("2026-12-01T00:00:00")
+        );
+        assert_eq!(
+            summarize("Latest", &days).as_deref(),
+            Some("2026-12-03T00:00:00")
+        );
+        assert_eq!(summarize("Range", &days).as_deref(), Some("2 days"));
+        assert_eq!(summarize("Empty", &days).as_deref(), Some("1"));
+        assert_eq!(summarize("Filled", &days).as_deref(), Some("2"));
+        let b = [Value::Bool(true), Value::Bool(false), Value::Bool(true)];
+        assert_eq!(summarize("Checked", &b).as_deref(), Some("2"));
+        assert_eq!(summarize("Unchecked", &b).as_deref(), Some("1"));
+        assert_eq!(
+            summarize("Unique", &[d("open"), d("done"), d("open")]).as_deref(),
+            Some("2")
+        );
         assert_eq!(eval("file.hasLink(\"Home\")", &row), Value::Bool(true));
         assert_eq!(eval("file.name", &row), Value::s("Task 1"));
         assert_eq!(eval("due > \"2026-11-30\"", &row), Value::Bool(true));
