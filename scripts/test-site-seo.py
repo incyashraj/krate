@@ -32,7 +32,7 @@ class SeoTests(unittest.TestCase):
             self.page(path, "Introduction")
         for path in ("faq.html", "faq/index.html"):
             self.page(path, "Frequently asked questions")
-        for path in ("docs/porting.html", "docs/limits.html", "docs/phase2/benchmarks.html",
+        for path in ("docs/porting.html", "docs/limits.html", "docs/phase2/threat-model-v0-2.html",
                      "desktop-app-distribution.html"):
             self.page(path, path)
         seo.finalize(self.root)
@@ -42,7 +42,7 @@ class SeoTests(unittest.TestCase):
         self.assertNotIn("faq.html", sitemap)
         self.assertNotIn("lastmod", sitemap)
         self.assertIn("https://krate.tech/docs/</loc>", sitemap)
-        for path in ("docs/porting.html", "docs/limits.html", "docs/phase2/benchmarks.html",
+        for path in ("docs/porting.html", "docs/limits.html", "docs/phase2/threat-model-v0-2.html",
                      "desktop-app-distribution.html"):
             self.assertIn(path, sitemap)
 
@@ -59,6 +59,27 @@ class SeoTests(unittest.TestCase):
         for path in public:
             self.assertFalse(seo.Page((self.root / path).read_text()).noindex, path)
         self.assertTrue(seo.check(self.root))
+
+    def test_engineering_record_is_noindex_but_threat_models_stay(self):
+        record = ("docs/phases/phase-6.html", "docs/phase1/retro.html",
+                  "docs/phase2/exit-evidence.html", "docs/phase3/layout.html")
+        kept = ("docs/phase1/threat-model.html", "docs/phase2/threat-model-v0-2.html",
+                "docs/architecture.html", "docs/blog/0007-testing-software-like-a-stranger.html")
+        for path in record + kept:
+            self.page(path, path)
+        seo.finalize(self.root)
+        sitemap = (self.root / "sitemap.xml").read_text()
+        for path in record:
+            self.assertTrue(seo.Page((self.root / path).read_text()).noindex, path)
+            self.assertNotIn(path, sitemap)
+        for path in kept:
+            self.assertFalse(seo.Page((self.root / path).read_text()).noindex, path)
+            self.assertIn(path, sitemap)
+        self.assertTrue(seo.check(self.root))
+        # An engineering record that lost its noindex is caught by the check.
+        file = self.root / record[0]
+        file.write_text(file.read_text().replace('<meta name="robots" content="follow, noindex">', ""))
+        self.assertFalse(seo.check(self.root))
 
     def test_preserves_editorial_description_and_identity_jsonld(self):
         file = self.page("studio/index.html", "Studio", head='<meta name="description" content="An editorial description.">'

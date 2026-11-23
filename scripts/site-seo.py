@@ -24,6 +24,14 @@ ALIASES = {"/docs/introduction.html": "/docs/", **{
 # /support/ is the token-protected admin console (docs/support/index.html).
 UTILITY_ROOTS = {"app", "account", "login", "publish", "make", "support", "orgs", "org", "join"}
 UTILITY_PATHS = {"/cloud/app/", "/docs/print.html", "/404.html", "/docs/404.html"}
+# The "Phase Notes" part of the book is the project's engineering record
+# (phase plans, evidence logs, freeze packets). It stays public and linked,
+# but it is not an answer anyone searches for, and ~45 such pages left Google
+# judging most of the docs "crawled, not indexed". Keep them out of the index
+# so search weighs the guides. The threat models stay: security reviewers
+# look for them.
+ARCHIVE_PREFIXES = ("/docs/phases/", "/docs/phase1/", "/docs/phase2/", "/docs/phase3/")
+ARCHIVE_KEEP = {"/docs/phase1/threat-model.html", "/docs/phase2/threat-model-v0-2.html"}
 PRIORITY_PATHS = {"/", "/studio/", "/download/", "/about/", "/faq/", "/docs/", "/docs/quickstart.html",
                   "/docs/porting.html", "/docs/limits.html", "/reports/", "/progress/",
                   "/open/", "/cloud/", "/portable-desktop-app-format.html",
@@ -159,6 +167,10 @@ def route(file, root):
 
 def is_utility(path):
     return path.lstrip("/").split("/")[0] in UTILITY_ROOTS or path in UTILITY_PATHS
+
+
+def is_archive(path):
+    return path.startswith(ARCHIVE_PREFIXES) and path not in ARCHIVE_KEEP
 
 
 def local_file(root, path):
@@ -316,7 +328,7 @@ def finalize(root):
         if not page.title:
             raise ValueError(f"{path}: missing title; fix its source rather than inventing one")
         source = update_head(source, ORIGIN + canonical_path, description_for(page, path),
-                             page.noindex or is_utility(canonical_path))
+                             page.noindex or is_utility(canonical_path) or is_archive(canonical_path))
         source = normalize_links(source, path, root)
         file.write_text(source)
     entries = "\n".join(sitemap_entry(root, url) for url in canonical_urls(root))
@@ -345,6 +357,8 @@ def check(root, require_priority=False):
             errors.append(f"{path}: expected one nonempty description")
         if is_utility(normalized_path(path)) and not page.noindex:
             errors.append(f"{path}: utility shell must be noindex")
+        if is_archive(normalized_path(path)) and not page.noindex:
+            errors.append(f"{path}: engineering record must be noindex")
         for data in page.jsonld:
             try:
                 json.loads(data)
