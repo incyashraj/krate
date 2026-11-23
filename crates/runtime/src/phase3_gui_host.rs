@@ -6263,7 +6263,13 @@ impl ui::events::Host for Phase3GuiHost {
                     // loop cannot outrun.
                     return Ok(None);
                 }
-            } else if self.usability.is_some() {
+            }
+            // A driven run steps its script from inside every wait, bounded or
+            // not (K-1354): an app that waits with a timeout -- a notes app
+            // polling its folder each second, an animation -- otherwise saw
+            // each scripted click only when its own timeout ran out, and a
+            // task of a few clicks took seconds a step and ran out of budget.
+            if self.usability.is_some() {
                 // A driven run on an unbounded wait: the driver is paced by
                 // wall clock and only advances when the app calls in, but an
                 // app blocked in `wait(None)` with an empty queue never calls
@@ -6278,7 +6284,12 @@ impl ui::events::Host for Phase3GuiHost {
                     self.idle_waits.set(0);
                     return Ok(Some(event));
                 }
-            } else if let Some(close) = self.headless_close_request() {
+            } else if let Some(close) = deadline
+                .is_none()
+                .then(|| self.headless_close_request())
+                .flatten()
+            {
+                // (A bounded wait returns at its deadline above.)
                 // An unbounded wait on a headless host can never return on its
                 // own: nothing exists that could deliver an event. Reporting
                 // the close is the only honest way out, and every GUI app
