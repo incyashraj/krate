@@ -32,3 +32,18 @@ assert.equal(prettyName("a notes app with <tags> and |pipes|"), "Notes app with 
 assert.equal(prettyName("a"), "A", "a lone word is kept rather than emptied");
 assert.equal(prettyName(""), "Your app");
 console.log("ok  a web build's fallback name is short, whole, and a legal file name");
+
+// The name the plan agreed comes before the request's first words: a period
+// tracker agreed as "Cycle Log" arrived as "Track.krate" (2026-11-23).
+{
+  const at2 = src.indexOf("function agreedName(");
+  assert.ok(at2 >= 0, "agreedName is in server.js");
+  const end2 = src.indexOf("\n}\n", at2);
+  const agreedName = new Function(`${src.slice(at2, end2 + 2)}; return agreedName;`)();
+  const request = 'Make an app to track my menstruation cycle\n\n(The agreed plan: calendar view.)\n\n(The app is called "Cycle Log".)';
+  assert.equal(agreedName(request), "Cycle Log");
+  assert.equal(agreedName("a pomodoro timer"), "", "no agreed name, no answer");
+  assert.equal(agreedName('x (The app is called "A/B: <test>?".)'), "A B test", "no file-name characters Windows refuses");
+  assert.match(src, /: agreedName\(request\) \|\| prettyName\(/, "the build's name asks agreedName first");
+  console.log("ok  the agreed name names the app");
+}
