@@ -752,7 +752,7 @@ export default {
       if (request.method === "POST" && pathname === "/report") {
         const over = await rateLimited(request, env, "report");
         if (over) return cors(over);
-        return cors(await putReport(request, env));
+        return cors(await putReport(request, env, ctx));
       }
       // Registry takedown with notice, reason, scope and appeal (IC-669,
       // tests 1313-1314). A block is a record, never a silent 404.
@@ -1777,7 +1777,7 @@ async function putShot(request, hash, env) {
 ///
 /// The bytes go to R2 and a small row to KV, so the admin list is one read
 /// rather than a bucket scan.
-async function putReport(request, env) {
+async function putReport(request, env, ctx) {
   // A bug report does NOT need a sign-in.
   //
   // It did, and that was backwards: the person whose product just broke was
@@ -1853,10 +1853,13 @@ async function putReport(request, env) {
   await env.APPS.put(`report:${id}`, JSON.stringify(meta));
   // The founder hears at once. A report sat unseen until he happened to
   // open the desk (2026-11-23); the person who sent it was waiting. Never
-  // in the way of the report itself.
-  await notifyFounderOfReport(env, meta, body).catch((error) =>
+  // in the way of the report itself: after the answer when the runtime
+  // allows it, since asking the builder can wake a sleeping machine.
+  const telling = notifyFounderOfReport(env, meta, body, identity).catch((error) =>
     console.error(`could not tell the founder about report ${id}: ${error}`),
   );
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(telling);
+  else await telling;
   return json({ ok: true, id });
 }
 
@@ -1875,12 +1878,23 @@ async function reportFacts(zip) {
     const session = JSON.parse((await read("session.json")) || "null");
     if (session && Array.isArray(session.messages)) {
       facts.title = String(session.title || "");
+      facts.session = String(session.id || "");
       const asked = session.messages.filter((m) => m && m.who === "YOU" && m.body);
       if (asked.length) facts.asked = String(asked[asked.length - 1].body);
       facts.failures = session.messages.filter((m) => m && m.kind === "fail").length;
+      // The whole conversation, in order: what they said, what Studio said.
+      facts.conversation = session.messages
+        .filter((m) => m && m.body && m.kind !== "note")
+        .map((m) => `${m.who === "YOU" ? "THEM" : "KRATE"}${m.kind === "fail" ? " (failed)" : ""}: ${cutLine(m.body, 600)}`);
+      if (session.planName) facts.app = String(session.planName);
     }
     const build = JSON.parse((await read("build.json")) || "null");
-    if (build && build.state === "failed") facts.error = String(build.error || build.line || "");
+    if (build) {
+      if (/^[0-9a-f]{32}$/.test(String(build.id || ""))) facts.buildId = build.id;
+      if (build.state === "failed") facts.error = String(build.error || build.line || "");
+      facts.stage = build.stage || "";
+      facts.line = build.line || "";
+    }
     const about = await read("about.txt");
     if (about) {
       const field = (k) => {
@@ -1888,7 +1902,12 @@ async function reportFacts(zip) {
         return line ? line.slice(k.length + 1).trim() : "";
       };
       facts.where = field("page") ? `Studio on the web (${field("page")})` : about.split("\n")[0];
+      facts.browser = field("browser");
     }
+    // What the desktop sends that a tab cannot: the AI's own transcript.
+    const transcript = await read("workspace/.agent-transcript.txt");
+    if (transcript) facts.transcriptTail = transcript.split("\n").slice(-40).join("\n");
+    facts.files = listing.map((e) => e.name);
   } catch (error) {
     facts.unread = String(error).slice(0, 120);
   }
@@ -1900,51 +1919,130 @@ function cutLine(text, n) {
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 }
 
-/// "Report from <who>": subject, text and HTML, short lines for a phone.
-/// To the founder only, so no unsubscribe switch (ESSENTIAL, like sign-ups).
-function founderReportMail(meta, facts) {
+/// The builder's own record of the reported build: cost, rounds, how it
+/// ended, the account's other recent builds and the end of the engine log
+/// (cloud/builder /support/build/). Null when there is no builder, no build
+/// id, or it does not answer in time.
+async function reportedBuild(env, buildId) {
+  const base = String(env.KRATE_BUILDER_URL || "").replace(/\/$/, "");
+  if (!base || !env.KRATE_BUILDER_SECRET || !buildId) return null;
+  try {
+    const res = await fetch(`${base}/support/build/${buildId}`, {
+      headers: { "x-krate-builder": env.KRATE_BUILDER_SECRET },
+      signal: AbortSignal.timeout(25000),
+    });
+    return res.ok ? await res.json() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function minutesBetween(start, end) {
+  if (!start || !end) return "";
+  const m = Math.round((end - start) / 60000);
+  return m < 1 ? "under a minute" : `${m} min`;
+}
+
+function money(usd) {
+  return Number.isFinite(usd) ? `$${usd.toFixed(2)}` : "";
+}
+
+/// "Report from <who>": everything needed to find and fix the fault
+/// without opening anything else -- who and how to reply, what they asked,
+/// the whole conversation, the build's cost, rounds and ending, their other
+/// recent builds, and the end of the engine log (the whole report and log
+/// are attached). To the founder only, so no unsubscribe switch.
+function founderReportMail(meta, facts, build, replyTo) {
   const named = meta.name && meta.name !== "anonymous";
   const who = named ? meta.name : "Someone without an account";
-  const at = new Date((meta.received || 0) * 1000).toLocaleString("en-GB", {
-    timeZone: "Asia/Singapore",
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const when = (ms) => new Date(ms).toLocaleString("en-GB", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" });
+  const at = when((meta.received || 0) * 1000);
   const desk = "https://hub.krate.tech/admin#reports";
   const rows = [
     ["From", named && meta.from ? `${who} (@${meta.from})` : who],
-    ...(facts.title ? [["Session", cutLine(facts.title, 120)]] : []),
-    ...(facts.asked ? [["They asked", cutLine(facts.asked, 300)]] : []),
-    ...(facts.error ? [["What went wrong", cutLine(facts.error, 300)]] : []),
-    ...(facts.failures ? [["Failed builds", String(facts.failures)]] : []),
+    ...(replyTo ? [["Reply to", replyTo]] : []),
     ...(meta.note ? [["Their note", cutLine(meta.note, 400)]] : []),
+    ...(facts.app || facts.title ? [["App", cutLine(facts.app || facts.title, 120)]] : []),
+    ...(facts.asked ? [["They asked", cutLine(facts.asked, 400)]] : []),
+    ...(facts.error ? [["What they saw", cutLine(facts.error, 300)]] : []),
+    ...(facts.failures ? [["Failed builds in this session", String(facts.failures)]] : []),
     ["Where", [facts.where || "Studio", meta.os, meta.krate && `Krate ${meta.krate}`].filter(Boolean).join(" · ")],
+    ...(facts.browser ? [["Browser", cutLine(facts.browser, 200)]] : []),
     ["When", `${at} Singapore time`],
-    ["Report", meta.id],
+    ["Report", `${meta.id}${facts.session ? ` · session ${facts.session}` : ""}`],
   ];
+  const buildRows = build
+    ? [
+        ["Build", build.id],
+        ["Ended", [build.state, build.stage && `at ${build.stage}`].filter(Boolean).join(" ")],
+        ["Cost", [money(build.usd), build.rounds != null && `${build.rounds} rounds`, build.spend && build.spend.model, build.paidBy && `paid by ${build.paidBy}`].filter(Boolean).join(" · ")],
+        ["Took", minutesBetween(build.started, build.finished)],
+        ...(build.line ? [["Last engine line", cutLine(build.line, 200)]] : []),
+      ].filter(([, v]) => v)
+    : facts.buildId
+      ? [["Build", `${facts.buildId} (the builder did not answer; its record is on the volume)`]]
+      : [];
+  const recent = build && build.recent && build.recent.length
+    ? build.recent.map((r) => `${when(r.started || 0)}  ${r.state}  ${money(r.usd)}${r.rounds != null ? ` ${r.rounds} rounds` : ""}  ${r.id}${r.error ? `  "${cutLine(r.error, 80)}"` : ""}`)
+    : [];
+  const logTail = build && build.log ? build.log.trimEnd().split("\n").slice(-60).join("\n") : "";
+  const fullLog = build && build.id
+    ? `fly ssh console -a krate-builder -C "cat /work/state/logs/${build.id}.log"`
+    : "";
+
   const about = facts.error || facts.title;
   const subject = `Report from ${who}${about ? `: ${cutLine(about, 60)}` : ""}`;
+  const section = (title, lines) => (lines.length ? ["", `-- ${title} --`, ...lines] : []);
   const text = [
     `${who} sent a report from Studio.`,
     "",
     ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...section("The build", buildRows.map(([k, v]) => `${k}: ${v}`)),
+    ...section("Their other recent builds", recent),
+    ...section("The conversation", facts.conversation || []),
+    ...section(`The engine log, last 60 lines${build && build.logBytes ? ` of ${Math.round(build.logBytes / 1024)} KB` : ""}`, logTail ? logTail.split("\n") : []),
+    ...section("The AI's transcript, last 40 lines", facts.transcriptTail ? facts.transcriptTail.split("\n") : []),
+    ...section("In the report", facts.files || []),
     "",
-    `The evidence and their session: ${desk}`,
+    ...(fullLog ? [`The whole engine log: ${fullLog}`] : []),
+    `The report on the desk: ${desk}`,
   ].join("\n");
   const html = emailHtml({
     title: subject,
     preheader: facts.error ? cutLine(facts.error, 100) : `Sent ${at} Singapore time.`,
     heading: `${who} sent a report`,
-    blocks: [{ rows }],
+    blocks: [
+      { rows },
+      ...(buildRows.length ? ["The build", { rows: buildRows }] : []),
+      ...(recent.length ? ["Their other recent builds", { quote: recent.join("\n") }] : []),
+      ...(facts.conversation && facts.conversation.length ? ["The conversation", { quote: facts.conversation.join("\n\n") }] : []),
+      ...(logTail ? [`The engine log, last 60 lines (the whole log is attached)`, { quote: logTail }] : []),
+      ...(facts.transcriptTail ? ["The AI's transcript, last 40 lines", { quote: facts.transcriptTail }] : []),
+    ],
     button: { label: "Open the report", url: desk },
+    after: fullLog ? [`The whole engine log on the builder: ${fullLog}`] : [],
     footer: ["Sent to the founder only, when someone sends a report from Studio."],
   });
   return { subject, text, html };
 }
 
-async function notifyFounderOfReport(env, meta, zip) {
+function base64Of(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+async function notifyFounderOfReport(env, meta, zip, identity) {
   if (!env.RESEND_API_KEY) return;
-  const mail = founderReportMail(meta, await reportFacts(zip));
+  const facts = await reportFacts(zip);
+  const build = await reportedBuild(env, facts.buildId);
+  const replyTo = identity && identity.email ? String(identity.email) : "";
+  const mail = founderReportMail(meta, facts, build, replyTo);
+  // The report itself and the engine log travel with the mail, so it can be
+  // read on a phone and kept; a report over 5 MB stays on the desk only.
+  const attachments = [];
+  if (zip.length <= 5 * 1024 * 1024) attachments.push({ filename: `krate-report-${meta.id}.zip`, content: base64Of(zip) });
+  if (build && build.log) attachments.push({ filename: `engine-${build.id}.log`, content: base64Of(new TextEncoder().encode(build.log)) });
   await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -1954,9 +2052,12 @@ async function notifyFounderOfReport(env, meta, zip) {
     body: JSON.stringify({
       from: "Krate <hello@krate.tech>",
       to: founderInboxes(env),
+      // No reply-to: people are written to from the desk's Mail section,
+      // from krate.tech, so a reply from this inbox is never the answer.
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
+      ...(attachments.length ? { attachments } : {}),
     }),
   });
 }
