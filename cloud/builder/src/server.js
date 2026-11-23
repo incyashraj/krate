@@ -288,6 +288,14 @@ async function savePlans() {
  */
 const STATE_DIR = process.env.KRATE_STATE_DIR || "/work/state";
 const JOBS_DIR = join(STATE_DIR, "jobs");
+// A failed build's engine output, kept on the volume. The build folder is
+// deleted when a job ends and Fly holds minutes of logs, so a failure kept
+// nothing but its one-line error: on 2026-11-23 a person's report named two
+// builds that stopped at 15 rounds and $2.58, and why they looped could not
+// be read anywhere. Newest LOGS_KEPT only; read with `fly ssh console`.
+const LOGS_DIR = join(STATE_DIR, "logs");
+const LOGS_KEPT = 200;
+const LOG_BYTES = 256 * 1024;
 
 /* Every child that builds or runs a stranger's code starts here: as a build
  * user leased from the pool for that one job, with an allow-listed
@@ -389,6 +397,23 @@ async function persistJob(job) {
     await writeFile(`${path}.tmp`, JSON.stringify(record));
     await rename(`${path}.tmp`, path);
   } catch (e) { /* the next state change tries again */ }
+}
+
+async function keepFailedLog(id, log) {
+  if (!stateWritable || !log) return;
+  try {
+    await mkdir(LOGS_DIR, { recursive: true });
+    await writeFile(join(LOGS_DIR, `${id}.log`), log);
+    const names = (await readdir(LOGS_DIR)).filter((n) => n.endsWith(".log"));
+    if (names.length <= LOGS_KEPT) return;
+    const aged = await Promise.all(
+      names.map(async (n) => ({ n, t: (await stat(join(LOGS_DIR, n)).catch(() => ({ mtimeMs: 0 }))).mtimeMs })),
+    );
+    aged.sort((x, y) => x.t - y.t);
+    for (const { n } of aged.slice(0, aged.length - LOGS_KEPT)) {
+      await unlink(join(LOGS_DIR, n)).catch(() => {});
+    }
+  } catch (e) { /* a log we could not keep never fails the build twice */ }
 }
 
 async function persistResultBytes(job) {
@@ -871,8 +896,10 @@ async function startBuild({ request, token, account, device, revise = null, shap
   });
 
   let tail = "";
+  let log = "";
   const onChunk = (buf) => {
     tail = (tail + buf.toString()).slice(-4000);
+    log = (log + buf.toString()).slice(-LOG_BYTES);
     for (const raw of buf.toString().split("\n")) {
       const line = raw.trim();
       if (!line) continue;
@@ -942,7 +969,10 @@ async function startBuild({ request, token, account, device, revise = null, shap
       job.error = job.error || plainFailure(tail);
       job.finished = Date.now();
       await persistJob(job);
-      await audit({ action: "failed", account, job: job.id });
+      await keepFailedLog(job.id, log);
+      // What it cost, as "done" and "stopped" say: two failed builds spent
+      // $5.16 of the Krate key on 2026-11-23 and the audit showed nothing.
+      await audit({ action: "failed", account, job: job.id, ...(job.spend ? { usd: job.spend.usd, rounds: job.spend.rounds } : {}) });
       // A failure on our side costs the person nothing: the case records it
       // and stays open for a free retry. The timeout is this machine being
       // slow (infra); anything else out of `krate create` is the engine or
@@ -1066,7 +1096,8 @@ async function startBuild({ request, token, account, device, revise = null, shap
       job.error = "The app was made but could not be read back.";
       job.finished = Date.now();
       await persistJob(job);
-      await audit({ action: "failed", account, job: job.id });
+      await keepFailedLog(job.id, log);
+      await audit({ action: "failed", account, job: job.id, ...(job.spend ? { usd: job.spend.usd, rounds: job.spend.rounds } : {}) });
     }
     cleanup(job, { keepFile: true });
   });
