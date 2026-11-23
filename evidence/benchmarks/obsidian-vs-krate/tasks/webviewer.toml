@@ -1,0 +1,37 @@
+name = "Web viewer: open one, type an address, go"
+[[step]]
+wait_ms = 800
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Open web viewer"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "New web viewer"
+[[step]]
+shoot = "t-web-blank.png"
+[[step]]
+type = "example.com"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_text = "https://example.com"
+[[step]]
+shoot = "t-web-page.png"
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Search the web"
+[[step]]
+key = "Enter"
+[[step]]
+type = "hello world"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_text = "https://duckduckgo.com/?q=hello%20world"

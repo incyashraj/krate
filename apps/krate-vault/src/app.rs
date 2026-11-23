@@ -275,6 +275,8 @@ pub enum View {
     /// Backlinks, outline or outgoing links of a note, as a tab linked to
     /// the note's tab.
     Side(Box<SideTab>),
+    /// A web page (src/webviewer.rs).
+    Web(Box<crate::webviewer::WebTab>),
 }
 
 pub struct SideTab {
@@ -315,6 +317,7 @@ impl View {
             View::Recovery(_) => "File recovery",
             View::File(f) => &f.title,
             View::Side(s) => &s.title,
+            View::Web(w) => &w.title,
         }
     }
 
@@ -323,7 +326,7 @@ impl View {
             View::Canvas(c) => Some(&c.path),
             View::Base(b) => Some(&b.path),
             View::File(f) => Some(&f.path),
-            View::Graph(_) | View::Recovery(_) | View::Side(_) => None,
+            View::Graph(_) | View::Recovery(_) | View::Side(_) | View::Web(_) => None,
         }
     }
 
@@ -491,6 +494,16 @@ pub enum Cmd {
     RandomNote,
     UniqueNote,
     StartPresentation,
+    WorkspaceSave,
+    WorkspaceLoad,
+    WorkspaceSaveAndLoad,
+    WorkspaceManage,
+    WebOpen,
+    WebSearch,
+    WebFocusAddress,
+    RecordToggle,
+    RecordStart,
+    RecordStop,
     DailyPrev,
     DailyNext,
     InsertTemplate,
@@ -816,6 +829,69 @@ pub const COMMANDS: &[Command] = &[
         "bases",
     ),
     c(
+        Cmd::RecordStart,
+        "audio-recorder:start",
+        "Audio recorder: Start recording audio",
+        "",
+        "audio-recorder",
+    ),
+    c(
+        Cmd::RecordStop,
+        "audio-recorder:stop",
+        "Audio recorder: Stop recording audio",
+        "",
+        "audio-recorder",
+    ),
+    c(
+        Cmd::WebOpen,
+        "webviewer:open",
+        "Web viewer: Open web viewer",
+        "",
+        "webviewer",
+    ),
+    c(
+        Cmd::WebSearch,
+        "webviewer:search",
+        "Web viewer: Search the web",
+        "",
+        "webviewer",
+    ),
+    c(
+        Cmd::WebFocusAddress,
+        "webviewer:focus-address-bar",
+        "Web viewer: Focus address bar",
+        "",
+        "webviewer",
+    ),
+    c(
+        Cmd::WorkspaceLoad,
+        "workspaces:load",
+        "Workspaces: Load workspace layout",
+        "",
+        "workspaces",
+    ),
+    c(
+        Cmd::WorkspaceSave,
+        "workspaces:save",
+        "Workspaces: Save layout",
+        "",
+        "workspaces",
+    ),
+    c(
+        Cmd::WorkspaceSaveAndLoad,
+        "workspaces:save-and-load",
+        "Workspaces: Save and load another layout",
+        "",
+        "workspaces",
+    ),
+    c(
+        Cmd::WorkspaceManage,
+        "workspaces:open-modal",
+        "Workspaces: Manage workspace layouts",
+        "",
+        "workspaces",
+    ),
+    c(
         Cmd::StartPresentation,
         "slides:start",
         "Slides: Start presentation",
@@ -1070,6 +1146,8 @@ pub enum Pick {
     Note(String),
     /// A tab: its group and place.
     Tab(usize, usize),
+    /// A saved workspace layout, by name.
+    Workspace(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1096,6 +1174,8 @@ pub enum ListKind {
     CanvasNote,
     /// A tab in another group to link the active tab with.
     LinkWith,
+    /// A saved workspace layout to load (src/workspaces.rs).
+    Workspaces,
 }
 
 pub struct ListPrompt {
@@ -1205,6 +1285,10 @@ pub enum AskFor {
     BaseFilterValue(bool, Vec<usize>),
     /// A base filter condition written as a formula.
     BaseFilterFormula(bool, Vec<usize>),
+    /// The name a workspace layout is saved under.
+    WorkspaceName,
+    /// Words to search the web for, in a web viewer.
+    WebSearch,
 }
 
 pub enum Overlay {
@@ -1315,6 +1399,14 @@ pub enum Hit {
     BaseCell(usize, usize),
     AskOk,
     SettingsReset(usize),
+    /// A web viewer's header: back, reload, the address field, reader view.
+    WebBack,
+    WebReload,
+    WebAddress,
+    WebReader,
+    /// A row of the Manage workspace layouts dialog: Load, or its x.
+    LayoutLoad(String),
+    LayoutDelete(String),
 }
 
 /// A pane's answer computed from the open note, recomputed only when the
@@ -1360,6 +1452,16 @@ pub struct App {
     pub pointer: (f32, f32),
     /// Slides: the note being presented and the slide showing.
     pub slides: Option<(String, usize)>,
+    /// The saved workspace layouts for the picker and the Manage dialog:
+    /// each name, when it was saved ("Modified 22 minutes ago") and
+    /// whether it is the one in use; and whether the picker saves the one
+    /// in use before it loads ("Save and load another layout").
+    pub workspace_list: Vec<(String, String, bool)>,
+    pub layout_save_first: bool,
+    /// Audio recorder (src/recorder.rs): recording now, and what the guest
+    /// is asked to do with the microphone.
+    pub mic_on: bool,
+    pub record_want: Option<crate::recorder::Want>,
     /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
     pub closed: Vec<String>,
     pub settings: Settings,
@@ -1458,6 +1560,10 @@ impl App {
             group_ids: Vec::new(),
             pointer: (0.0, 0.0),
             slides: None,
+            workspace_list: Vec::new(),
+            layout_save_first: false,
+            mic_on: false,
+            record_want: None,
             closed: Vec::new(),
             settings: Settings::new(),
             bookmarks: Vec::new(),
@@ -2976,6 +3082,17 @@ impl App {
                     if !cm.plugin.is_empty() && !self.settings.plugin_on(cm.plugin) {
                         continue;
                     }
+                    // Shown only where they apply, as the notes app's
+                    // commands with a check are.
+                    let applies = match cm.cmd {
+                        Cmd::RecordStart => !self.mic_on,
+                        Cmd::RecordStop => self.mic_on,
+                        Cmd::WebFocusAddress => self.web().is_some(),
+                        _ => true,
+                    };
+                    if !applies {
+                        continue;
+                    }
                     if let Some(s) = fuzzy(q, cm.title) {
                         scored.push((if q.is_empty() { -(i as i32) } else { s }, i));
                     }
@@ -3062,6 +3179,18 @@ impl App {
                         let mut it = note_item(&n.name, &n.path);
                         it.pick = Pick::Note(n.path.clone());
                         p.items.push(it);
+                    }
+                }
+            }
+            ListKind::Workspaces => {
+                for (n, _, on) in &self.workspace_list {
+                    if fuzzy(q, n).is_some() {
+                        p.items.push(Item {
+                            title: n.clone(),
+                            detail: String::new(),
+                            hint: String::from(if *on { "Currently active" } else { "" }),
+                            pick: Pick::Workspace(n.clone()),
+                        });
                     }
                 }
             }
@@ -3190,6 +3319,7 @@ impl App {
                 _ => self.create_named(&name),
             },
             Pick::Template(path) => self.insert_template(&path),
+            Pick::Workspace(name) => self.pick_layout_done(&name),
             Pick::Tab(pi, ti) => self.link_with(pi, ti),
             Pick::Note(path) => match kind {
                 ListKind::MergeInto(from) => self.merge_into(&from, &path),
@@ -3309,6 +3439,30 @@ impl App {
             Cmd::NewBase => self.new_file("Untitled", ".base", crate::bases::new_base_text()),
             Cmd::DailyNote => self.open_daily(0),
             Cmd::RandomNote => self.open_random_note(),
+            Cmd::WorkspaceSave => self.save_active_layout(),
+            Cmd::WebOpen => self.new_web_viewer(),
+            Cmd::RecordToggle => self.record_toggle(),
+            Cmd::RecordStart => {
+                if !self.mic_on {
+                    self.record_toggle();
+                }
+            }
+            Cmd::RecordStop => {
+                if self.mic_on {
+                    self.record_toggle();
+                }
+            }
+            Cmd::WebFocusAddress => self.focus_address(),
+            Cmd::WebSearch => {
+                self.overlay = Some(Overlay::Ask(Ask {
+                    title: String::from("Search the web"),
+                    input: Input::with(""),
+                    purpose: AskFor::WebSearch,
+                }));
+            }
+            Cmd::WorkspaceLoad => self.pick_layout(false),
+            Cmd::WorkspaceSaveAndLoad => self.pick_layout(true),
+            Cmd::WorkspaceManage => self.manage_layouts(),
             Cmd::StartPresentation => {
                 if let Some(d) = self.doc() {
                     self.slides = Some((d.text(), 0));
@@ -3517,6 +3671,9 @@ impl App {
             return true;
         }
         if self.overlay.is_none() && !m.primary && self.base_search_key(key) {
+            return true;
+        }
+        if self.overlay.is_none() && self.web_key(key, m) {
             return true;
         }
         // The find bar, several carets and folding (src/links.rs).
@@ -3946,6 +4103,10 @@ impl App {
         if self.base_search_text(s) {
             return;
         }
+        // A web viewer's address field.
+        if self.web_text(s) {
+            return;
+        }
         if self.focus == Focus::Tree {
             return;
         }
@@ -4035,6 +4196,17 @@ impl App {
             Hit::TabClose(i) => self.close_tab(i),
             Hit::NewTab => self.new_tab(),
             Hit::Nav(fwd) => self.navigate(fwd),
+            Hit::LayoutLoad(name) => {
+                self.overlay = None;
+                self.load_layout(&name);
+            }
+            Hit::LayoutDelete(name) => {
+                self.delete_layout(&name);
+                self.workspace_list = self.layout_rows();
+            }
+            h @ (Hit::WebBack | Hit::WebReload | Hit::WebAddress | Hit::WebReader) => {
+                self.web_hit(&h)
+            }
             Hit::ModeToggle => self.run(Cmd::ToggleReading),
             Hit::SearchBox => self.focus = Focus::Search,
             Hit::SearchFile(i) => {

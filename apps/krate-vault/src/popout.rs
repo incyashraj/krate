@@ -253,6 +253,22 @@ impl App {
                             _ => return None,
                         }
                     }
+                    View::Web(w) => {
+                        // As the notes app keeps a web viewer.
+                        st.set("url", Value::s(&w.url));
+                        if w.url != crate::webviewer::BLANK {
+                            st.set("title", Value::s(&w.title));
+                        }
+                        st.set(
+                            "mode",
+                            Value::s(if w.url == crate::webviewer::BLANK {
+                                "blank"
+                            } else {
+                                "webview"
+                            }),
+                        );
+                        "webviewer"
+                    }
                     View::Recovery(_) | View::Side(_) => return None,
                 };
                 (kind, st)
@@ -266,6 +282,20 @@ impl App {
         if t.pinned {
             state_box.set("pinned", Value::Bool(true));
         }
+        // The tab's icon and title, as the notes app writes them beside it.
+        let icon = match kind {
+            "canvas" => "lucide-layout-dashboard",
+            "bases" => "lucide-table",
+            "pdf" => "lucide-file-text",
+            "image" => "lucide-image",
+            "audio" => "lucide-file-audio",
+            "video" => "lucide-file-video",
+            "graph" | "localgraph" => "lucide-git-fork",
+            "webviewer" => "globe-2",
+            _ => "lucide-file",
+        };
+        state_box.set("icon", Value::s(icon));
+        state_box.set("title", Value::s(t.title()));
         let mut leaf = Value::obj();
         leaf.set("id", Value::s(&node_id(*n)));
         leaf.set("type", Value::s("leaf"));
@@ -339,6 +369,31 @@ impl App {
         if self.vault.is_none() || self.restoring {
             return;
         }
+        let (main, floating) = self.layout_values();
+        let Some(v) = self.vault.as_mut() else {
+            return;
+        };
+        let mut doc =
+            v.fs.read(WORKSPACE)
+                .ok()
+                .and_then(|t| json::parse(&t))
+                .filter(|d| matches!(d, Value::Obj(_)))
+                .unwrap_or_else(Value::obj);
+        doc.set("main", main);
+        if self.floating.is_empty() {
+            doc.remove("floating");
+        } else {
+            doc.set("floating", floating);
+        }
+        let text = json::pretty(&doc, "  ");
+        if v.fs.read(WORKSPACE).ok().as_deref() != Some(text.as_str()) {
+            let _ = v.fs.write(WORKSPACE, &text);
+        }
+    }
+
+    /// The main window's groups and the windows of their own, in the notes
+    /// app's shape (`main`, `floating`).
+    pub fn layout_values(&self) -> (Value, Value) {
         let mut n = 0u64;
         let mut main = match &self.layout {
             Layout::Pane(_) => {
@@ -388,25 +443,7 @@ impl App {
         floating.set("id", Value::s(&node_id(n)));
         floating.set("type", Value::s("split"));
         floating.set("children", Value::Arr(windows));
-        let Some(v) = self.vault.as_mut() else {
-            return;
-        };
-        let mut doc =
-            v.fs.read(WORKSPACE)
-                .ok()
-                .and_then(|t| json::parse(&t))
-                .filter(|d| matches!(d, Value::Obj(_)))
-                .unwrap_or_else(Value::obj);
-        doc.set("main", main);
-        if self.floating.is_empty() {
-            doc.remove("floating");
-        } else {
-            doc.set("floating", floating);
-        }
-        let text = json::pretty(&doc, "  ");
-        if v.fs.read(WORKSPACE).ok().as_deref() != Some(text.as_str()) {
-            let _ = v.fs.write(WORKSPACE, &text);
-        }
+        (main, floating)
     }
 
     /// Bring back the groups and windows the workspace file keeps.
@@ -419,6 +456,12 @@ impl App {
         else {
             return;
         };
+        self.restore_from(&doc);
+    }
+
+    /// Bring back the groups and windows a layout (`main`, `floating`)
+    /// holds, into a workspace with one empty group.
+    pub fn restore_from(&mut self, doc: &Value) {
         self.restoring = true;
         if let Some(main) = doc.get("main") {
             let mut first = true;
@@ -554,6 +597,24 @@ impl App {
             let before = self.tabs.len();
             match (st.get_str("type"), file) {
                 (Some("graph"), _) => self.open_graph(None),
+                (Some("webviewer"), _) => {
+                    let s = st.get("state");
+                    let url = s
+                        .and_then(|s| s.get_str("url"))
+                        .unwrap_or(crate::webviewer::BLANK);
+                    let title = s.and_then(|s| s.get_str("title")).unwrap_or("");
+                    let blank = self.tabs.len() == 1
+                        && self.tabs[0].path().is_none()
+                        && self.tabs[0].view.is_none();
+                    if !blank {
+                        self.new_tab();
+                    }
+                    if let Some(t) = self.tab_mut() {
+                        let mut w = crate::webviewer::WebTab::new(url);
+                        w.title = crate::webviewer::title_for(url, title);
+                        t.view = Some(View::Web(alloc::boxed::Box::new(w)));
+                    }
+                }
                 (Some("localgraph"), Some(f)) if exists(self, f) => {
                     // Made in place, not beside: the layout is being read.
                     let opts = st.get("state").and_then(|s| s.get("options"));

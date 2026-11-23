@@ -1,0 +1,19 @@
+name = "Web viewer: an address the app may not open says so"
+[[step]]
+wait_ms = 800
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Open web viewer"
+[[step]]
+key = "Enter"
+[[step]]
+type = "http://example.com"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_text = "Unable to load site."
+[[step]]
+shoot = "t-web-refused.png"

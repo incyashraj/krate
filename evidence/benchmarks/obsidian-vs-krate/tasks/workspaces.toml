@@ -1,0 +1,41 @@
+name = "Workspaces: save the layout under a name in Manage, load another"
+[[step]]
+wait_ms = 800
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Manage workspace"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "Manage workspace layouts"
+[[step]]
+expect_text = "Writing"
+[[step]]
+type = "Reading"
+[[step]]
+key = "Enter"
+[[step]]
+expect_text = "Successfully saved layout"
+[[step]]
+expect_text = "Reading"
+[[step]]
+shoot = "t-ws-manage.png"
+[[step]]
+key = "Escape"
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Load workspace"
+[[step]]
+key = "Enter"
+[[step]]
+shoot = "t-ws-pick.png"
+[[step]]
+type = "Writ"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 300
+[[step]]
+expect_text = "Home"

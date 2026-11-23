@@ -712,7 +712,10 @@ impl App {
         if text.is_empty()
             && !matches!(
                 a.purpose,
-                AskFor::GraphSearch | AskFor::BaseCell(..) | AskFor::BaseRename(_)
+                AskFor::GraphSearch
+                    | AskFor::BaseCell(..)
+                    | AskFor::BaseRename(_)
+                    | AskFor::WorkspaceName
             )
         {
             return;
@@ -733,6 +736,12 @@ impl App {
             }
             AskFor::BaseFilterValue(g, path) => self.base_filter_value(g, path, &text),
             AskFor::BaseFilterFormula(g, path) => self.base_filter_formula(g, path, &text),
+            AskFor::WorkspaceName => self.manage_save(&text),
+            AskFor::WebSearch => {
+                if !text.trim().is_empty() {
+                    self.open_web(&crate::webviewer::search_for(text.trim()));
+                }
+            }
             AskFor::BaseCell(path, prop) => {
                 self.set_property(&path, &prop, &text);
             }
@@ -2259,7 +2268,7 @@ impl App {
         out
     }
 
-    fn explorer_dirty(&mut self) {
+    pub(crate) fn explorer_dirty(&mut self) {
         self.explorer.rows_dirty = true;
     }
 }

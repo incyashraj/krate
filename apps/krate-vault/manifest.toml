@@ -80,7 +80,7 @@ required = false
 
 [[capabilities]]
 cap = "net.connect:*:443"
-rationale = "Show pictures a note embeds from the web, and the title of a page a canvas card links to"
+rationale = "Show pictures a note embeds from the web, the title of a page a canvas card links to, and web pages in the Web viewer"
 required = false
 
 [[capabilities]]

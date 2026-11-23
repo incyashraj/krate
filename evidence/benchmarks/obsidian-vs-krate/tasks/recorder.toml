@@ -1,0 +1,21 @@
+name = "Audio recorder: start without the microphone granted says why"
+[[step]]
+wait_ms = 800
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "Start recording"
+[[step]]
+expect_text = "Audio recorder: Start recording audio"
+[[step]]
+key = "Enter"
+[[step]]
+wait_ms = 300
+[[step]]
+expect_text = "Krate has not given Vault the microphone"
+[[step]]
+key = "Primary+p"
+[[step]]
+type = "recording audio"
+[[step]]
+shoot = "t-rec-palette.png"

@@ -60,6 +60,7 @@ pub mod panes;
 pub mod popout;
 pub mod propedit;
 pub mod props;
+pub mod recorder;
 pub mod recovery;
 pub mod regex;
 pub mod sample;
@@ -73,7 +74,9 @@ pub mod text;
 pub mod vault;
 pub mod vfs;
 pub mod webp;
+pub mod webviewer;
 pub mod workspace;
+pub mod workspaces;
 pub mod yaml;
 
 #[cfg(target_arch = "wasm32")]

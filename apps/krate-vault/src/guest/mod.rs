@@ -16,8 +16,10 @@ mod editor;
 mod look;
 mod media;
 mod pdftext;
+mod recorder;
 mod slides;
 mod views;
+mod web;
 mod widgets;
 mod windows;
 
@@ -174,6 +176,8 @@ struct Ui {
     caret_xy: Option<(f32, f32)>,
     title: String,
     frames: u64,
+    /// The microphone while the Audio recorder records.
+    mic: Option<recorder::Mic>,
     w: f32,
     h: f32,
     drop_text: Option<char>,
@@ -262,6 +266,7 @@ fn view_kind(tb: &crate::app::Tab) -> u8 {
         Some(View::Recovery(_)) => 4,
         Some(View::File(_)) => 5,
         Some(View::Side(_)) => 6,
+        Some(View::Web(_)) => 11,
         None => 0,
     }
 }
@@ -455,6 +460,7 @@ impl Ui {
         }
         let _ = canvas2d::present(self.c);
         self.said.send(self.win);
+        self.sweep_web();
         self.frames += 1;
         self.set_title();
         if !self.first_frame_done {
@@ -645,9 +651,9 @@ impl Ui {
         if ribbon > 0.0 {
             fill(self.c, r(0.0, head, ribbon, h - head), t.side);
             fill(self.c, r(ribbon - 1.0, head, 1.0, h - head), t.border);
-            let items: [(Icon, Cmd, &str, &str); 9] = [
+            let items: [(Icon, Cmd, &str, &str); 11] = [
                 (
-                    Icon::Switcher,
+                    Icon::FileSearch,
                     Cmd::QuickSwitcher,
                     "Open quick switcher",
                     "switcher",
@@ -661,7 +667,7 @@ impl Ui {
                     "daily-notes",
                 ),
                 (
-                    Icon::Template,
+                    Icon::Files,
                     Cmd::InsertTemplate,
                     "Insert template",
                     "templates",
@@ -672,7 +678,19 @@ impl Ui {
                     "Open command palette",
                     "command-palette",
                 ),
-                (Icon::Table, Cmd::NewBase, "Create new base", "bases"),
+                (
+                    Icon::Mic,
+                    Cmd::RecordToggle,
+                    "Start/stop recording",
+                    "audio-recorder",
+                ),
+                (
+                    Icon::Layout,
+                    Cmd::WorkspaceManage,
+                    "Manage workspace layouts",
+                    "workspaces",
+                ),
+                (Icon::LayoutList, Cmd::NewBase, "Create new base", "bases"),
                 (
                     Icon::Dice,
                     Cmd::RandomNote,
@@ -691,8 +709,11 @@ impl Ui {
                 if !self.app.settings.plugin_on(plugin) {
                     continue;
                 }
-                self.icon_button(ic, ribbon * 0.5, y, label, Hit::Ribbon(cmd), false);
-                y += 34.0 * k;
+                // The microphone shows it is recording, as the notes app's
+                // button is marked active.
+                let on = cmd == Cmd::RecordToggle && self.app.mic_on;
+                self.icon_button(ic, ribbon * 0.5, y, label, Hit::Ribbon(cmd), on);
+                y += 30.0 * k;
             }
         }
         // The left sidebar.
@@ -1537,6 +1558,7 @@ impl Ui {
                 4 => Some(Icon::History),
                 5 => Some(Icon::Image),
                 6 => Some(Icon::Backlinks),
+                11 => Some(Icon::Globe),
                 7 => Some(Icon::FileText),
                 9 => Some(Icon::Headphones),
                 8 | 10 => Some(Icon::File),
@@ -1753,7 +1775,9 @@ impl Ui {
             body.w,
             if header { sz.view_head } else { 0.0 },
         );
-        if header {
+        if header && kind == 11 {
+            self.draw_web_header(pane, vh, focused);
+        } else if header {
             // Back and forward, where the file is, and its actions.
             for (j, (fwd, ic, can, label)) in [
                 (false, Icon::ArrowLeft, can_back, "Navigate back"),
@@ -1854,6 +1878,7 @@ impl Ui {
             4 => self.draw_recovery(pane, content, focused),
             5 => self.draw_file(pane, content, focused),
             6 => self.draw_side(pane, content, focused),
+            11 => self.draw_web(pane, content, focused),
             _ if has_doc => self.draw_note(pane, content, focused),
             _ => {
                 if focused {
@@ -1982,6 +2007,10 @@ impl Ui {
             return true;
         }
         if let editor::Act::Url(u) = &act {
+            // In a web viewer when its plugin opens links (src/webviewer.rs).
+            if self.app.open_link_in_web(u) {
+                return true;
+            }
             if krate::ui::launcher::open_url(u).is_err() {
                 self.app.say("Krate did not let this app open web links");
             }
@@ -3032,9 +3061,18 @@ impl Ui {
                 );
                 let rh = if two_line { 46.0 * k } else { 36.0 * k };
                 let in_h = 48.0 * k;
-                let foot = 36.0 * k;
+                // The layout picker has no footer, as the notes app's.
+                let foot = if p.kind == ListKind::Workspaces {
+                    0.0
+                } else {
+                    36.0 * k
+                };
                 let max_rows = (((h * 0.7 - in_h - foot - 16.0) / rh) as usize).clamp(1, 12);
-                let shown = p.items.len().min(max_rows);
+                let shown = p
+                    .items
+                    .len()
+                    .min(max_rows)
+                    .max(usize::from(p.kind == ListKind::Workspaces));
                 if p.sel < p.first {
                     p.first = p.sel;
                 }
@@ -3043,6 +3081,7 @@ impl Ui {
                 }
                 let card = r(x, y, pw, in_h + shown as f32 * rh + foot + 12.0);
                 let items = p.items.clone();
+                let p_kind_layouts = p.kind == ListKind::Workspaces;
                 let (sel, first) = (p.sel, p.first);
                 let input = p.input.clone();
                 let placeholder = match &p.kind {
@@ -3054,6 +3093,7 @@ impl Ui {
                     ListKind::ExtractTo(_) => "Find a note, or type the new note's name...",
                     ListKind::CanvasNote => "Find a note to add...",
                     ListKind::LinkWith => "Choose a tab to link with...",
+                    ListKind::Workspaces => "Type layout name...",
                 };
                 let footer = match &p.kind {
                     ListKind::Switcher => "\u{2191}\u{2193} to navigate    \u{21b5} to open    \u{2318} \u{21b5} to open in new tab    shift \u{21b5} to create    esc to dismiss",
@@ -3094,6 +3134,17 @@ impl Ui {
                 );
                 self.said.field(r(x, y, pw, in_h), placeholder, &input.text);
                 fill(self.c, r(x, y + in_h, pw, 1.0), t.border);
+                if items.is_empty() && p_kind_layouts {
+                    text(
+                        self.c,
+                        "No saved layout found.",
+                        x + 18.0 * k,
+                        y + in_h + 6.0 + rh * 0.5 + sz.medium * 0.36,
+                        sz.medium,
+                        400,
+                        t.faint,
+                    );
+                }
                 for (n, item) in items.iter().enumerate().skip(first).take(shown) {
                     let ir = r(
                         x + 6.0,
@@ -3165,7 +3216,9 @@ impl Ui {
                     self.button(ir, &item.title, Hit::ListItem(n));
                 }
                 let fy = card.bottom() - foot;
-                fill(self.c, r(x, fy, pw, 1.0), t.border);
+                if foot > 0.0 {
+                    fill(self.c, r(x, fy, pw, 1.0), t.border);
+                }
                 fit(
                     self.c,
                     footer,
@@ -3297,6 +3350,10 @@ impl Ui {
                 );
                 self.button(yes_r, yes, Hit::ConfirmYes);
                 self.button(no_r, "Cancel", Hit::ConfirmNo);
+            }
+            Overlay::Ask(a) if a.purpose == crate::app::AskFor::WorkspaceName => {
+                let input = a.input.clone();
+                self.draw_layouts(&input, w, h);
             }
             Overlay::Ask(a) => {
                 let title = a.title.clone();
@@ -4295,6 +4352,7 @@ impl krate::Guest for Component {
             caret_xy: None,
             title: String::new(),
             frames: 0,
+            mic: None,
             w: START_W as f32,
             h: START_H as f32,
             drop_text: None,
@@ -4552,6 +4610,9 @@ impl krate::Guest for Component {
             if !ui.fetches.is_empty() {
                 due(50);
             }
+            if ui.mic.is_some() || ui.app.record_want.is_some() || ui.web_loading() {
+                due(100);
+            }
             if ui.app.busy() || ui.views_busy() {
                 due(0);
             }
@@ -4798,6 +4859,13 @@ impl krate::Guest for Component {
                 changed = true;
             }
             if ui.poll_fetches() {
+                changed = true;
+            }
+            // The microphone while recording; a web page while it loads.
+            if ui.pump_mic() {
+                changed = true;
+            }
+            if ui.web_loading() {
                 changed = true;
             }
             // Background work, for at most 8 ms a frame.
