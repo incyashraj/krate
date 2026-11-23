@@ -130,7 +130,11 @@ impl Ui {
                             .map(|t| match crate::yaml::front_matter(&t) {
                                 // An embed shows the note without its
                                 // properties block.
-                                Some((_, end)) => String::from(t.get(end..).unwrap_or("")),
+                                Some((_, line)) => t
+                                    .split('\n')
+                                    .skip(line)
+                                    .collect::<alloc::vec::Vec<_>>()
+                                    .join("\n"),
                                 None => t,
                             })
                     }

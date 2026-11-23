@@ -486,6 +486,9 @@ pub enum Cmd {
     NewCanvas,
     NewBase,
     DailyNote,
+    RandomNote,
+    UniqueNote,
+    StartPresentation,
     DailyPrev,
     DailyNext,
     InsertTemplate,
@@ -809,6 +812,27 @@ pub const COMMANDS: &[Command] = &[
         "Bases: Create new base",
         "",
         "bases",
+    ),
+    c(
+        Cmd::StartPresentation,
+        "slides:start",
+        "Slides: Start presentation",
+        "",
+        "slides",
+    ),
+    c(
+        Cmd::RandomNote,
+        "random-note",
+        "Random note: Open random note",
+        "",
+        "random-note",
+    ),
+    c(
+        Cmd::UniqueNote,
+        "zk-prefixer",
+        "Unique note creator: Create new unique note",
+        "",
+        "zk-prefixer",
     ),
     c(
         Cmd::DailyNote,
@@ -1283,6 +1307,8 @@ pub enum Hit {
     BaseUi(crate::basemenu::BaseUi),
     /// A base's "New": from the toolbar (`usize::MAX`) or a board column.
     BaseNew(usize),
+    /// A presentation's arrows: on (true) or back.
+    Slide(bool),
     /// A cell of a base's table: row and column.
     BaseCell(usize, usize),
     AskOk,
@@ -1330,6 +1356,8 @@ pub struct App {
     pub group_ids: Vec<String>,
     /// Where the last press was, for a dropdown opened by it.
     pub pointer: (f32, f32),
+    /// Slides: the note being presented and the slide showing.
+    pub slides: Option<(String, usize)>,
     /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
     pub closed: Vec<String>,
     pub settings: Settings,
@@ -1427,6 +1455,7 @@ impl App {
             restoring: false,
             group_ids: Vec::new(),
             pointer: (0.0, 0.0),
+            slides: None,
             closed: Vec::new(),
             settings: Settings::new(),
             bookmarks: Vec::new(),
@@ -3276,6 +3305,13 @@ impl App {
             Cmd::NewCanvas => self.new_file("Untitled", ".canvas", crate::canvas::Canvas::default().to_text().as_str()),
             Cmd::NewBase => self.new_file("Untitled", ".base", crate::bases::new_base_text()),
             Cmd::DailyNote => self.open_daily(0),
+            Cmd::RandomNote => self.open_random_note(),
+            Cmd::StartPresentation => {
+                if let Some(d) = self.doc() {
+                    self.slides = Some((d.text(), 0));
+                }
+            }
+            Cmd::UniqueNote => self.new_unique_note(),
             Cmd::DailyPrev => self.open_daily(-1),
             Cmd::DailyNext => self.open_daily(1),
             Cmd::InsertTemplate => {
@@ -3462,6 +3498,21 @@ impl App {
 
     /// A key press. True when the app used it (and should redraw).
     pub fn key(&mut self, key: &str, m: Mods) -> bool {
+        // A presentation has the keyboard: arrows go on and back.
+        if let Some((text, i)) = self.slides.as_mut() {
+            let n = crate::workspace::slides_of(text).len();
+            match key {
+                "ArrowRight" | "ArrowDown" | "PageDown" | "Space" | "Enter" => {
+                    *i = (*i + 1).min(n.saturating_sub(1))
+                }
+                "ArrowLeft" | "ArrowUp" | "PageUp" | "Backspace" => *i = i.saturating_sub(1),
+                "Home" => *i = 0,
+                "End" => *i = n.saturating_sub(1),
+                "Escape" => self.slides = None,
+                _ => return false,
+            }
+            return true;
+        }
         if self.overlay.is_none() && !m.primary && self.base_search_key(key) {
             return true;
         }
@@ -4171,6 +4222,9 @@ impl App {
             Hit::BaseSort(col) => self.base_column_menu(col),
             Hit::BaseUi(u) => self.base_ui(u),
             Hit::BaseNew(group) => self.base_new(group),
+            Hit::Slide(on) => {
+                self.key(if on { "ArrowRight" } else { "ArrowLeft" }, m);
+            }
             Hit::BaseCell(r, c) => self.edit_base_cell(r, c),
             Hit::AskOk => self.ask_ok(),
             Hit::SettingsReset(i) => self.setting_reset(i),

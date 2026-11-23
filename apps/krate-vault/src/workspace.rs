@@ -1640,6 +1640,60 @@ impl App {
 
     /// Open today's daily note (`step` 0), or the one before or after the
     /// open one that is there (`-1`, `1`).
+    /// Random note: a note other than the one showing, picked at random.
+    pub fn open_random_note(&mut self) {
+        let here = self.active_path();
+        let notes: Vec<String> = match self.vault.as_ref() {
+            Some(v) => v
+                .notes
+                .iter()
+                .filter(|n| n.path.ends_with(".md") && Some(&n.path) != here.as_ref())
+                .map(|n| n.path.clone())
+                .collect(),
+            None => return,
+        };
+        if notes.is_empty() {
+            return;
+        }
+        self.seed = self
+            .seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(self.now | 1);
+        let pick = (self.seed >> 33) as usize % notes.len();
+        self.open_file(&notes[pick], false);
+    }
+
+    /// Unique note creator: a new note named by the time, as
+    /// `.obsidian/zk-prefixer.json` says (`format`, `folder`, `template`;
+    /// the notes app's default name is YYYYMMDDHHmm).
+    pub fn new_unique_note(&mut self) {
+        let cfg = self
+            .vault
+            .as_mut()
+            .and_then(|v| v.fs.read(".obsidian/zk-prefixer.json").ok())
+            .and_then(|t| crate::json::parse(&t))
+            .unwrap_or_else(Value::obj);
+        let format = cfg
+            .get_str("format")
+            .filter(|f| !f.is_empty())
+            .unwrap_or("YYYYMMDDHHmm");
+        let name = self.local.format(format);
+        let folder = String::from(cfg.get_str("folder").unwrap_or("").trim_matches('/'));
+        let template = cfg
+            .get_str("template")
+            .filter(|t| !t.is_empty())
+            .map(|t| {
+                let mut p = String::from(t);
+                if !p.ends_with(".md") {
+                    p.push_str(".md");
+                }
+                p
+            })
+            .and_then(|p| self.vault.as_mut().and_then(|v| v.fs.read(&p).ok()))
+            .unwrap_or_default();
+        self.new_file_in(&folder, &name, ".md", &template);
+    }
+
     pub fn open_daily(&mut self, step: i64) {
         if self.vault.is_none() {
             return;
@@ -2396,6 +2450,30 @@ impl PageOf for Option<&Overlay> {
     }
 }
 
+/// A note cut into slides, as the Slides plugin cuts it: at each line that
+/// is only `---`, after the properties block.
+pub fn slides_of(text: &str) -> Vec<String> {
+    let skip = crate::yaml::front_matter(text).map_or(0, |(_, line)| line);
+    let mut out = alloc::vec![String::new()];
+    for line in text.split('\n').skip(skip) {
+        if line.trim_end() == "---" {
+            out.push(String::new());
+            continue;
+        }
+        if let Some(last) = out.last_mut() {
+            if !last.is_empty() {
+                last.push('\n');
+            }
+            last.push_str(line);
+        }
+    }
+    out.retain(|s| !s.trim().is_empty());
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
 /// The made-up path of a text card being edited with the note editor.
 pub const CARD_DOC: &str = "\u{1}card/";
 
@@ -2746,6 +2824,33 @@ mod tests {
         a.base_move_card(row, done);
         let t = a.vault.as_mut().unwrap().fs.read("Plan.md").unwrap();
         assert!(t.starts_with("---\nstatus: done\n"), "{t}");
+    }
+
+    #[test]
+    fn a_note_is_cut_into_slides() {
+        let s = slides_of("---\ntags: [x]\n---\n# One\nhello\n---\n# Two\n\n---\n");
+        assert_eq!(
+            s,
+            alloc::vec![String::from("# One\nhello"), String::from("# Two\n")]
+        );
+        let mut a = app();
+        a.open_file("Plan.md", false);
+        a.run(Cmd::StartPresentation);
+        assert!(a.slides.is_some());
+        a.key("ArrowRight", Mods::default());
+        a.key("Escape", Mods::default());
+        assert!(a.slides.is_none());
+    }
+
+    #[test]
+    fn random_and_unique_notes() {
+        let mut a = app();
+        a.open_file("Home.md", false);
+        a.open_random_note();
+        let p = a.active_path().unwrap();
+        assert!(p != "Home.md" && p.ends_with(".md"), "{p}");
+        a.new_unique_note();
+        assert_eq!(a.active_path().as_deref(), Some("202611220930.md"));
     }
 
     #[test]

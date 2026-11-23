@@ -16,6 +16,7 @@ mod editor;
 mod look;
 mod media;
 mod pdftext;
+mod slides;
 mod views;
 mod widgets;
 mod windows;
@@ -199,6 +200,8 @@ struct Ui {
     /// Canvas cards' text drawn with the note editor, by card: the vault
     /// generation, the text and its document (src/guest/carddoc.rs).
     card_docs: alloc::collections::BTreeMap<String, (u64, String, crate::editor::Doc)>,
+    /// A presentation is filling the window (src/guest/slides.rs).
+    slides_on: bool,
 }
 
 fn ms() -> u64 {
@@ -404,8 +407,11 @@ impl Ui {
                 t.side
             },
         );
+        self.follow_slides();
         if self.showing_fullscreen() {
             self.draw_fullscreen(w, h);
+        } else if self.app.slides.is_some() {
+            self.draw_slides(w, h);
         } else if self.app.vault.is_none() {
             self.draw_welcome(w, h);
         } else {
@@ -624,7 +630,7 @@ impl Ui {
         if ribbon > 0.0 {
             fill(self.c, r(0.0, head, ribbon, h - head), t.side);
             fill(self.c, r(ribbon - 1.0, head, 1.0, h - head), t.border);
-            let items: [(Icon, Cmd, &str, &str); 7] = [
+            let items: [(Icon, Cmd, &str, &str); 9] = [
                 (
                     Icon::Switcher,
                     Cmd::QuickSwitcher,
@@ -652,6 +658,18 @@ impl Ui {
                     "command-palette",
                 ),
                 (Icon::Table, Cmd::NewBase, "Create new base", "bases"),
+                (
+                    Icon::Dice,
+                    Cmd::RandomNote,
+                    "Open random note",
+                    "random-note",
+                ),
+                (
+                    Icon::FilePlus,
+                    Cmd::UniqueNote,
+                    "Create new unique note",
+                    "zk-prefixer",
+                ),
             ];
             let mut y = head + 22.0 * k;
             for (ic, cmd, label, plugin) in items {
@@ -4227,6 +4245,7 @@ impl krate::Guest for Component {
             base_pop: None,
             board_cols: Vec::new(),
             card_docs: alloc::collections::BTreeMap::new(),
+            slides_on: false,
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4361,6 +4380,7 @@ impl krate::Guest for Component {
                     )),
                     "basesearch" => ui.app.base_ui(crate::basemenu::BaseUi::Search),
                     "newwindow" => ui.app.run(Cmd::OpenInNewWindow),
+                    "slides" => ui.app.run(Cmd::StartPresentation),
                     "movewindow" => ui.app.run(Cmd::MoveToNewWindow),
                     "pdfthumbs" => ui.app.menu_action(crate::app::MenuAction::PdfThumbs),
                     "loop" => ui.app.menu_action(crate::app::MenuAction::MediaLoop),
