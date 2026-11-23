@@ -882,6 +882,7 @@ people can send. check-app ends with a note naming any it found.
 | `ui.menu:system` | no | computer only | a system menu |
 | `ui.open-url` | no | yes | hand a link to the browser |
 | `ui.notify` | no | yes | a desktop notification |
+| `ui.tray` | no | computer only | an icon in the menu bar or notification area (krate::ui::tray); the app may keep running there with no window |
 | `ui.dropzone:<mime-type>` | no | yes | accept dragged files |
 | `ui.dialog:message` | yes | yes | a message box (no file access; default-granted) |
 | `ui.dialog:confirm` | yes | yes | a yes/no question box (no file access; default-granted) |
@@ -1102,6 +1103,14 @@ takes this path, so any of them is a model for the wiring.
 - `menus::set-enabled: func(id: u64, enabled: bool)`
 - `menus::set-checked: func(id: u64, checked: bool)`
 - `menus::checked: func(id: u64) -> bool`
+- `tray::available: func() -> bool`
+- `tray::show: func(icon: icon, tooltip: string) -> result<u64, ui-error>`
+- `tray::set-icon: func(tray: u64, icon: icon) -> result<_, ui-error>`
+- `tray::set-tooltip: func(tray: u64, tooltip: string) -> result<_, ui-error>`
+- `tray::set-title: func(tray: u64, title: string) -> result<_, ui-error>`
+- `tray::set-menu: func(tray: u64, items: list<item>) -> result<_, ui-error>`
+- `tray::on-click: func(tray: u64, left: u64, right: u64) -> result<_, ui-error>`
+- `tray::remove: func(tray: u64)`
 
 ## `audio`
 

@@ -36,6 +36,12 @@ pollster = "0.4"
 # Decoding the exported window icon.
 png = "0.17"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# A tray icon (IC-1003): the freedesktop StatusNotifierItem protocol over
+# D-Bus, in pure Rust (zbus) on a thread of its own -- no system library to
+# link, and a desktop without a tray host answers in words. Unlicense.
+ksni = { version = "0.3.7", default-features = false, features = ["blocking", "async-io"] }
+
 [features]
 # Compile the real winit+GPU path on any OS, for local dev proof.
 dev-anyos = []

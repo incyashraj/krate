@@ -317,7 +317,6 @@ pub(crate) fn popup(hwnd: isize, x: f32, y: f32, scale: f32, tree: &MenuTree) {
     track(hwnd, tree, Owner::Popup, at);
 }
 
-#[allow(dead_code)] // the tray (IC-1003)
 /// Open a tray icon's menu at the cursor, owned by `hwnd` (the tray's
 /// hidden window).
 pub(crate) fn tray_popup(hwnd: isize, tray: u64, tree: &MenuTree) {
@@ -325,11 +324,4 @@ pub(crate) fn tray_popup(hwnd: isize, tray: u64, tree: &MenuTree) {
     // SAFETY: a POINT on the stack.
     let _ = unsafe { GetCursorPos(&mut at) };
     track(HWND(hwnd as *mut _), tree, Owner::Tray(tray), at);
-}
-
-#[allow(dead_code)] // the tray (IC-1003)
-/// Carry out a command chosen in a menu owned by a window Krate did not
-/// subclass (the tray's own window).
-pub(crate) fn perform_command(hwnd: isize, command: u16) -> bool {
-    perform(HWND(hwnd as *mut _), command)
 }

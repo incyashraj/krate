@@ -612,6 +612,8 @@ pub fn use_in_words(cap: &str) -> Option<String> {
         "device.usb" => "USB devices you pick".to_string(),
         "ui.clipboard" => "The clipboard".to_string(),
         "ui.notify" => "Notifications".to_string(),
+        // A phone has no tray (IC-1003), named so the menu is not a raw id.
+        "ui.tray" => "A tray icon".to_string(),
         "ui.open-url" => "Opening links".to_string(),
         "ui.menu" => "A menu".to_string(),
         "gfx.gpu" => "The graphics chip".to_string(),

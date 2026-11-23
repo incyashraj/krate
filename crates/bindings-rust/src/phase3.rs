@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, menus, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, menus, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tray, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -662,6 +662,56 @@ pub mod ui {
         /// everything in it, as one item the person can put back.
         pub fn move_to_trash(path: &str) -> Result<(), TrashError> {
             crate::bindings::krate::ui::trash::move_to_trash(path)
+        }
+    }
+    /// `krate:ui/tray`.
+    pub mod tray {
+        pub use crate::bindings::krate::ui::tray::{Icon, Item, UiError};
+
+        /// Whether this device has a tray at all.
+        pub fn available() -> bool {
+            crate::bindings::krate::ui::tray::available()
+        }
+
+        /// Show an icon with a tooltip; its handle. Needs `ui.tray`.
+        pub fn show(icon: &Icon, tooltip: &str) -> Result<u64, UiError> {
+            crate::bindings::krate::ui::tray::show(icon, tooltip)
+        }
+
+        /// Draw the icon anew (a badge, a state).
+        pub fn set_icon(tray: u64, icon: &Icon) -> Result<(), UiError> {
+            crate::bindings::krate::ui::tray::set_icon(tray, icon)
+        }
+
+        /// What the icon says when the pointer rests on it.
+        pub fn set_tooltip(tray: u64, tooltip: &str) -> Result<(), UiError> {
+            crate::bindings::krate::ui::tray::set_tooltip(tray, tooltip)
+        }
+
+        /// Short text beside the icon in a Mac's menu bar ("3", "12:40");
+        /// nothing elsewhere. Empty for none.
+        pub fn set_title(tray: u64, title: &str) -> Result<(), UiError> {
+            crate::bindings::krate::ui::tray::set_title(tray, title)
+        }
+
+        /// The menu the icon opens: the same items as `menus`, chosen as an
+        /// `action` event. Add a `quit` item so the person can always end the
+        /// app from here. An empty list for none.
+        pub fn set_menu(tray: u64, items: &[Item]) -> Result<(), UiError> {
+            crate::bindings::krate::ui::tray::set_menu(tray, items)
+        }
+
+        /// The `action` ids a click on the icon sends, left and right button (0
+        /// sends nothing). With a menu, a Mac opens the menu on any click and
+        /// Windows and Linux open it on the right button.
+        pub fn on_click(tray: u64, left: u64, right: u64) -> Result<(), UiError> {
+            crate::bindings::krate::ui::tray::on_click(tray, left, right)
+        }
+
+        /// Take the icon away. With no window open and no other icon, the app
+        /// ends.
+        pub fn remove(tray: u64) {
+            crate::bindings::krate::ui::tray::remove(tray)
         }
     }
     /// `krate:ui/tree`.

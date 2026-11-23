@@ -839,6 +839,14 @@ impl Phase3GuiHost {
             .is_ok()
     }
 
+    /// Whether the app may show a tray icon (`ui.tray`, IC-1003).
+    pub(crate) fn tray_allowed(&self) -> bool {
+        self.runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Tray))
+            .is_ok()
+    }
+
     /// The app's name as the standard menu items say it ("Quit Notes"), or
     /// empty when the run was not told it.
     pub(crate) fn app_display_name(&self) -> String {
@@ -1985,6 +1993,10 @@ impl Phase3GuiHost {
             if let Err(error) = self.dispatcher().pump_event_loop_once(*id) {
                 tracing::debug!(?error, window = id.get(), "native event pump failed");
             }
+        }
+        // A tray app between its windows still hears its icon (IC-1003).
+        if self.windows.is_empty() && self.has_tray() {
+            self.dispatcher().bluetooth().pump_app();
         }
     }
 
@@ -5804,6 +5816,17 @@ impl ui::window::Host for Phase3GuiHost {
             .close_window(id)
             .map_err(dispatch_error_to_ui_error);
         self.windows.retain(|tracked| *tracked != id);
+        // Closing the window IS the answer to the close button: the
+        // two-press rule (K-121) is for an app that ignores it. Without this
+        // a tray app that closed its window, opened it again from the icon
+        // and closed it again was ended as unresponsive (IC-1003).
+        self.close_requests.set(0);
+        // A tray app runs on with no window because the person can see its
+        // icon (IC-1003). A headless run shows nobody an icon, so closing its
+        // last window ends it, as a check closing the window expects.
+        if self.headless && self.windows.is_empty() && self.has_tray() {
+            self.quit_asked.set(true);
+        }
         Ok(result)
     }
 
@@ -11066,6 +11089,31 @@ mod notice_tests {
         let policy = krate_policy::SessionPolicy::from_cli_grants(&grants).expect("policy");
         Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
             .expect("headless host")
+    }
+
+    /// An app that answers the close button by closing its window has
+    /// answered: a later window's close is a first press, not a second
+    /// (IC-1003, a tray app reopening its window).
+    #[test]
+    fn closing_the_window_answers_the_close_presses() {
+        let mut host = host(&["ui.window:create"]);
+        let size = ui::types::WindowSize {
+            width: 300,
+            height: 200,
+        };
+        let w = ui::window::Host::create(&mut host, "A".into(), size)
+            .unwrap()
+            .unwrap();
+        host.close_requests.set(1);
+        ui::window::Host::close(&mut host, w).unwrap().unwrap();
+        let _again = ui::window::Host::create(&mut host, "A".into(), size)
+            .unwrap()
+            .unwrap();
+        host.close_requests.set(host.close_requests.get() + 1);
+        assert!(
+            !host.close_ignored_by_guest(),
+            "one press on the new window"
+        );
     }
 
     /// Posting again under an id replaces it, withdrawing takes it back,

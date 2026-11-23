@@ -35,6 +35,10 @@ pub mod winit_native;
 
 mod clipboard;
 
+/// A tray icon over D-Bus (StatusNotifierItem, IC-1003).
+#[cfg(target_os = "linux")]
+mod tray;
+
 #[derive(Debug, Default)]
 pub struct LinuxUiAdapter {
     draft: DraftUiAdapter,
@@ -518,6 +522,50 @@ impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for LinuxWinitPrototypeUiAdapter {
+    /// A StatusNotifier tray icon (IC-1003).
+    #[cfg(target_os = "linux")]
+    fn tray_show(
+        &self,
+        icon: &krate_adapter_common::menus::TrayIcon,
+        tooltip: &str,
+    ) -> Result<u64, String> {
+        tray::show(icon, tooltip, tooltip)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tray_set_icon(
+        &self,
+        id: u64,
+        icon: &krate_adapter_common::menus::TrayIcon,
+    ) -> Result<(), String> {
+        tray::set_icon(id, icon)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tray_set_tooltip(&self, id: u64, tooltip: &str) -> Result<(), String> {
+        tray::set_tooltip(id, tooltip)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tray_set_title(&self, id: u64, title: &str) -> Result<(), String> {
+        tray::set_title(id, title)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tray_set_menu(
+        &self,
+        id: u64,
+        menu: Option<&krate_adapter_common::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        tray::set_menu(id, menu)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tray_remove(&self, id: u64) {
+        tray::remove(id)
+    }
+
     /// Physical pixels per logical pixel, from the live winit window. The
     /// trait default of 1.0 stood in here for months, so every canvas
     /// rasterized at logical resolution and was stretched across a HiDPI

@@ -52,6 +52,10 @@ pub mod location;
 #[cfg(windows)]
 mod menus;
 
+/// A tray icon in the notification area (IC-1003).
+#[cfg(windows)]
+mod tray;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -547,6 +551,51 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
     ) -> Result<(), String> {
         let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
         menus::set_bar(hwnd, bar)
+    }
+
+    /// An icon in the notification area (IC-1003).
+    #[cfg(windows)]
+    fn tray_show(
+        &self,
+        icon: &krate_adapter_common::menus::TrayIcon,
+        tooltip: &str,
+    ) -> Result<u64, String> {
+        tray::show(icon, tooltip)
+    }
+
+    #[cfg(windows)]
+    fn tray_set_icon(
+        &self,
+        id: u64,
+        icon: &krate_adapter_common::menus::TrayIcon,
+    ) -> Result<(), String> {
+        tray::set_icon(id, icon)
+    }
+
+    #[cfg(windows)]
+    fn tray_set_tooltip(&self, id: u64, tooltip: &str) -> Result<(), String> {
+        tray::set_tooltip(id, tooltip)
+    }
+
+    #[cfg(windows)]
+    fn tray_set_menu(
+        &self,
+        id: u64,
+        menu: Option<&krate_adapter_common::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        tray::set_menu(id, menu)
+    }
+
+    #[cfg(windows)]
+    fn tray_remove(&self, id: u64) {
+        tray::remove(id)
+    }
+
+    /// This thread's messages with no window open (a tray app).
+    #[cfg(windows)]
+    fn pump_app(&self) {
+        tray::pump()
     }
 
     /// The menu a right-click opens (IC-1002).

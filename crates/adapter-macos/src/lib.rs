@@ -20,6 +20,8 @@ mod open_document;
 #[cfg(target_os = "macos")]
 mod reminders;
 #[cfg(target_os = "macos")]
+mod tray;
+#[cfg(target_os = "macos")]
 pub use reminders::{notify_now, withdraw_notice};
 #[cfg(target_os = "macos")]
 mod share_photos;
@@ -240,9 +242,11 @@ impl MacosAppKitPrototypeUiAdapter {
     }
 
     fn remove_session(&self, id: WindowId) {
-        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
-            sessions.borrow_mut().remove(&id);
-        });
+        let session = APPKIT_PROTOTYPE_SESSIONS.with(|sessions| sessions.borrow_mut().remove(&id));
+        // The app closed it: off the screen, not only out of Krate's map.
+        if let Some(session) = session {
+            session.window().order_out();
+        }
     }
 }
 
@@ -988,6 +992,56 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
             .flatten()
             .ok_or("the app's window is not on screen")?;
         menus::set_context(handle.raw_handle, window.get(), menu)
+    }
+
+    /// An icon in the Mac's menu bar (IC-1003).
+    #[cfg(target_os = "macos")]
+    fn tray_show(
+        &self,
+        icon: &krate_adapter_common::menus::TrayIcon,
+        tooltip: &str,
+    ) -> Result<u64, String> {
+        tray::show(icon, tooltip)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn tray_set_icon(
+        &self,
+        id: u64,
+        icon: &krate_adapter_common::menus::TrayIcon,
+    ) -> Result<(), String> {
+        tray::set_icon(id, icon)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn tray_set_tooltip(&self, id: u64, tooltip: &str) -> Result<(), String> {
+        tray::set_tooltip(id, tooltip)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn tray_set_title(&self, id: u64, title: &str) -> Result<(), String> {
+        tray::set_title(id, title)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn tray_set_menu(
+        &self,
+        id: u64,
+        menu: Option<&krate_adapter_common::menus::MenuTree>,
+        _app: &str,
+    ) -> Result<(), String> {
+        tray::set_menu(id, menu)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn tray_remove(&self, id: u64) {
+        tray::remove(id)
+    }
+
+    /// The Mac's events with no window open (a tray app).
+    #[cfg(target_os = "macos")]
+    fn pump_app(&self) {
+        tray::pump()
     }
 
     /// A Mac's menu items take their own key equivalents.

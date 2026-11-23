@@ -6,6 +6,14 @@ ignore = [
     # the Windows/Linux camera backend, as a proc-macro used at compile time.
     # Drop this when nokhwa moves off it.
     "RUSTSEC-2024-0436",
+    # zvariant, zvariant_derive and zbus_names are not vulnerable: zbus 6
+    # merged them into itself, so the standalone crates are marked
+    # unmaintained. They reach us only through ksni (the Linux tray icon,
+    # IC-1003), which is on zbus 5 with no zbus 6 release yet. Drop these
+    # when ksni moves to zbus 6.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
 ]
 
 [licenses]

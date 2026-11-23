@@ -15,9 +15,9 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 87 boundaries reviewed, 78 of them WIT interfaces (78 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 50 optional.
-- 8 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
+- 88 boundaries reviewed, 79 of them WIT interfaces (79 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 51 optional.
+- 9 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
 
@@ -95,6 +95,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:ui@0.1.0/text-entry` | wit | showing and hiding the system's on-screen keyboard for a window; typing arrives as ordinary text and key events | when a field wants text, and drawing the field and its caret | the raw text and key events, the same as a physical keyboard's | yes | platform |
 | `krate:ui@0.1.0/touch` | wit | every finger on a touch screen, by a stable id, in logical pixels, cleared when the window loses focus | what each finger does: a stick, a look, a button, a gesture | the raw finger positions, unfiltered | yes | platform |
 | `krate:ui@0.1.0/trash` | wit | that a deleted file can be put back from the computer's own Trash, and that only a path the app could already delete can go there | which files to delete, when to ask first, and whether to keep its own bin where there is no Trash | remove the file with fs.files.remove-file, or move it to a folder of the app's own | no | -- |
+| `krate:ui@0.1.0/tray` | wit | that an app keeps running with no window only while its icon is in the tray, that the person can always quit from it, that removing the last icon with no window open ends the app, and that the consent sheet says so | the icon's picture, tooltip, title, menu and what a click does | keep a window open | no | -- |
 | `krate:ui@0.1.0/tree` | wit | nothing: an optional portable widget tree the hosts lower to native controls or paint | any UI approach; a canvas of the app's own pixels is equal to a tree | image and canvas widgets with the app's own rendering | no | -- |
 | `krate:ui@0.1.0/types` | wit | widget kinds, event shapes and errors every host lowers to | what the app builds from them | none needed: a type carries no authority | yes | portability |
 | `krate:ui@0.1.0/unlock` | wit | asking the system to check it is the device owner (Face ID, Touch ID, the passcode) with the app's reason, answered yes, no or unavailable | what to guard, when to ask and lock again, the reason shown, and what to do when the device cannot check | the app's own passphrase | no | -- |
@@ -121,5 +122,6 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 - `krate:serial@0.1.0/ports`: HID devices are not offered yet (raw USB is krate:usb); a browser tab and a phone answer unavailable
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
 - `krate:ui@0.1.0/menus`: no bar or right-click menu is drawn on Linux, in a browser tab or on a phone yet (K-1349); shortcuts still work on Linux
+- `krate:ui@0.1.0/tray`: a phone and a browser tab have no tray: available() is false
 - `krate:usb@0.1.0/devices`: isochronous transfers, alternate settings and standard requests that change the device are not offered; HID devices (security keys) are a later item; a browser tab (WebUSB) and a phone answer unavailable
 - `the WebAssembly component contract`: the SDK and Studio build with cargo-component only; a developer's own build tool is accepted by the validator but not by the make flow (IC-175: custom build tool)

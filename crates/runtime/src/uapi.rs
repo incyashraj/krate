@@ -383,6 +383,9 @@ pub enum UiCall {
     OpenUrl,
     /// Showing a desktop notification.
     Notify,
+    /// Showing a tray icon, and running on with no window while it shows
+    /// (IC-1003).
+    Tray,
     /// Receiving a file the person dragged onto the window.
     ///
     /// Checked when the drop ARRIVES, not when the app asks for it: there is
@@ -409,6 +412,7 @@ impl UiCall {
             Self::ClipboardWrite => "ui.clipboard:write".to_string(),
             Self::OpenUrl => "ui.open-url".to_string(),
             Self::Notify => "ui.notify".to_string(),
+            Self::Tray => "ui.tray".to_string(),
             Self::Dropzone { mime } => format!("ui.dropzone:{mime}"),
             Self::Dialog { resource } => format!("ui.dialog:{resource}"),
         }

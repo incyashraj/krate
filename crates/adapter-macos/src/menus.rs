@@ -39,7 +39,6 @@ pub(crate) enum Owner {
     Bar,
     Popup,
     Context(u64),
-    #[allow(dead_code)] // the tray's menus (IC-1003)
     Tray(u64),
 }
 
@@ -596,7 +595,6 @@ pub(crate) fn perform_key_equivalent(event: &objc2_app_kit::NSEvent) -> bool {
 }
 
 /// A menu for a tray icon (IC-1003).
-#[allow(dead_code)]
 pub(crate) fn tray_menu(tray: u64, tree: &MenuTree) -> Option<Retained<NSMenu>> {
     let mtm = MainThreadMarker::new()?;
     release_tags(Owner::Tray(tray));
@@ -605,7 +603,6 @@ pub(crate) fn tray_menu(tray: u64, tree: &MenuTree) -> Option<Retained<NSMenu>> 
 }
 
 /// Let go of a tray icon's menu items.
-#[allow(dead_code)]
 pub(crate) fn forget_tray(tray: u64) {
     release_tags(Owner::Tray(tray));
 }

@@ -1848,6 +1848,8 @@ impl Runtime {
         // Phase 4 only: real menus -- the bar, submenus, shortcuts and
         // right-click menus (IC-1002).
         link_gui!(ui4::menus);
+        // Phase 4 only: a tray icon, behind `ui.tray` (IC-1003).
+        link_gui!(ui4::tray);
         // Phase 4 only: notifications replaced and taken back by id (IC-271).
         link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).

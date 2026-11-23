@@ -1551,6 +1551,13 @@ mod platform {
             self.id
         }
 
+        /// Take the window off the screen. Dropping Krate's reference does
+        /// not: AppKit keeps an on-screen window alive, so a window an app
+        /// closed while it ran on (a tray app, IC-1003) stayed up, frozen.
+        pub fn order_out(&self) {
+            self.window.orderOut(None);
+        }
+
         /// Return the opaque AppKit handle attached to the shared window registry.
         pub fn native_handle(&self) -> NativeWindowHandle {
             self.native_handle
@@ -3386,6 +3393,9 @@ mod platform {
     }
 
     impl AppKitWindowPrototype {
+        /// Nothing is on screen in a build that is not for a Mac.
+        pub fn order_out(&self) {}
+
         /// Full-bleed windows are only available in macOS builds; the stub
         /// reports no size change so callers queue nothing (K-117).
         pub fn set_full_bleed(&self, _enabled: bool) -> Option<WindowSize> {

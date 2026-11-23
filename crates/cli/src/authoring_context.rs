@@ -739,6 +739,23 @@ opens a menu yourself under a \"...\" button. Linux, a browser tab and a \
 phone draw no bar yet and answer `Err(Unsupported)` -- keep every command \
 reachable from the app's own buttons too; on Linux the shortcuts still \
 work. No capability.\n\n\
+A tray icon (a timer, a sync, a clipboard tool that lives in the menu \
+bar): declare `ui.tray`, then `let t = krate::ui::tray::show(&tray::Icon \
+{ width: 36, height: 36, rgba, template: true }, \"Timer\")?` -- draw a \
+black shape on clear for `template` and a Mac tints it for light and \
+dark bars -- `tray::set_menu(t, &items)` with the same `menus::Item`s \
+(always give it a `Role::Quit` item), `set_title(t, \"12:40\")` for text \
+beside it on a Mac, `on_click(t, left_id, right_id)` for clicks as \
+`Event::Action`, `set_icon`, `set_tooltip`, `remove`. While an icon shows, \
+the app may keep running with its windows closed: on `CloseRequested`, \
+`window::close` it and keep looping on `events::wait`; open a window again \
+from a \"Show Window\" item. That is the only time an app runs with no \
+window -- removing the last icon with no window open ends the app, and a \
+check run (headless, nobody to see the icon) ends when its last window \
+closes. `tray::available()` is false on a phone and in a browser tab: \
+there, keep the window. On Linux the icon needs a StatusNotifier host \
+(KDE, XFCE, Cinnamon; GNOME with its AppIndicator extension), otherwise \
+`show` says why.\n\n\
 A PDF (a manual, an invoice, a vault's attachment): read its bytes the \
 ordinary way, then `let d = krate::gfx::pdf::open(&bytes)?`, \
 `page_count(d)`, `page_size(d, i)` in points, and \
@@ -1324,6 +1341,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "ui.menu" => "a system menu",
         "ui.open-url" => "hand a link to the browser",
         "ui.notify" => "a desktop notification",
+        "ui.tray" => "an icon in the menu bar or notification area (krate::ui::tray); the app may keep running there with no window",
         "ui.dropzone" => "accept dragged files",
         "ui.dialog" => "system file dialogs (open a file or folder, save a file); the person's pick is the grant",
         "gfx.gpu" => "GPU drawing (canvas2d present today)",

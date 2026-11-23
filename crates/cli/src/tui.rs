@@ -1371,6 +1371,7 @@ fn plain_capability(cap: &str) -> Option<String> {
         "ui.menu" => "add a menu",
         "ui.open-url" => "open a link in your browser",
         "ui.notify" => "show notifications",
+        "ui.tray" => "show an icon in your menu bar and keep running there after its windows close",
         "ui.dropzone" => "accept files you drag onto it",
         "audio.playback" => "play sound",
         "audio.capture" => "record from your microphone",

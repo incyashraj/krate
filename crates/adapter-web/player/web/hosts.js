@@ -834,6 +834,15 @@ export function buildImports(ctx) {
     setChecked: (id, on) => { menuMarks.set(String(id), !!on); },
     checked: (id) => menuMarks.get(String(id)) === true,
   };
+  // A tray icon (IC-1003): a browser tab has no tray, so it says so and
+  // the app keeps its window.
+  const noTray = 'A browser tab has no tray. Open the app in Krate on a computer to keep an icon in the menu bar.';
+  const trayRefused = () => { throw new HostError({ tag: 'unsupported', val: noTray }); };
+  impl['krate:ui/tray'] = {
+    available: () => false,
+    show: trayRefused, setIcon: trayRefused, setTooltip: trayRefused, setTitle: trayRefused,
+    setMenu: trayRefused, onClick: trayRefused, remove() {},
+  };
   // PDF pages (K-1342): drawn by Krate on a computer; a tab says so.
   const noPdf = () => { throw new HostError({ tag: 'unsupported', val: 'PDF pages are drawn in Krate on a computer; a browser tab cannot draw them yet.' }); };
   impl['krate:gfx/pdf'] = { open: noPdf, pageCount: noPdf, pageSize: noPdf, render: noPdf, pageText: noPdf, close() {} };

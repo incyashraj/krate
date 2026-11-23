@@ -211,6 +211,10 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "open-url", false),
     // Desktop notifications, for the same reason.
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "notify", false),
+    // A tray icon (IC-1003): an explicit ask, because while it is shown the
+    // app may keep running with no window -- the one exception to "the app
+    // ends when its last window closes" -- and the person is told so.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "tray", false),
     // K-175: declarable since Phase 3, and the runtime has never had a host
     // function for it. The wordings, the mime scoping and the validation were
     // all correct; what was missing was winit's DroppedFile/HoveredFile
@@ -906,6 +910,10 @@ impl Capability {
             ("random", "bytes") => "use random numbers".to_string(),
             ("ui", "open-url") => "open links in your browser".to_string(),
             ("ui", "notify") => "send you notifications".to_string(),
+            ("ui", "tray") => {
+                "show an icon in your menu bar and keep running there after its windows close"
+                    .to_string()
+            }
             ("audio", "capture") => "listen through your microphone".to_string(),
             ("audio", "playback") => "play sound through your speakers".to_string(),
             ("time", "clock") => "read the current time".to_string(),

@@ -1646,3 +1646,57 @@ interface menus {
   /// -- the person's last choice included.
   checked: func(id: u64) -> bool;
 }
+
+/// A tray icon (IC-1003): an icon of the app's own in the Mac's menu bar,
+/// Windows' notification area or Linux's status area, with a tooltip, a
+/// menu, and clicks the app hears.
+///
+/// While a tray icon is shown the app may keep running with no window open
+/// -- a timer, a sync, a clipboard tool -- and the person can always quit
+/// from the icon's menu. That is the one exception to "the app ends when
+/// its last window closes", which is why it is asked for: `ui.tray`, worded
+/// on the consent sheet as keeping running there. Taking the last icon
+/// away while no window is open ends the app. A phone and a browser tab
+/// have no tray: `available` is false and `show` answers `unsupported`.
+interface tray {
+  use types.{ui-error};
+  use menus.{item};
+
+  /// The picture the app draws for its icon.
+  record icon {
+    /// Width in pixels, 1 to 256 (about 18 points tall looks right; give
+    /// twice that for a sharp Retina icon).
+    width: u32,
+    /// Height in pixels, 1 to 256.
+    height: u32,
+    /// Straight (not premultiplied) RGBA, row by row from the top:
+    /// width x height x 4 bytes.
+    rgba: list<u8>,
+    /// On a Mac: use only its shape, tinted to match the menu bar in light
+    /// and dark mode, as the system's own icons are. Ignored elsewhere.
+    template: bool,
+  }
+
+  /// Whether this device has a tray at all.
+  available: func() -> bool;
+  /// Show an icon with a tooltip; its handle. Needs `ui.tray`.
+  show: func(icon: icon, tooltip: string) -> result<u64, ui-error>;
+  /// Draw the icon anew (a badge, a state).
+  set-icon: func(tray: u64, icon: icon) -> result<_, ui-error>;
+  /// What the icon says when the pointer rests on it.
+  set-tooltip: func(tray: u64, tooltip: string) -> result<_, ui-error>;
+  /// Short text beside the icon in a Mac's menu bar ("3", "12:40");
+  /// nothing elsewhere. Empty for none.
+  set-title: func(tray: u64, title: string) -> result<_, ui-error>;
+  /// The menu the icon opens: the same items as `menus`, chosen as an
+  /// `action` event. Add a `quit` item so the person can always end the
+  /// app from here. An empty list for none.
+  set-menu: func(tray: u64, items: list<item>) -> result<_, ui-error>;
+  /// The `action` ids a click on the icon sends, left and right button (0
+  /// sends nothing). With a menu, a Mac opens the menu on any click and
+  /// Windows and Linux open it on the right button.
+  on-click: func(tray: u64, left: u64, right: u64) -> result<_, ui-error>;
+  /// Take the icon away. With no window open and no other icon, the app
+  /// ends.
+  remove: func(tray: u64);
+}

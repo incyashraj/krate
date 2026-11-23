@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use krate_adapter_common::menus::{ItemKind, MenuItem, MenuSignal, MenuTree, Role};
+use krate_adapter_common::menus::{ItemKind, MenuItem, MenuSignal, MenuTree, Role, TrayIcon};
 use krate_adapter_common::ui::{KeyEvent, Modifiers, WindowId};
 
 use crate::phase3_gui_bindings::krate::ui as ui3;
@@ -29,6 +29,10 @@ pub(crate) struct Shell {
     pub(crate) bars: BTreeMap<u64, MenuTree>,
     /// Each window's right-click menu.
     pub(crate) contexts: BTreeMap<u64, MenuTree>,
+    /// The tray icons shown (IC-1003), by id.
+    pub(crate) trays: BTreeMap<u64, TrayState>,
+    /// The next id a headless run hands out.
+    next_tray: u64,
     /// The last menu opened at the pointer (kept for headless checks).
     pub(crate) last_popup: Option<(u64, f32, f32, MenuTree)>,
 }
@@ -45,6 +49,19 @@ impl std::fmt::Display for PersonQuit {
 }
 
 impl std::error::Error for PersonQuit {}
+
+/// One tray icon as the run keeps it.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TrayState {
+    /// Its menu, if it has one.
+    pub(crate) menu: Option<MenuTree>,
+    /// The action ids its left and right clicks send.
+    pub(crate) left: u64,
+    pub(crate) right: u64,
+    /// What it says (kept for headless checks).
+    pub(crate) tooltip: String,
+    pub(crate) title: String,
+}
 
 /// A WIT item as the shared module's.
 fn item_from_wit(item: ui4::menus::Item) -> MenuItem {
@@ -206,6 +223,7 @@ impl Phase3GuiHost {
         for w in windows {
             self.refresh_bar(w);
         }
+        self.tray_items_changed(|tree| tree.set_enabled(id, enabled));
     }
 
     /// Mark or unmark an item of a bar.
@@ -221,6 +239,7 @@ impl Phase3GuiHost {
         for w in windows {
             self.refresh_bar(w);
         }
+        self.tray_items_changed(|tree| tree.set_checked(id, checked));
     }
 
     /// Whether an item of a bar is marked now.
@@ -230,6 +249,13 @@ impl Phase3GuiHost {
             .bars
             .values()
             .find_map(|tree| tree.find(id).map(|n| n.item.checked))
+            .or_else(|| {
+                shell
+                    .trays
+                    .values()
+                    .filter_map(|t| t.menu.as_ref())
+                    .find_map(|tree| tree.find(id).map(|n| n.item.checked))
+            })
             .unwrap_or(false)
     }
 
@@ -267,7 +293,7 @@ impl Phase3GuiHost {
             match signal {
                 MenuSignal::Chosen(id) => self.menu_chosen(id),
                 MenuSignal::Role(role) => self.menu_role(role),
-                MenuSignal::TrayClick { .. } => {}
+                MenuSignal::TrayClick { tray, right } => self.tray_clicked(tray, right),
             }
         }
     }
@@ -289,6 +315,10 @@ impl Phase3GuiHost {
         for w in changed {
             self.refresh_bar(w);
         }
+        self.tray_items_changed(|tree| {
+            let kind = tree.find(id).map(|n| n.item.kind);
+            tree.choose(id).is_some() && matches!(kind, Some(ItemKind::Check | ItemKind::Radio))
+        });
         self.pending_events
             .borrow_mut()
             .push_back(ui3::types::Event::Action(id));
@@ -334,6 +364,290 @@ impl Phase3GuiHost {
                 }
             }
         }
+    }
+}
+
+/// Tray icons (IC-1003).
+impl Phase3GuiHost {
+    /// Change each tray menu with `f`; a menu it changed is shown again.
+    fn tray_items_changed(&self, mut f: impl FnMut(&mut MenuTree) -> bool) {
+        let changed: Vec<(u64, MenuTree)> = {
+            let mut shell = self.shell.borrow_mut();
+            shell
+                .trays
+                .iter_mut()
+                .filter_map(|(id, t)| {
+                    let tree = t.menu.as_mut()?;
+                    f(tree).then(|| (*id, tree.clone()))
+                })
+                .collect()
+        };
+        if self.headless_run() {
+            return;
+        }
+        for (id, tree) in changed {
+            let _ = self.dispatcher().bluetooth().tray_set_menu(
+                id,
+                Some(&tree),
+                &self.app_display_name(),
+            );
+        }
+    }
+
+    fn tray_clicked(&self, tray: u64, right: bool) {
+        let id = self
+            .shell
+            .borrow()
+            .trays
+            .get(&tray)
+            .map(|t| if right { t.right } else { t.left })
+            .unwrap_or(0);
+        if id != 0 {
+            self.pending_events
+                .borrow_mut()
+                .push_back(ui3::types::Event::Action(id));
+        }
+    }
+
+    fn owns_tray(&self, tray: u64) -> Result<(), ui3::types::UiError> {
+        if self.shell.borrow().trays.contains_key(&tray) {
+            Ok(())
+        } else {
+            Err(ui3::types::UiError::InvalidWidget)
+        }
+    }
+
+    /// Show a tray icon, behind `ui.tray`.
+    pub(crate) fn tray_show(
+        &self,
+        icon: TrayIcon,
+        tooltip: &str,
+    ) -> Result<u64, ui3::types::UiError> {
+        if !self.tray_allowed() {
+            return Err(ui3::types::UiError::PermissionDenied);
+        }
+        icon.validate().map_err(platform)?;
+        if self.shell.borrow().trays.len() >= krate_adapter_common::menus::MAX_TRAY_ICONS {
+            return Err(platform(format!(
+                "an app shows at most {} tray icons",
+                krate_adapter_common::menus::MAX_TRAY_ICONS
+            )));
+        }
+        let tooltip =
+            krate_adapter_common::menus::clip(tooltip, krate_adapter_common::menus::MAX_TOOLTIP);
+        let id = if self.headless_run() {
+            let mut shell = self.shell.borrow_mut();
+            shell.next_tray += 1;
+            shell.next_tray
+        } else {
+            self.dispatcher()
+                .bluetooth()
+                .tray_show(&icon, &tooltip)
+                .map_err(ui3::types::UiError::Unsupported)?
+        };
+        self.shell.borrow_mut().trays.insert(
+            id,
+            TrayState {
+                tooltip,
+                ..Default::default()
+            },
+        );
+        Ok(id)
+    }
+
+    pub(crate) fn tray_set_icon(
+        &self,
+        tray: u64,
+        icon: TrayIcon,
+    ) -> Result<(), ui3::types::UiError> {
+        self.owns_tray(tray)?;
+        icon.validate().map_err(platform)?;
+        if self.headless_run() {
+            return Ok(());
+        }
+        self.dispatcher()
+            .bluetooth()
+            .tray_set_icon(tray, &icon)
+            .map_err(platform)
+    }
+
+    pub(crate) fn tray_set_text(
+        &self,
+        tray: u64,
+        text: &str,
+        title: bool,
+    ) -> Result<(), ui3::types::UiError> {
+        self.owns_tray(tray)?;
+        let max = if title {
+            krate_adapter_common::menus::MAX_TRAY_TITLE
+        } else {
+            krate_adapter_common::menus::MAX_TOOLTIP
+        };
+        let text = krate_adapter_common::menus::clip(text, max);
+        if let Some(t) = self.shell.borrow_mut().trays.get_mut(&tray) {
+            if title {
+                t.title = text.clone();
+            } else {
+                t.tooltip = text.clone();
+            }
+        }
+        if self.headless_run() {
+            return Ok(());
+        }
+        let adapter = self.dispatcher();
+        let adapter = adapter.bluetooth();
+        if title {
+            adapter.tray_set_title(tray, &text)
+        } else {
+            adapter.tray_set_tooltip(tray, &text)
+        }
+        .map_err(platform)
+    }
+
+    pub(crate) fn tray_set_menu(
+        &self,
+        tray: u64,
+        items: Vec<MenuItem>,
+    ) -> Result<(), ui3::types::UiError> {
+        self.owns_tray(tray)?;
+        let tree = if items.is_empty() {
+            None
+        } else {
+            Some(MenuTree::build(&items, &self.app_display_name()).map_err(platform)?)
+        };
+        if !self.headless_run() {
+            self.dispatcher()
+                .bluetooth()
+                .tray_set_menu(tray, tree.as_ref(), &self.app_display_name())
+                .map_err(platform)?;
+        }
+        if let Some(t) = self.shell.borrow_mut().trays.get_mut(&tray) {
+            t.menu = tree;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn tray_on_click(
+        &self,
+        tray: u64,
+        left: u64,
+        right: u64,
+    ) -> Result<(), ui3::types::UiError> {
+        self.owns_tray(tray)?;
+        if let Some(t) = self.shell.borrow_mut().trays.get_mut(&tray) {
+            t.left = left;
+            t.right = right;
+        }
+        Ok(())
+    }
+
+    /// Take a tray icon away. With no window open and no other icon, the
+    /// app ends: nothing would be left for the person to reach it by.
+    pub(crate) fn tray_remove(&self, tray: u64) {
+        if self.shell.borrow_mut().trays.remove(&tray).is_none() {
+            return;
+        }
+        if !self.headless_run() {
+            self.dispatcher().bluetooth().tray_remove(tray);
+        }
+        if self.windows.is_empty() && self.shell.borrow().trays.is_empty() {
+            self.quit_asked.set(true);
+        }
+    }
+
+    /// Whether this device has a tray: the three desktops.
+    pub(crate) fn tray_available(&self) -> bool {
+        cfg!(any(
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "linux"
+        ))
+    }
+
+    /// Whether any tray icon is shown (a tray app may run with no window).
+    pub(crate) fn has_tray(&self) -> bool {
+        !self.shell.borrow().trays.is_empty()
+    }
+}
+
+fn icon_from_wit(icon: ui4::tray::Icon) -> TrayIcon {
+    TrayIcon {
+        width: icon.width,
+        height: icon.height,
+        rgba: icon.rgba,
+        template: icon.template,
+    }
+}
+
+/// Tray icons (IC-1003), behind `ui.tray`.
+impl ui4::tray::Host for Phase3GuiHost {
+    fn available(&mut self) -> wasmtime::Result<bool> {
+        Ok(self.tray_available())
+    }
+
+    fn show(
+        &mut self,
+        icon: ui4::tray::Icon,
+        tooltip: String,
+    ) -> wasmtime::Result<Result<u64, ui4::types::UiError>> {
+        Ok(self
+            .tray_show(icon_from_wit(icon), &tooltip)
+            .map_err(error_to_phase4))
+    }
+
+    fn set_icon(
+        &mut self,
+        tray: u64,
+        icon: ui4::tray::Icon,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        Ok(self
+            .tray_set_icon(tray, icon_from_wit(icon))
+            .map_err(error_to_phase4))
+    }
+
+    fn set_tooltip(
+        &mut self,
+        tray: u64,
+        tooltip: String,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        Ok(self
+            .tray_set_text(tray, &tooltip, false)
+            .map_err(error_to_phase4))
+    }
+
+    fn set_title(
+        &mut self,
+        tray: u64,
+        title: String,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        Ok(self
+            .tray_set_text(tray, &title, true)
+            .map_err(error_to_phase4))
+    }
+
+    fn set_menu(
+        &mut self,
+        tray: u64,
+        items: Vec<ui4::menus::Item>,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        let items = items.into_iter().map(item_from_wit).collect();
+        Ok(self.tray_set_menu(tray, items).map_err(error_to_phase4))
+    }
+
+    fn on_click(
+        &mut self,
+        tray: u64,
+        left: u64,
+        right: u64,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        Ok(self
+            .tray_on_click(tray, left, right)
+            .map_err(error_to_phase4))
+    }
+
+    fn remove(&mut self, tray: u64) -> wasmtime::Result<()> {
+        self.tray_remove(tray);
+        Ok(())
     }
 }
 
@@ -395,9 +709,12 @@ mod tests {
     use crate::uapi::UapiGuard;
 
     fn host() -> Phase3GuiHost {
-        let policy =
-            krate_policy::SessionPolicy::from_cli_grants(&["ui.window:create".to_string()])
-                .expect("policy");
+        host_with(&["ui.window:create"])
+    }
+
+    fn host_with(grants: &[&str]) -> Phase3GuiHost {
+        let grants: Vec<String> = grants.iter().map(|g| g.to_string()).collect();
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&grants).expect("policy");
         Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
             .expect("headless host")
     }
@@ -487,6 +804,107 @@ mod tests {
         host.menu_role(Role::Quit);
         let ended = ui4::events::Host::poll(&mut host).unwrap_err();
         assert!(ended.downcast_ref::<PersonQuit>().is_some(), "{ended}");
+    }
+
+    fn icon() -> ui4::tray::Icon {
+        ui4::tray::Icon {
+            width: 2,
+            height: 2,
+            rgba: vec![255; 16],
+            template: true,
+        }
+    }
+
+    /// A tray icon needs `ui.tray`; a bad icon is refused with its sizes.
+    #[test]
+    fn a_tray_icon_needs_its_grant_and_a_whole_picture() {
+        let mut host = host();
+        let denied = ui4::tray::Host::show(&mut host, icon(), "Timer".into()).unwrap();
+        assert!(matches!(denied, Err(ui4::types::UiError::PermissionDenied)));
+        let mut host = host_with(&["ui.window:create", "ui.tray"]);
+        let mut bad = icon();
+        bad.rgba.pop();
+        let refused = ui4::tray::Host::show(&mut host, bad, "Timer".into()).unwrap();
+        match refused {
+            Err(ui4::types::UiError::Platform(why)) => assert!(why.contains("16 bytes"), "{why}"),
+            other => panic!("{other:?}"),
+        }
+        assert!(ui4::tray::Host::show(&mut host, icon(), "Timer".into())
+            .unwrap()
+            .is_ok());
+    }
+
+    /// A click sends the id the app asked for, and a tray menu's check item
+    /// flips like the bar's.
+    #[test]
+    fn a_tray_click_and_a_tray_menu_choice_are_actions() {
+        use ui4::menus::ItemKind as K;
+        let mut host = host_with(&["ui.window:create", "ui.tray"]);
+        let tray = ui4::tray::Host::show(&mut host, icon(), "Timer".into())
+            .unwrap()
+            .unwrap();
+        ui4::tray::Host::on_click(&mut host, tray, 7, 8)
+            .unwrap()
+            .unwrap();
+        host.tray_clicked(tray, true);
+        assert!(matches!(
+            next(&mut host),
+            Some(ui4::types::Event::Action(8))
+        ));
+        let items = vec![wit(5, 0, K::Check, "Paused"), wit(0, 0, K::Separator, "")];
+        ui4::tray::Host::set_menu(&mut host, tray, items)
+            .unwrap()
+            .unwrap();
+        host.menu_chosen(5);
+        assert!(matches!(
+            next(&mut host),
+            Some(ui4::types::Event::Action(5))
+        ));
+        assert!(ui4::menus::Host::checked(&mut host, 5).unwrap());
+        let gone = ui4::tray::Host::set_title(&mut host, tray + 99, "x".into()).unwrap();
+        assert!(matches!(gone, Err(ui4::types::UiError::InvalidWidget)));
+    }
+
+    /// A headless run shows nobody an icon: closing its last window ends it.
+    #[test]
+    fn a_headless_tray_app_ends_with_its_last_window() {
+        let mut host = host_with(&["ui.window:create", "ui.tray"]);
+        let w = window(&mut host);
+        let _tray = ui4::tray::Host::show(&mut host, icon(), "Timer".into())
+            .unwrap()
+            .unwrap();
+        ui3::window::Host::close(&mut host, w).unwrap().unwrap();
+        assert!(ui4::events::Host::poll(&mut host).is_err());
+    }
+
+    /// The founder's rule: a tray app may run with no window only while its
+    /// icon shows. Taking the last icon away with no window open ends it; with
+    /// a window open it does not.
+    #[test]
+    fn removing_the_last_icon_with_no_window_ends_the_app() {
+        let mut host = host_with(&["ui.window:create", "ui.tray"]);
+        let _w = window(&mut host);
+        let tray = ui4::tray::Host::show(&mut host, icon(), "Timer".into())
+            .unwrap()
+            .unwrap();
+        // On screen, the window goes and the icon still shows: the app runs
+        // on (a headless run shows no icon, so there the close would end it).
+        host.windows.clear();
+        assert!(ui4::events::Host::poll(&mut host).is_ok());
+        ui4::tray::Host::remove(&mut host, tray).unwrap();
+        let ended = ui4::events::Host::poll(&mut host).unwrap_err();
+        assert!(ended.downcast_ref::<PersonQuit>().is_some(), "{ended}");
+
+        let mut host = host_with(&["ui.window:create", "ui.tray"]);
+        let _w = window(&mut host);
+        let tray = ui4::tray::Host::show(&mut host, icon(), "Timer".into())
+            .unwrap()
+            .unwrap();
+        ui4::tray::Host::remove(&mut host, tray).unwrap();
+        assert!(
+            ui4::events::Host::poll(&mut host).is_ok(),
+            "a window is still open"
+        );
     }
 
     /// Phase 3's flat list becomes one menu of commands with the same ids.
