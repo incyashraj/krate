@@ -24,6 +24,7 @@ mod command_tests;
 mod ide;
 mod live_ui;
 mod pretend_serial;
+mod updater;
 
 /// The one build allowed at a time, by process id, so Stop can reach it.
 ///
@@ -3984,12 +3985,11 @@ async fn latest_release() -> Result<serde_json::Value, String> {
         if org_update_mode() == "off" {
             return Err(ORG_UPDATES_OFF.to_string());
         }
-        let response =
-            krate_http::get("https://api.github.com/repos/incyashraj/krate/releases/latest")
-                .set("User-Agent", "krate-studio")
-                .timeout(std::time::Duration::from_secs(15))
-                .call()
-                .map_err(|err| err.to_string())?;
+        let response = krate_http::get(&updater::latest_url())
+            .set("User-Agent", "krate-studio")
+            .timeout(std::time::Duration::from_secs(15))
+            .call()
+            .map_err(|err| err.to_string())?;
         let v: serde_json::Value = response.into_json().map_err(|err| err.to_string())?;
         Ok(serde_json::json!({ "tag": v["tag_name"], "body": v["body"] }))
     })
@@ -5673,14 +5673,8 @@ fn install_update_blocking(
         return Err("that does not look like a version".to_string());
     }
 
-    let file = if cfg!(windows) {
-        format!("krate-studio-{version}-windows-x64-setup.exe")
-    } else if cfg!(target_os = "macos") {
-        format!("krate-studio-{version}-universal.dmg")
-    } else {
-        format!("krate-studio-{version}-linux-x86_64.AppImage")
-    };
-    let base = format!("https://github.com/incyashraj/krate/releases/download/v{version}");
+    let file = updater::asset_name(version);
+    let base = updater::download_base(version);
 
     // The checksums first: knowing what the bytes should be before fetching
     // them means a mismatch is a refusal, not a judgement call.
@@ -5835,80 +5829,50 @@ fn verified_update(staged: &std::path::Path) -> Result<std::path::PathBuf, Strin
     Ok(path)
 }
 
-/// Open the staged update and step aside.
+/// Install the verified update in place and open the new Krate (IC-1001,
+/// K-1369).
 ///
-/// Deliberately not a silent self-replace: on macOS a running app cannot
-/// swap its own bundle safely, and a person deserves to see what is being
-/// installed. This opens the installer the download produced and closes the
-/// Studio so the file it is replacing is not in use.
+/// No disk image window, no installer wizard: `updater::hand_off` unpacks
+/// and checks the new version while Studio is still open, then a helper
+/// swaps it in once Studio has quit, opens it, and puts the old version back
+/// if it does not start. Answers "replace" (Krate closes and opens again by
+/// itself); an error says why nothing changed, and Studio stays open.
 #[tauri::command]
-/// Answers how it is finishing, so the screen can say what happens next:
-/// "replace" (Krate closes and opens again by itself) or "installer" (the
-/// installer opens and the person follows it).
-fn restart_for_update(app: tauri::AppHandle) -> Result<&'static str, String> {
-    let staged = studio_dir().join("updates");
-
-    // Open the file that was VERIFIED, not the file that is newest (IC-866).
-    //
-    // This used to take whichever entry in the directory had the latest
-    // modification time. That is a different question from "which one passed
-    // its checksum", and a controlled test showed the two disagreeing: an
-    // unrelated newer text file was selected over the verified DMG. Anything
-    // that can drop a file into this directory could decide what Studio
-    // installs.
-    //
-    // The download recorded the name and digest it accepted. Both are read
-    // back here, and the bytes on disk are hashed again -- because a file
-    // that passed at download time can still have been replaced since.
-    let verified = verified_update(&staged)?;
-
-    // macOS: install in place and reopen (IC-1001), the way people expect an
-    // app to update -- not a Finder window asking them to drag Krate over
-    // itself. Only when this Krate is a signed app bundle the person can
-    // write to; anything else keeps the old way, opening the installer.
-    #[cfg(target_os = "macos")]
-    if let Some((bundle, team)) = replaceable_bundle() {
-        if verified.extension().and_then(|e| e.to_str()) == Some("dmg") {
-            let spawned = Command::new("/bin/sh")
-                .arg("-c")
-                .arg(MAC_SWAP_SCRIPT)
-                .arg("krate-update")
-                .arg(std::process::id().to_string())
-                .arg(&verified)
-                .arg(&bundle)
-                .arg(&team)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-            if spawned.is_ok() {
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(600));
-                    app.exit(0);
-                });
-                return Ok("replace");
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    let opened = Command::new("/usr/bin/open").arg(&verified).status();
-    #[cfg(windows)]
-    let opened = Command::new("cmd")
-        .args(["/C", "start", ""])
-        .arg(&verified)
-        .status();
-    #[cfg(target_os = "linux")]
-    let opened = Command::new("xdg-open").arg(&verified).status();
-
-    opened.map_err(|e| format!("could not open the update: {e}"))?;
-    // Give the installer a moment to take over before this process ends,
-    // so the person never sees both gone at once.
+async fn restart_for_update(app: tauri::AppHandle) -> Result<&'static str, String> {
+    tauri::async_runtime::spawn_blocking(begin_update)
+        .await
+        .map_err(|e| e.to_string())??;
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(900));
+        std::thread::sleep(std::time::Duration::from_millis(600));
         app.exit(0);
     });
-    Ok("installer")
+    Ok("replace")
+}
+
+/// Everything `restart_for_update` does before Studio quits.
+fn begin_update() -> Result<(), String> {
+    let staged = studio_dir().join("updates");
+
+    // Install the file that was VERIFIED, not the file that is newest
+    // (IC-866): the download recorded the name and digest it accepted, and
+    // the bytes on disk are hashed again here, because a file that passed
+    // at download time can still have been replaced since.
+    let verified = verified_update(&staged)?;
+    let version = verified
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(updater::installer_version)
+        .ok_or("the downloaded update has no version in its name")?
+        .to_string();
+    updater::hand_off(&verified, &version, &staged)
+}
+
+/// An update that did not take since the last start, said once:
+/// `{ "version": "0.6.2", "reason": "..." }`, or null.
+#[tauri::command]
+fn update_outcome() -> Option<serde_json::Value> {
+    updater::take_failed(&studio_dir().join("updates"))
+        .map(|(version, reason)| serde_json::json!({ "version": version, "reason": reason }))
 }
 
 /// Open a terminal running one command, for the steps a GUI cannot do.
@@ -5925,68 +5889,6 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<&'static str, String> {
 /// told us about.
 /// Is `krate` reachable from a terminal, and can we fix it without a
 /// password? Read-only: this never changes the machine.
-/// Waits for Studio to quit, then swaps the verified update in place and
-/// reopens it: `$1` Studio's pid, `$2` the verified DMG, `$3` the running
-/// app bundle, `$4` its Apple Team ID. The new app must pass codesign's
-/// strict check and carry the SAME team as the app it replaces, or nothing
-/// is touched and the installer opens instead, as it always used to. The old
-/// bundle is moved aside first and moved back if the swap fails.
-#[cfg(target_os = "macos")]
-const MAC_SWAP_SCRIPT: &str = r#"
-set -u
-pid="$1"; dmg="$2"; target="$3"; team="$4"
-i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 150 ]; do sleep 0.2; i=$((i+1)); done
-mnt=$(mktemp -d /tmp/krate-update.XXXXXX)
-fail() { hdiutil detach -quiet "$mnt" >/dev/null 2>&1; rmdir "$mnt" 2>/dev/null; /usr/bin/open "$dmg"; exit 1; }
-hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dmg" >/dev/null 2>&1 || fail
-app=$(ls -d "$mnt"/*.app 2>/dev/null | head -n 1)
-[ -n "$app" ] || fail
-codesign --verify --deep --strict "$app" >/dev/null 2>&1 || fail
-got=$(codesign -dv --verbose=2 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
-[ -n "$got" ] && [ "$got" = "$team" ] || fail
-new="$target.krate-update"; old="$target.krate-old"
-rm -rf "$new" "$old"
-ditto "$app" "$new" || { rm -rf "$new"; fail; }
-if mv "$target" "$old" && mv "$new" "$target"; then
-  rm -rf "$old"
-else
-  [ -d "$old" ] && [ ! -d "$target" ] && mv "$old" "$target"
-  rm -rf "$new"; fail
-fi
-hdiutil detach -quiet "$mnt" >/dev/null 2>&1; rmdir "$mnt" 2>/dev/null
-/usr/bin/open "$target"
-"#;
-
-/// The running Krate's app bundle and its Apple Team ID, when it can be
-/// replaced in place: a signed `.app` in a folder this person can write to.
-#[cfg(target_os = "macos")]
-fn replaceable_bundle() -> Option<(std::path::PathBuf, String)> {
-    let exe = std::env::current_exe().ok()?;
-    let bundle = exe
-        .ancestors()
-        .find(|p| p.extension().and_then(|e| e.to_str()) == Some("app"))?
-        .to_path_buf();
-    let parent = bundle.parent()?;
-    let probe = parent.join(format!(".krate-write-check-{}", std::process::id()));
-    std::fs::write(&probe, b"").ok()?;
-    let _ = std::fs::remove_file(&probe);
-    let out = Command::new("codesign")
-        .args(["-dv", "--verbose=2"])
-        .arg(&bundle)
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stderr);
-    let team = text
-        .lines()
-        .find_map(|l| l.strip_prefix("TeamIdentifier="))?
-        .trim()
-        .to_string();
-    if team.is_empty() || team == "not set" {
-        return None;
-    }
-    Some((bundle, team))
-}
-
 #[tauri::command]
 #[allow(clippy::needless_return)]
 fn terminal_status() -> serde_json::Value {
@@ -6156,6 +6058,78 @@ fn win_close(window: tauri::Window) {
     let _ = window.close();
 }
 
+/// `KRATE_UPDATE_SELFTEST=<log>`: start as this version would, check the
+/// feed, and if a newer Krate is out download it, check it and hand off to
+/// the installer step exactly as the Update button does -- with no window.
+/// The relaunched version runs the same way, finds nothing newer, and stays
+/// up a few seconds so the helper sees it alive.
+fn update_selftest(version: &str, log: &Path) {
+    let say = |line: String| {
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+        {
+            let _ = writeln!(f, "{} pid={} {line}", version, std::process::id());
+        }
+    };
+    let updates = studio_dir().join("updates");
+    updater::note_started(&updates, version);
+    say(format!(
+        "started from {}",
+        std::env::current_exe().unwrap_or_default().display()
+    ));
+    let failed = updater::take_failed(&updates);
+    if let Some((v, why)) = &failed {
+        say(format!("an update to {v} did not take: {why}"));
+    }
+    let latest = krate_http::get(&updater::latest_url())
+        .set("User-Agent", "krate-studio")
+        .timeout(std::time::Duration::from_secs(15))
+        .call()
+        .map_err(|e| e.to_string())
+        .and_then(|r| {
+            r.into_json::<serde_json::Value>()
+                .map_err(|e| e.to_string())
+        });
+    let latest = match latest {
+        Ok(v) => v["tag_name"]
+            .as_str()
+            .unwrap_or("")
+            .trim_start_matches('v')
+            .to_string(),
+        Err(e) => {
+            say(format!("could not check: {e}"));
+            return;
+        }
+    };
+    if updater::compare_versions(&latest, version) != std::cmp::Ordering::Greater {
+        say(format!("up to date (feed says {latest})"));
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        say("exiting".to_string());
+        return;
+    }
+    // The version that just failed is not tried again by itself; the
+    // window offers it again and the person decides.
+    if failed.as_ref().is_some_and(|(v, _)| *v == latest) {
+        say(format!(
+            "{latest} failed last time: not trying again by itself"
+        ));
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        return;
+    }
+    say(format!("{latest} is newer: downloading"));
+    if let Err(e) = install_update_blocking(&latest, &mut |_, _, _| {}) {
+        say(format!("download refused: {e}"));
+        return;
+    }
+    match begin_update() {
+        Ok(()) => say("handed off to the installer step; quitting".to_string()),
+        Err(e) => say(format!("not installed: {e}")),
+    }
+}
+
 fn main() {
     let _ = STARTED.set(std::time::Instant::now());
 
@@ -6260,18 +6234,41 @@ fn main() {
             return;
         }
     }
-    // Finish the install before the window appears. On a background thread:
-    // it touches Launch Services and the filesystem, and none of it should
-    // ever delay the first paint. Off macOS this already ran above, before
-    // the argv returns; the marker makes the second call a no-op.
-    #[cfg(target_os = "macos")]
-    std::thread::spawn(first_run_setup);
-
     // Studio's interface, newer than the one compiled in when Krate has
     // shipped one (IC-998): the last checked bundle on disk serves from the
     // first paint, through Tauri's own asset seam -- same origin, same
     // policy, same commands. Anything wrong leaves the built-in interface.
     let mut context = tauri::generate_context!();
+    let version = context.package_info().version.to_string();
+
+    // What earlier updates left: our update images still mounted, old
+    // downloads, half downloads (K-1369). Off the main thread: hdiutil can
+    // take a moment and the window must not wait on it.
+    {
+        let updates = studio_dir().join("updates");
+        let version = version.clone();
+        if std::env::var_os(updater::SELFTEST_ENV).is_some() {
+            updater::cleanup_on_launch(&updates, &version);
+        } else {
+            std::thread::spawn(move || updater::cleanup_on_launch(&updates, &version));
+        }
+    }
+    // A headless update for proving one on a machine someone is using: no
+    // window, every step written to the log the variable names.
+    if let Some(log) = std::env::var_os(updater::SELFTEST_ENV) {
+        update_selftest(&version, Path::new(&log));
+        return;
+    }
+
+    // Finish the install before the window appears. On a background thread:
+    // it touches Launch Services and the filesystem, and none of it should
+    // ever delay the first paint. Off macOS this already ran above, before
+    // the argv returns; the marker makes the second call a no-op. After the
+    // self-test return: a headless check must not register file types or
+    // URL handlers for whatever copy it runs from.
+    #[cfg(target_os = "macos")]
+    std::thread::spawn(first_run_setup);
+
     live_ui::load_cached(&studio_dir());
     let builtin = context.set_assets(Box::new(live_ui::LiveAssets::empty()));
     context.set_assets(Box::new(live_ui::LiveAssets::new(builtin)));
@@ -6279,7 +6276,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .manage(Running::fresh())
-        .setup(|_app| {
+        .setup(move |_app| {
+            // The update helper waits for this before it deletes the old
+            // version (updater.rs); without it, it puts the old one back.
+            updater::note_started(&studio_dir().join("updates"), &version);
+
             // A newer interface from the hub, checked and kept for the next
             // start; the window offers a reload to show it now.
             {
@@ -6511,6 +6512,7 @@ fn main() {
             link_terminal_tool,
             install_update,
             restart_for_update,
+            update_outcome,
             win_minimize,
             win_toggle_max,
             win_close,

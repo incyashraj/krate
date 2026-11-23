@@ -259,6 +259,21 @@ async function restartIntoUpdate(latest, mine, onFail) {
   }
 }
 
+/// First start after an update that did not take: say why, once. The
+/// installer step put the old version back and wrote the reason down.
+async function noteFailedUpdate() {
+  let out = null;
+  try { out = await invoke("update_outcome"); } catch (e) { return; }
+  if (!out || !out.version) return;
+  const bar = document.createElement("div");
+  bar.className = "kr-toast";
+  bar.setAttribute("role", "status");
+  bar.innerHTML = `<span>${escapeHtml(out.reason || `Krate ${out.version} was not installed.`)}</span>`;
+  document.body.appendChild(bar);
+  requestAnimationFrame(() => bar.classList.add("on"));
+  setTimeout(() => { bar.classList.remove("on"); setTimeout(() => bar.remove(), 400); }, 9000);
+}
+
 /// First start after an update: say it worked, once.
 function noteUpdatedKrate(version) {
   let rec = null;
@@ -333,8 +348,9 @@ function openUpdatePrompt(latest, mine, notes) {
     restartIntoUpdate(latest, mine, (words) => {
       sheet.classList.remove("hidden");
       bar.parentElement.classList.add("hidden");
-      now.textContent = "Downloaded";
-      note.textContent = `Could not restart: ${words}. Quit Krate and open it again to finish.`;
+      now.textContent = "Try again";
+      now.disabled = false;
+      note.textContent = words;
       later.disabled = false;
     });
   };
@@ -347,6 +363,7 @@ async function checkForNewerKrate() {
   try {
     const mine = String(await invoke("studio_version")).replace(/^v/, "");
     noteUpdatedKrate(mine);
+    noteFailedUpdate();
     // Through the shell, as Settings does: the window's CSP blocks a direct
     // fetch, so a check from here never once saw a newer release (K-994).
     const rel = await invoke("latest_release");
@@ -10286,7 +10303,7 @@ async function runUpdate(latest) {
     $("updAct").innerHTML = '<button class="set-mini go" id="updRestart">Restart Krate</button>';
     $("updRestart").addEventListener("click", () => restartIntoUpdate(latest, "", (words) => {
       // Said where the button is: a failed restart did nothing at all.
-      $("updS").textContent = `Could not restart: ${words}. Quit Krate and open it again to finish.`;
+      $("updS").textContent = words;
     }));
   } catch (err) {
     // `notify`: the organisation installs updates itself (IC-949). Told,
