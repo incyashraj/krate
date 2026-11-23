@@ -402,6 +402,25 @@ interface pdf {
   /// Draw page `page` at `scale` pixels per point on white: 2.0 is sharp on
   /// a Retina screen. The longest side is held to 8192 pixels.
   render: func(doc: u64, page: u32, scale: f32) -> result<page-pixels, gfx-error>;
+  /// One word on a page and its box, in points from the page's top-left
+  /// corner (the space `page-size` measures).
+  record text-span {
+    /// The word.
+    text: string,
+    /// Its left edge.
+    x: f32,
+    /// Its top edge.
+    y: f32,
+    /// How wide it is.
+    width: f32,
+    /// How tall it is (about the font size).
+    height: f32,
+  }
+
+  /// The words on page `page` in reading order, with their boxes: what an
+  /// app needs to select, copy and search a PDF's text. Empty for a page
+  /// that is a picture of text (a scan).
+  page-text: func(doc: u64, page: u32) -> result<list<text-span>, gfx-error>;
   /// Let the PDF go.
   close: func(doc: u64);
 }

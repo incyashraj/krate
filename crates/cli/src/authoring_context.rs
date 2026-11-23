@@ -713,7 +713,9 @@ ordinary way, then `let d = krate::gfx::pdf::open(&bytes)?`, \
 `page_count(d)`, `page_size(d, i)` in points, and \
 `render(d, i, scale)` gives `{ width, height, rgba }` to keep with \
 `canvas_images::keep` and draw each frame -- render a page once, not every \
-frame, and only the pages on screen. A browser tab answers \
+frame, and only the pages on screen. `page_text(d, i)` gives its words \
+with boxes in points (top-left), for selecting, copying and searching. A \
+browser tab answers \
 `Unsupported`: say so.\n\n\
 **3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
 buffer at a rect (fastest for tiles and unrotated sprites), and \

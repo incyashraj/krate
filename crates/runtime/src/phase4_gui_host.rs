@@ -1366,6 +1366,38 @@ impl crate::phase4_gui_bindings::krate::gfx::pdf::Host for Phase3GuiHost {
         }
     }
 
+    fn page_text(
+        &mut self,
+        doc: u64,
+        page: u32,
+    ) -> wasmtime::Result<
+        Result<Vec<crate::phase4_gui_bindings::krate::gfx::pdf::TextSpan>, gfx3::types::GfxError>,
+    > {
+        #[cfg(not(target_arch = "wasm32"))]
+        return Ok(self
+            .pdfs
+            .borrow()
+            .page_text(doc, page)
+            .map(|spans| {
+                spans
+                    .into_iter()
+                    .map(|s| crate::phase4_gui_bindings::krate::gfx::pdf::TextSpan {
+                        text: s.text,
+                        x: s.x,
+                        y: s.y,
+                        width: s.width,
+                        height: s.height,
+                    })
+                    .collect()
+            })
+            .map_err(gfx3::types::GfxError::Unsupported));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (doc, page);
+            Ok(Err(gfx3::types::GfxError::InvalidTarget))
+        }
+    }
+
     fn close(&mut self, doc: u64) -> wasmtime::Result<()> {
         #[cfg(not(target_arch = "wasm32"))]
         self.pdfs.borrow_mut().close(doc);

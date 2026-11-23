@@ -15,6 +15,113 @@ pub(crate) const MAX_BYTES: usize = 256 * 1024 * 1024;
 /// The longest side of a rendered page, in pixels.
 pub(crate) const MAX_EDGE: f32 = 8192.0;
 
+/// One word on a page and its box, in points from the page's top-left
+/// corner (the same space as `page_size`).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TextSpan {
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// The glyphs a page shows, as (text, x, baseline y, em size) in points
+/// from the top-left: a device that collects text instead of drawing.
+struct GlyphCollector(Vec<(String, f64, f64, f64)>);
+
+impl<'a> hayro::hayro_interpret::Device<'a> for GlyphCollector {
+    fn draw_path(
+        &mut self,
+        _: &hayro::kurbo::BezPath,
+        _: hayro::hayro_interpret::DrawProps<'a>,
+        _: &hayro::hayro_interpret::DrawMode,
+    ) {
+    }
+    fn push_clip_path(&mut self, _: &hayro::hayro_interpret::ClipPath) {}
+    fn push_transparency_group(
+        &mut self,
+        _: f32,
+        _: Option<hayro::hayro_interpret::SoftMask<'a>>,
+        _: hayro::hayro_interpret::BlendMode,
+    ) {
+    }
+    fn draw_glyph_run(
+        &mut self,
+        run: &hayro::hayro_interpret::font::GlyphRun<'_, 'a>,
+        props: hayro::hayro_interpret::DrawProps<'a>,
+        _: &hayro::hayro_interpret::DrawMode,
+    ) {
+        use hayro::hayro_interpret::hayro_cmap::BfString;
+        for glyph in run.glyphs() {
+            let Some(text) = glyph.as_unicode() else {
+                continue;
+            };
+            let text = match text {
+                BfString::Char(c) => c.to_string(),
+                BfString::String(s) => s,
+            };
+            let t = props.transform * glyph.transform();
+            let at = t * hayro::kurbo::Point::ZERO;
+            let [_, _, c, d, _, _] = t.as_coeffs();
+            let size = (c * c + d * d).sqrt() * 1000.0; // glyph space is 1000 units an em
+            self.0.push((text, at.x, at.y, size));
+        }
+    }
+    fn draw_image(
+        &mut self,
+        _: hayro::hayro_interpret::Image<'a, '_>,
+        _: hayro::hayro_interpret::ImageDrawProps<'a>,
+    ) {
+    }
+    fn pop_clip(&mut self) {}
+    fn pop_transparency_group(&mut self) {}
+}
+
+/// Glyphs in reading order joined into words: a new word at a space, at a
+/// new line (the baseline moved by half a size), or at a gap wider than a
+/// third of the size.
+fn words(glyphs: &[(String, f64, f64, f64)]) -> Vec<TextSpan> {
+    let mut out: Vec<TextSpan> = Vec::new();
+    let mut word: Vec<(String, f64, f64, f64)> = Vec::new();
+    let flush =
+        |word: &mut Vec<(String, f64, f64, f64)>, out: &mut Vec<TextSpan>, end: Option<f64>| {
+            if let (Some(first), Some(last)) = (word.first(), word.last()) {
+                let size = word.iter().map(|g| g.3).fold(0.0, f64::max);
+                let right = end.unwrap_or(last.1 + last.3 * 0.5).max(last.1);
+                out.push(TextSpan {
+                    text: word.iter().map(|g| g.0.as_str()).collect(),
+                    x: first.1 as f32,
+                    y: (first.2 - size * 0.8) as f32,
+                    width: (right - first.1).max(0.0) as f32,
+                    height: size as f32,
+                });
+            }
+            word.clear();
+        };
+    for (i, g) in glyphs.iter().enumerate() {
+        let next = glyphs.get(i + 1);
+        if g.0.trim().is_empty() {
+            flush(&mut word, &mut out, Some(g.1));
+            continue;
+        }
+        if let Some(prev) = word.last() {
+            let new_line = (g.2 - prev.2).abs() > prev.3.max(g.3) * 0.5;
+            let gap = g.1 - prev.1 > prev.3.max(g.3) * 1.2;
+            if new_line || gap || g.1 < prev.1 {
+                flush(&mut word, &mut out, None);
+            }
+        }
+        word.push(g.clone());
+        // The word's right edge: where the next glyph on this line starts.
+        if next.is_none_or(|n| (n.2 - g.2).abs() > g.3 * 0.5 || n.1 < g.1) {
+            flush(&mut word, &mut out, None);
+        }
+    }
+    flush(&mut word, &mut out, None);
+    out
+}
+
 /// One rendered page, straight-alpha RGBA.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PagePixels {
@@ -106,6 +213,31 @@ impl PdfDocs {
         })
     }
 
+    /// The words on a page, in reading order, with their boxes in points
+    /// from the top-left: what an app needs to select, copy and search a
+    /// PDF's text. Empty for a scanned page (pictures of text).
+    pub(crate) fn page_text(&self, doc: u64, page: u32) -> Result<Vec<TextSpan>, String> {
+        use hayro::hayro_interpret::util::TransformExt;
+        let pdf = self.doc(doc)?;
+        let pages = pdf.pages();
+        let page = pages
+            .get(page as usize)
+            .ok_or_else(|| format!("there is no page {page}"))?;
+        let transform = page.initial_transform(true).to_kurbo();
+        let (w, h) = page.render_dimensions();
+        let cache = hayro::hayro_interpret::InterpreterCache::new();
+        let mut ctx = hayro::hayro_interpret::Context::new(
+            transform,
+            hayro::kurbo::Rect::new(0.0, 0.0, f64::from(w), f64::from(h)),
+            &cache,
+            page.xref(),
+            hayro::hayro_interpret::InterpreterSettings::default(),
+        );
+        let mut collector = GlyphCollector(Vec::new());
+        hayro::hayro_interpret::interpret_page(page, &mut ctx, &mut collector);
+        Ok(words(&collector.0))
+    }
+
     pub(crate) fn close(&mut self, doc: u64) {
         self.docs.remove(&doc);
     }
@@ -150,6 +282,68 @@ mod tests {
             .as_bytes(),
         );
         out
+    }
+
+    /// A one-page PDF with two lines in Helvetica 12 pt: "Hello World" at
+    /// (72, 700) and "Second line" at (72, 680), from the bottom-left.
+    fn text_pdf() -> Vec<u8> {
+        let content = "BT /F1 12 Tf 72 700 Td (Hello World) Tj 0 -20 Td (Second line) Tj ET";
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".to_string(),
+            format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>".to_string(),
+        ];
+        let mut out = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(out.len());
+            out.extend_from_slice(format!("{} 0 obj\n{body}\nendobj\n", i + 1).as_bytes());
+        }
+        let xref = out.len();
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for o in offsets {
+            out.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+        }
+        out.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        out
+    }
+
+    /// A PDF's words come back in reading order with boxes where the page
+    /// shows them: what selecting and searching need.
+    #[test]
+    fn a_pages_words_come_back_with_their_boxes() {
+        let mut docs = PdfDocs::default();
+        let doc = docs.open(text_pdf()).expect("a PDF");
+        let words = docs.page_text(doc, 0).expect("text");
+        let text: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(text, ["Hello", "World", "Second", "line"], "{words:?}");
+        let hello = &words[0];
+        assert!((hello.x - 72.0).abs() < 0.5, "{hello:?}");
+        assert!((hello.height - 12.0).abs() < 0.5, "{hello:?}");
+        // Baseline 700 from the bottom of a 792 page is 92 from the top; the
+        // box's top sits about an ascent above it.
+        assert!(hello.y > 75.0 && hello.y < 92.0, "{hello:?}");
+        assert!(hello.width > 20.0 && hello.width < 40.0, "{hello:?}");
+        let world = &words[1];
+        assert!(world.x > hello.x + hello.width, "{world:?} after {hello:?}");
+        let second = &words[2];
+        assert!(
+            (second.y - hello.y - 20.0).abs() < 0.5,
+            "the next line is 20 pt lower: {second:?}"
+        );
+        // A page of shapes has no words.
+        let shapes = docs.open(square_pdf()).expect("a PDF");
+        assert!(docs.page_text(shapes, 0).expect("text").is_empty());
     }
 
     #[test]

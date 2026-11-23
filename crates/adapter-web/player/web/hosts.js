@@ -822,7 +822,7 @@ export function buildImports(ctx) {
   impl['krate:ui/spelling'] = { available: () => false, check: () => [], suggest: () => [], learn() {} };
   // PDF pages (K-1342): drawn by Krate on a computer; a tab says so.
   const noPdf = () => { throw new HostError({ tag: 'unsupported', val: 'PDF pages are drawn in Krate on a computer; a browser tab cannot draw them yet.' }); };
-  impl['krate:gfx/pdf'] = { open: noPdf, pageCount: noPdf, pageSize: noPdf, render: noPdf, close() {} };
+  impl['krate:gfx/pdf'] = { open: noPdf, pageCount: noPdf, pageSize: noPdf, render: noPdf, pageText: noPdf, close() {} };
   impl['krate:gfx/canvas-images'] = {
     keep: (c, w, h, rgba) => BigInt(unwrap(ui.c_keep(c, w, h, rgba))),
     draw: (c, image, a) => g(ui.c_draw_kept(c, image, geo(a))),

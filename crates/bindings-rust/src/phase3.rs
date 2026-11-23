@@ -1189,7 +1189,7 @@ pub mod gfx {
     }
     /// `krate:gfx/pdf`.
     pub mod pdf {
-        pub use crate::bindings::krate::gfx::pdf::{GfxError, PagePixels};
+        pub use crate::bindings::krate::gfx::pdf::{GfxError, PagePixels, TextSpan};
 
         /// Read a PDF from its bytes and keep it open under the handle returned.
         /// Fails on a file that is not a PDF or is locked with a password.
@@ -1212,6 +1212,13 @@ pub mod gfx {
         /// a Retina screen. The longest side is held to 8192 pixels.
         pub fn render(doc: u64, page: u32, scale: f32) -> Result<PagePixels, GfxError> {
             crate::bindings::krate::gfx::pdf::render(doc, page, scale)
+        }
+
+        /// The words on page `page` in reading order, with their boxes: what an
+        /// app needs to select, copy and search a PDF's text. Empty for a page
+        /// that is a picture of text (a scan).
+        pub fn page_text(doc: u64, page: u32) -> Result<alloc::vec::Vec<TextSpan>, GfxError> {
+            crate::bindings::krate::gfx::pdf::page_text(doc, page)
         }
 
         /// Let the PDF go.

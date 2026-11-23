@@ -981,6 +981,7 @@ takes this path, so any of them is a model for the wiring.
 - `pdf::page-count: func(doc: u64) -> result<u32, gfx-error>`
 - `pdf::page-size: func(doc: u64, page: u32) -> result<tuple<f32, f32>, gfx-error>`
 - `pdf::render: func(doc: u64, page: u32, scale: f32) -> result<page-pixels, gfx-error>`
+- `pdf::page-text: func(doc: u64, page: u32) -> result<list<text-span>, gfx-error>`
 - `pdf::close: func(doc: u64)`
 - `scene3d::bind: func(window: u64, widget: u64) -> result<u64, gfx-error>`
 - `scene3d::clear: func(scene: u64, sky: color) -> result<_, gfx-error>`
