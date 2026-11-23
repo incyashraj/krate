@@ -3114,8 +3114,13 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   #viewSession[data-mob="app"] .panel {
     display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin: 0; border-radius: 0;
   }
+  /* Relative, never static: every .titlebar carries a drag layer
+     (style.css .titlebar::before, absolute, inset 0). A static bar let that
+     layer size itself to the whole screen and sit over the Chat / App
+     switch, so on a phone "Chat" could not be pressed from the App side
+     (2026-11-23, an iPhone in Safari). */
   #viewSession[data-mob="app"] .panel-bar {
-    position: static; flex: none; height: auto; min-height: 48px; padding: 7px 10px; gap: 8px;
+    position: relative; flex: none; height: auto; min-height: 48px; padding: 7px 10px; gap: 8px;
     border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
   }
   #viewSession[data-mob="app"] .ptabs { flex: none; }
@@ -3127,6 +3132,36 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
   #viewSession[data-mob="app"] .stage { height: auto; min-height: 0; max-height: none; border-bottom: 0; }
   #viewSession[data-mob="app"] .done-card .shot-stage img { max-height: calc(100dvh - 260px); }
   #viewSession[data-mob="app"] .done-meta .done-name, #viewSession[data-mob="app"] .done-meta .done-sub { display: block; }
+}
+/* The screen a phone really shows (2026-11-23).
+ *
+ * `.view` was 100vh: on iPhone Safari that is the LARGEST viewport, the
+ * one with every toolbar gone. The page never scrolls (body is overflow
+ * hidden), so the toolbar never goes and the bottom of the view -- the
+ * composer, its + and mic -- sat under Safari's bar. iOS 26's floating bar
+ * lies over the page, so even 100dvh reaches under it.
+ *
+ * What does stop at the browser's own chrome is a FIXED box: Safari lays
+ * fixed content out above its bottom controls. So on a phone each view is
+ * fixed to the screen, and redesign.js (fitViewport) moves its top and
+ * bottom to window.visualViewport's, which is what shrinks when the
+ * on-screen keyboard comes up: the composer rides on top of the keyboard
+ * rather than under it. Without the script it is inset 0, which is
+ * already right with the keyboard down. */
+@media (max-width: 860px) {
+  .view {
+    position: fixed; left: 0; right: 0;
+    top: var(--vv-top, 0px); bottom: var(--vv-bottom, 0px);
+    height: auto;
+  }
+  #viewSession .session-body { height: auto; flex: 1 1 auto; min-height: 0; }
+  /* The home indicator and a bar that floats over the page bottom: never
+     less than the safe area, and never flush with the glass. */
+  #viewSession .composer { padding-bottom: max(10px, calc(6px + env(safe-area-inset-bottom))); }
+  /* With the keyboard up the safe area is behind the keyboard: only the
+     composer's own breathing room is needed. */
+  body.kr-kb #viewSession .composer { padding-bottom: 8px; }
+  #viewSession[data-mob="app"] .panel-body { margin-bottom: max(10px, env(safe-area-inset-bottom)); }
 }
 /* A small phone gives the app's name the room the "draft" chip took. */
 @media (max-width: 400px) { #viewSession .rail-head .kr-ver.draft { display: none; } }

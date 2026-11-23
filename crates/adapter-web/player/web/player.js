@@ -45,6 +45,21 @@ const FILE = RUN[5] === 'file';
 const FROM = ORG_APP ? `player:org/${ORG_APP.slug}/${ORG_APP.app}` : `player:${HASH || LINE}`;
 // The post a link came from (`?via=reddit`), carried to the open's count.
 const VIA = ((params.get('via') || '').toLowerCase().match(/^[a-z0-9][a-z0-9_-]{0,31}$/) || [''])[0];
+// Run from Studio in this same tab (a phone's Run, 2026-11-23): the way
+// back is one press, to the session it came from. Back in history when
+// Studio is the page before this one, so its state comes back as it was;
+// Studio's own address otherwise.
+if (VIA === 'studio') {
+  const back = document.getElementById('backStudio');
+  if (back) {
+    back.hidden = false;
+    back.onclick = (e) => {
+      let fromStudio = false;
+      try { fromStudio = new URL(document.referrer).origin === SITE; } catch (_) { /* no referrer */ }
+      if (fromStudio && history.length > 1) { e.preventDefault(); history.back(); }
+    };
+  }
+}
 // A phone or a tablet: nothing here may tell it to use "your computer".
 const PHONE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
 // A chat or social app's own browser (Instagram, Facebook, LinkedIn,
