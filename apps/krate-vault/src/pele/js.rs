@@ -336,6 +336,45 @@ pub fn lower(s: &str) -> String {
     s.to_lowercase()
 }
 
+/// `Number.prototype.toFixed(digits)`: the exact value rounded to
+/// `digits` decimals, a tie going to the larger number.
+pub fn to_fixed(x: f64, digits: usize) -> String {
+    if !x.is_finite() || x.abs() >= 1e21 {
+        return num_str(x);
+    }
+    // Every double's decimal expansion ends within 1074 places.
+    let exact = format!("{:.1100}", x.abs());
+    let (int, frac) = exact.split_once('.').unwrap_or((&exact, ""));
+    let mut ds: Vec<u8> = int.bytes().chain(frac.bytes().take(digits)).collect();
+    if frac.as_bytes().get(digits).is_some_and(|d| *d >= b'5') {
+        let mut k = ds.len();
+        loop {
+            if k == 0 {
+                ds.insert(0, b'1');
+                break;
+            }
+            k -= 1;
+            if ds[k] == b'9' {
+                ds[k] = b'0';
+            } else {
+                ds[k] += 1;
+                break;
+            }
+        }
+    }
+    let split = ds.len() - digits;
+    let mut out = String::new();
+    if x < 0.0 {
+        out.push('-');
+    }
+    out.push_str(core::str::from_utf8(&ds[..split]).unwrap_or("0"));
+    if digits > 0 {
+        out.push('.');
+        out.push_str(core::str::from_utf8(&ds[split..]).unwrap_or(""));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

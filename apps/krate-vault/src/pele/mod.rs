@@ -11,18 +11,38 @@
 pub mod layered;
 pub mod layout;
 
+pub mod block;
+pub mod c4;
+pub mod class;
 pub mod common;
 pub mod core;
 pub mod detect;
+pub mod er;
 pub mod errors;
 pub mod flowchart;
+pub mod gantt;
+pub mod git;
+pub mod journey;
 pub mod js;
+pub mod mindmap;
+pub mod pie;
 pub mod preprocess;
+pub mod quadrant;
 pub mod render;
+pub mod requirement;
+pub mod sankey;
+pub mod sequence;
+pub mod state;
 pub mod svg;
 pub mod text;
+pub mod timeline;
 pub mod util;
+pub mod xychart;
 
 pub mod obsidian;
 #[cfg(test)]
 mod oracle;
+#[cfg(test)]
+mod oracle_charts;
+#[cfg(test)]
+mod oracle_diagrams;

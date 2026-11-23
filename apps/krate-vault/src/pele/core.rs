@@ -11,21 +11,36 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::json::Value;
+use crate::pele::block;
+use crate::pele::c4;
+use crate::pele::class;
 use crate::pele::detect::{detect_diagram, Detected};
+use crate::pele::er;
 use crate::pele::errors::{input_offset, syntax_error_in, Edit, PeleError, PeleErrorCode};
 use crate::pele::flowchart;
+use crate::pele::gantt;
+use crate::pele::git;
+use crate::pele::journey;
 use crate::pele::js;
+use crate::pele::mindmap;
+use crate::pele::pie;
 use crate::pele::preprocess::{
     cleanup_comments_with, encode_entities, encode_entities_with, is_record, normalize_line_breaks,
     preprocess, preprocess_with, Config,
 };
+use crate::pele::quadrant;
+use crate::pele::requirement;
+use crate::pele::sankey;
+use crate::pele::sequence;
+use crate::pele::state;
 use crate::pele::svg::palette::palette;
 use crate::pele::text::entities::{decode_entities, written_codes};
 use crate::pele::text::label::Icons;
 use crate::pele::text::measurer::Measure;
+use crate::pele::timeline;
+use crate::pele::xychart;
 
-/// Ports `interface RenderOptions`. Math (`math`), `monospace` parts of
-/// other diagram types and `now` (gantt) are not ported.
+/// Ports `interface RenderOptions`. Math (`math`) is not ported.
 #[derive(Clone, Default)]
 pub struct RenderOptions<'a> {
     /// The text measurer; Pele's fallback width table when None.
@@ -56,6 +71,12 @@ pub struct RenderOptions<'a> {
     pub icons: Icons<'a>,
     /// Mermaid config, merged under the diagram's own front matter and directives.
     pub config: Option<Value>,
+    /// The time gantt charts treat as now, in milliseconds since 1970.
+    /// Pele defaults to the current time; with None the port has no now.
+    pub now: Option<f64>,
+    /// Parts of a diagram drawn in the monospace font (`monospace`):
+    /// "members", "attributes", "files", "messages".
+    pub monospace: Option<Vec<String>>,
 }
 
 /// Ports `interface LinkInfo`.
@@ -94,6 +115,83 @@ const DEFAULT_MAX_EDGES: usize = 5000;
 /// A parsed diagram (`interface Parsed`).
 pub enum Model {
     Flowchart(flowchart::db::FlowDb),
+    Class(class::db::ClassDb),
+    State(state::db::StateDb),
+    Er(er::db::ErDb),
+    Requirement(requirement::db::RequirementDb),
+    C4(c4::db::C4Db),
+    Block(block::db::BlockDb),
+    Pie(pie::model::PieModel),
+    Sequence(sequence::db::SeqDb),
+    Mindmap(mindmap::db::MindmapDb),
+    Git(git::db::GitModel),
+    Gantt(gantt::db::GanttDb),
+    Journey(journey::db::JourneyDb),
+    Timeline(timeline::db::TimelineDb),
+    Sankey(sankey::db::SankeyDb),
+    XyChart(xychart::db::XyChartDb),
+    Quadrant(quadrant::db::QuadrantDb),
+}
+
+/// Ports `registered`: the diagram types the port draws.
+pub fn registered(kind: &str) -> bool {
+    matches!(
+        kind,
+        "flowchart"
+            | "class"
+            | "state"
+            | "er"
+            | "requirement"
+            | "c4"
+            | "block"
+            | "pie"
+            | "quadrantChart"
+            | "xychart"
+            | "sankey"
+            | "timeline"
+            | "journey"
+            | "gantt"
+            | "gitGraph"
+            | "mindmap"
+            | "sequence"
+    )
+}
+
+/// Ports `diagram.section ?? type`: the type's section in Mermaid's config.
+fn section_of(kind: &str) -> &str {
+    match kind {
+        "xychart" => "xyChart",
+        k => k,
+    }
+}
+
+/// Ports `diagram.parse` for each registered type.
+fn parse_model(
+    kind: &str,
+    parsed: &str,
+    config: &Value,
+    title: Option<&str>,
+    max_edges: usize,
+) -> Result<Model, PeleError> {
+    Ok(match kind {
+        "class" => Model::Class(class::parse(parsed, title)?),
+        "state" => Model::State(state::parse(parsed, title)?),
+        "er" => Model::Er(er::parse(parsed, title)?),
+        "requirement" => Model::Requirement(requirement::parse(parsed, title)?),
+        "c4" => Model::C4(c4::parse(parsed, title)?),
+        "block" => Model::Block(block::parse(parsed, title)?),
+        "pie" => Model::Pie(pie::parse(parsed, title)?),
+        "sequence" => Model::Sequence(sequence::parse(parsed, config, title)?),
+        "mindmap" => Model::Mindmap(mindmap::parse(parsed, title)?),
+        "gitGraph" => Model::Git(git::parse(parsed, config, title)?),
+        "gantt" => Model::Gantt(gantt::parse(parsed, config, title)?),
+        "journey" => Model::Journey(journey::parse(parsed, title)?),
+        "timeline" => Model::Timeline(timeline::parse(parsed, title)?),
+        "sankey" => Model::Sankey(sankey::parse(parsed, title)?),
+        "xychart" => Model::XyChart(xychart::parse(parsed, title)?),
+        "quadrantChart" => Model::Quadrant(quadrant::parse(parsed, title)?),
+        _ => Model::Flowchart(flowchart::parse(parsed, config, title, max_edges)?),
+    })
 }
 
 /// Ports `tagErrors`: names the diagram type in an error, and writes
@@ -160,7 +258,7 @@ fn parse_source(
             PeleErrorCode::UnsupportedDiagram,
         ));
     };
-    if found.kind != "flowchart" {
+    if !registered(found.kind) {
         let mut e = PeleError::new(
             format!("Diagram type \"{}\" is not supported yet.", found.kind),
             PeleErrorCode::UnsupportedDiagram,
@@ -183,9 +281,15 @@ fn parse_source(
         _ => pre.config.clone(),
     };
     let parsed = format!("{}\n", encode_entities(&pre.text));
-    let model = flowchart::parse(&parsed, &config, pre.title.as_deref(), max_edges)
-        .map_err(|e| tag(&found, relocate(e, text, &parsed)))?;
-    Ok((found, Model::Flowchart(model), config))
+    let model = parse_model(
+        found.kind,
+        &parsed,
+        &config,
+        pre.title.as_deref(),
+        max_edges,
+    )
+    .map_err(|e| tag(&found, relocate(e, text, &parsed)))?;
+    Ok((found, model, config))
 }
 
 /// Ports `detectType`.
@@ -198,7 +302,7 @@ pub fn detect_type(text: &str) -> Option<&'static str> {
 
 /// Ports `supports`.
 pub fn supports(text: &str) -> bool {
-    detect_type(text) == Some("flowchart")
+    detect_type(text).is_some_and(registered)
 }
 
 /// Ports `render`: the SVG for a diagram's text.
@@ -209,7 +313,7 @@ pub fn render(source: &str, options: &RenderOptions) -> Result<RenderResult, Pel
         options.max_edges.unwrap_or(DEFAULT_MAX_EDGES),
         options.config.as_ref(),
     )?;
-    let section = config.get(found.kind);
+    let section = config.get(section_of(found.kind));
     let fixed =
         section.is_some_and(|s| is_record(s) && s.get("useMaxWidth") == Some(&Value::Bool(false)));
     let responsive = options.responsive.unwrap_or(!fixed);
@@ -225,12 +329,52 @@ pub fn render(source: &str, options: &RenderOptions) -> Result<RenderResult, Pel
         None
     };
     let pal = palette(found.kind, &config);
-    let mut rendered = match &model {
-        Model::Flowchart(db) => {
-            flowchart::render::render_flowchart(db, &config, &opts, &pal.style, None)
-                .map_err(|e| tag(&found, e))?
-        }
-    };
+    let mut rendered =
+        match &model {
+            Model::Flowchart(db) => {
+                flowchart::render::render_flowchart(db, &config, &opts, &pal.style, None)
+                    .map_err(|e| tag(&found, e))?
+            }
+            Model::Class(db) => class::render::render_class(db, &config, &opts, &pal.style)
+                .map_err(|e| tag(&found, e))?,
+            Model::State(db) => state::render::render_state(db, &config, &opts, &pal.style)
+                .map_err(|e| tag(&found, e))?,
+            Model::Er(db) => {
+                er::render::render_er(db, &config, &opts, &pal.style).map_err(|e| tag(&found, e))?
+            }
+            Model::C4(db) => {
+                c4::render::render_c4(db, &config, &opts, &pal.style).map_err(|e| tag(&found, e))?
+            }
+            Model::Block(db) => block::render::render_block(db, &config, &opts, &pal.style)
+                .map_err(|e| tag(&found, e))?,
+            Model::Requirement(db) => {
+                requirement::render::render_requirement(db, &config, &opts, &pal.style)
+                    .map_err(|e| tag(&found, e))?
+            }
+            Model::Pie(m) => {
+                pie::render::render_pie(m, &config, &opts, &pal).map_err(|e| tag(&found, e))?
+            }
+            Model::Sequence(m) => sequence::render::render_sequence(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::Mindmap(m) => mindmap::render::render_mindmap(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::Git(m) => {
+                git::render::render_git(m, &config, &opts, &pal).map_err(|e| tag(&found, e))?
+            }
+            Model::Gantt(m) => {
+                gantt::render::render_gantt(m, &config, &opts, &pal).map_err(|e| tag(&found, e))?
+            }
+            Model::Journey(m) => journey::render::render_journey(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::Timeline(m) => timeline::render::render_timeline(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::Sankey(m) => sankey::render::render_sankey(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::XyChart(m) => xychart::render::render_xy_chart(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+            Model::Quadrant(m) => quadrant::render::render_quadrant(m, &config, &opts, &pal)
+                .map_err(|e| tag(&found, e))?,
+        };
     let output_limit = options.output_limit.unwrap_or(DEFAULT_OUTPUT_LIMIT);
     if js::len16(&rendered.svg) > output_limit {
         let mut e = PeleError::new(

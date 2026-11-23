@@ -132,6 +132,15 @@ fn options_of(opts: Option<&json::Value>) -> RenderOptions<'static> {
         o.max_width = v.get_num("maxWidth");
         o.responsive = v.get_bool("responsive");
         o.config = v.get("config").cloned();
+        o.now = v.get_num("now");
+        if let Some(json::Value::Arr(parts)) = v.get("monospace") {
+            o.monospace = Some(
+                parts
+                    .iter()
+                    .filter_map(|p| p.str().map(String::from))
+                    .collect(),
+            );
+        }
         if let Some(json::Value::Obj(map)) = v.get("iconsMap") {
             // The host's resolver: `name => map[name]`.
             let map: Vec<(String, String)> = map
@@ -212,7 +221,7 @@ fn flowcharts_match_pele() {
     run(cases);
 }
 
-fn run(cases: Vec<json::Value>) {
+pub(super) fn run(cases: Vec<json::Value>) {
     let mut failures: Vec<String> = Vec::new();
     let mut close = 0;
     for case in &cases {
