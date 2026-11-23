@@ -3,7 +3,7 @@
 //! What they do is in src/basemenu.rs.
 
 use super::look::{self, fill, fit, icon, r, round, text, width, Icon};
-use super::Ui;
+use super::{Ui, Zone};
 use crate::app::{Hit, View};
 use crate::basefile::BaseDoc;
 use crate::basemenu::{
@@ -238,6 +238,17 @@ impl Ui {
         for (i, (p, d)) in sort.iter().enumerate() {
             let cy = y + 15.0 * k;
             self.grip(card.x + 15.0 * k, cy);
+            // The grip carries the key up or down the list.
+            let row_r = r(card.x, y, card.w, ROW * k);
+            self.pop_rows.push((row_r, i));
+            self.hit(
+                r(card.x + 6.0 * k, y, 20.0 * k, 30.0 * k),
+                Zone::PopRow(0, i),
+            );
+            self.said.button(
+                r(card.x + 6.0 * k, y, 20.0 * k, 30.0 * k),
+                "Drag to reorder",
+            );
             let ty = self.app.prop_type(p);
             let (az, za) = dir_labels(ty);
             let label = self.label_of(base, p);
@@ -392,6 +403,18 @@ impl Ui {
         for p in files.into_iter().chain(rest) {
             list.push((p, false));
         }
+        // What is typed in "Find or create..." narrows the list.
+        let query = match self.app.view() {
+            Some(View::Base(b)) => b.prop_query.clone(),
+            _ => String::new(),
+        };
+        let q = crate::text::lower(query.trim());
+        if !q.is_empty() {
+            list.retain(|(p, _)| {
+                crate::text::lower(&self.label_of(base, p)).contains(&q)
+                    || crate::text::lower(p).contains(&q)
+            });
+        }
         let rh = 26.0 * k;
         let w = 220.0 * k;
         let h = (44.0 * k + list.len() as f32 * rh + 8.0 * k).min(area.bottom() - ay - 8.0 * k);
@@ -417,15 +440,37 @@ impl Ui {
             k * 0.85,
             t.muted,
         );
-        text(
+        let qw = text_w(
             self.c,
-            "Find or create...",
+            if query.is_empty() {
+                "Find or create..."
+            } else {
+                &query
+            },
             sb.x + 26.0 * k,
             sb.y + sb.h * 0.5 + self.sz.ui * 0.36,
             self.sz.ui,
-            400,
-            t.faint,
+            if query.is_empty() { t.faint } else { t.text },
         );
+        if self.caret_visible() {
+            let cx = sb.x + 26.0 * k + if query.is_empty() { 0.0 } else { qw };
+            fill(self.c, r(cx, sb.y + 7.0 * k, 1.0, sb.h - 14.0 * k), t.text);
+        }
+        self.said.field(sb, "Find or create...", &query);
+        // Nothing found: the line that makes a property of that name.
+        if list.is_empty() && !query.trim().is_empty() {
+            let y = sb.bottom() + 10.0 * k;
+            let mut label = String::from("Add \u{201C}");
+            label.push_str(query.trim());
+            label.push_str("\u{201D} property");
+            self.pop_action(
+                card.x + 6.0 * k,
+                y,
+                card.w - 12.0 * k,
+                &label,
+                BaseUi::CreateProp,
+            );
+        }
         fill(
             self.c,
             r(card.x, sb.bottom() + 4.0 * k, card.w, 1.0),
@@ -439,7 +484,7 @@ impl Ui {
                 break;
             }
             let row = r(card.x + 6.0 * k, y, card.w - 12.0 * k, rh);
-            let z = super::Zone::App(Hit::BaseUi(BaseUi::Column(p.clone())));
+            let z = Zone::PopRow(1, i);
             if self.hovered(&z) {
                 round(self.c, row, 4.0 * k, t.hover);
             }
@@ -479,11 +524,13 @@ impl Ui {
                 ink,
                 row.w - 80.0 * k,
             );
-            self.button(
-                r(row.x, y, row.w - 28.0 * k, rh),
-                &label,
-                Hit::BaseUi(BaseUi::Column(p.clone())),
-            );
+            // A press toggles the column; a drag of a shown one moves it.
+            self.hit(r(row.x, y, row.w - 28.0 * k, rh), z);
+            self.said.button(r(row.x, y, row.w - 28.0 * k, rh), &label);
+            if *on {
+                self.pop_rows.push((r(row.x, y, row.w, rh), i));
+            }
+            self.pop_props.push(p.clone());
             self.said.toggle(r(row.x, y, 20.0 * k, rh), &label, *on);
             self.pop_icon(
                 row.right() - 12.0 * k,
@@ -900,4 +947,10 @@ impl Ui {
         y += 36.0 * k;
         y - top
     }
+}
+
+/// Text drawn, returning its width.
+fn text_w(c: u64, s: &str, x: f32, base: f32, size: f32, col: look::Rgba) -> f32 {
+    text(c, s, x, base, size, 400, col);
+    width(c, s, size, 400)
 }

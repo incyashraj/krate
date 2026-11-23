@@ -1,0 +1,17 @@
+name = "sort keys reordered by dragging the grip"
+[[step]]
+wait_ms = 800
+[[step]]
+click = "Add sort"
+[[step]]
+click = "file base name"
+[[step]]
+shoot = "t-sort2.png"
+[[step]]
+expect_text = "Sort by"
+[[step]]
+drag = "0.594,0.251 0.594,0.200"
+[[step]]
+wait_ms = 300
+[[step]]
+shoot = "t-sort3.png"

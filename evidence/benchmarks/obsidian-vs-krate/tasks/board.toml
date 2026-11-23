@@ -1,0 +1,11 @@
+name = "a board card carried to another column"
+[[step]]
+wait_ms = 1500
+[[step]]
+expect_text = "Task 1"
+[[step]]
+drag = "0.4395,0.25 0.7227,0.75"
+[[step]]
+wait_ms = 500
+[[step]]
+shoot = "t-board.png"

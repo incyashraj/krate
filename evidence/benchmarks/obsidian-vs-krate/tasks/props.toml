@@ -1,0 +1,27 @@
+name = "Properties: find a property, show it, move a column"
+[[step]]
+wait_ms = 800
+[[step]]
+type = "fold"
+[[step]]
+expect_text = "folder"
+[[step]]
+shoot = "t-props-find.png"
+[[step]]
+click = "folder"
+[[step]]
+key = "Backspace"
+[[step]]
+key = "Backspace"
+[[step]]
+key = "Backspace"
+[[step]]
+key = "Backspace"
+[[step]]
+shoot = "t-props-list.png"
+[[step]]
+drag = "0.86,0.34 0.86,0.21"
+[[step]]
+wait_ms = 300
+[[step]]
+shoot = "t-props-moved.png"

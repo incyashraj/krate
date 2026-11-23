@@ -1,0 +1,13 @@
+name = "a canvas text card double-pressed and edited in place"
+[[step]]
+double_click_at = "0.462,0.304"
+[[step]]
+key = "End"
+[[step]]
+type = " done"
+[[step]]
+shoot = "t-card.png"
+[[step]]
+key = "Escape"
+[[step]]
+expect_text = "Plan"

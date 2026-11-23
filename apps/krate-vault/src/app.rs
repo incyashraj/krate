@@ -407,6 +407,8 @@ pub struct BaseTab {
     /// the operator picked for it.
     pub draft: Option<(bool, Vec<usize>, Option<String>)>,
     pub draft_op: Option<String>,
+    /// What is typed in the Properties menu's "Find or create..." box.
+    pub prop_query: String,
 }
 
 /// A note's saved copies, to look through and bring back.
@@ -1824,6 +1826,7 @@ impl App {
                 search: String::new(),
                 draft: None,
                 draft_op: None,
+                prop_query: String::new(),
             }))),
             FileKind::Image | FileKind::Pdf | FileKind::Media | FileKind::Other => {
                 Some(View::File(Box::new(FileTab {

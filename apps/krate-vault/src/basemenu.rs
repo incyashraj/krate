@@ -53,6 +53,8 @@ pub enum BaseUi {
     Column(String),
     /// A column's name, to change.
     Rename(String),
+    /// "Find or create...": add the typed name as a shown property.
+    CreateProp,
     /// Open or fold "All views" in the filter menu.
     FilterAll,
     /// A group's conjunction, a condition's property, operator or value,
@@ -73,6 +75,9 @@ pub enum BaseUi {
 pub enum BaseAct {
     SortProp(usize, String),
     SortDir(usize, String),
+    /// A sort key or a shown column carried from one place to another.
+    SortMove(usize, usize),
+    ColumnMove(usize, usize),
     SortAdd(String),
     GroupProp(String),
     GroupDir(String),
@@ -629,6 +634,27 @@ impl App {
                     w.order = Some(o);
                 }
             }),
+            BaseUi::CreateProp => {
+                let name = match self.view() {
+                    Some(View::Base(b)) => String::from(b.prop_query.trim()),
+                    _ => return,
+                };
+                if name.is_empty() {
+                    return;
+                }
+                let id = crate::basefile::full_id(&name);
+                self.base_apply(|d, v| {
+                    if let Some(w) = d.views.get_mut(v) {
+                        let o = w.order.get_or_insert_with(Vec::new);
+                        if !o.contains(&id) {
+                            o.push(id);
+                        }
+                    }
+                });
+                if let Some(View::Base(b)) = self.view_mut() {
+                    b.prop_query.clear();
+                }
+            }
             BaseUi::Rename(p) => {
                 let cur = self
                     .base_doc()
@@ -870,6 +896,22 @@ impl App {
                     }
                 }
             }),
+            BaseAct::SortMove(from, to) => self.base_apply(|d, v| {
+                if let Some(s) = d.views.get_mut(v).and_then(|w| w.sort.as_mut()) {
+                    if from < s.len() && to < s.len() && from != to {
+                        let e = s.remove(from);
+                        s.insert(to, e);
+                    }
+                }
+            }),
+            BaseAct::ColumnMove(from, to) => self.base_apply(|d, v| {
+                if let Some(o) = d.views.get_mut(v).and_then(|w| w.order.as_mut()) {
+                    if from < o.len() && to < o.len() && from != to {
+                        let e = o.remove(from);
+                        o.insert(to, e);
+                    }
+                }
+            }),
             BaseAct::SortAdd(p) => self.base_apply(|d, v| {
                 if let Some(w) = d.views.get_mut(v) {
                     let s = w.sort.get_or_insert_with(Vec::new);
@@ -1108,6 +1150,12 @@ impl App {
 
     /// Typing into a base's search box. True when it took the text.
     pub fn base_search_text(&mut self, s: &str) -> bool {
+        if let Some(View::Base(b)) = self.view_mut() {
+            if b.panel == Some(Panel::Properties) {
+                b.prop_query.push_str(s);
+                return true;
+            }
+        }
         match self.view_mut() {
             Some(View::Base(b)) if b.search_on => {
                 b.search.push_str(s);
@@ -1120,6 +1168,26 @@ impl App {
 
     /// A key while a base's search box is open. True when it took it.
     pub fn base_search_key(&mut self, key: &str) -> bool {
+        let props_open =
+            matches!(self.view(), Some(View::Base(b)) if b.panel == Some(Panel::Properties));
+        if props_open {
+            match key {
+                "Backspace" => {
+                    if let Some(View::Base(b)) = self.view_mut() {
+                        b.prop_query.pop();
+                    }
+                }
+                "Enter" => self.base_ui(BaseUi::CreateProp),
+                "Escape" => {
+                    if let Some(View::Base(b)) = self.view_mut() {
+                        b.panel = None;
+                        b.prop_query.clear();
+                    }
+                }
+                _ => return false,
+            }
+            return true;
+        }
         match self.view_mut() {
             Some(View::Base(b)) if b.search_on => {
                 match key {

@@ -1,0 +1,21 @@
+name = "PDF: double-click a word, drag across words, find what is selected"
+[[step]]
+expect_text = "of 4"
+[[step]]
+double_click_at = "0.499,0.3625"
+[[step]]
+key = "Primary+f"
+[[step]]
+expect_text = "1 of 48 matches"
+[[step]]
+key = "Escape"
+[[step]]
+drag = "0.396,0.3625 0.566,0.3625"
+[[step]]
+shoot = "t-pdf-drag.png"
+[[step]]
+key = "Primary+f"
+[[step]]
+shoot = "t-pdf-find-sel.png"
+[[step]]
+expect_text = "1 of 1 matches"

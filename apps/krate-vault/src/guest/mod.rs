@@ -78,6 +78,9 @@ enum Zone {
     File(usize, media::FileCtl),
     /// A card on a base's board, by its row.
     BoardCard(usize),
+    /// A row of a base menu that can be dragged: (0 sort keys, 1
+    /// properties) and its place.
+    PopRow(u8, usize),
 }
 
 #[derive(Clone, PartialEq)]
@@ -124,6 +127,13 @@ enum Drag {
     Scrub(usize),
     /// Selecting a PDF's text, in a group.
     PdfSel(usize),
+    /// A base menu's row being carried up or down.
+    PopRow {
+        list: u8,
+        from: usize,
+        y: f32,
+        moved: bool,
+    },
     /// A board card being carried to another column.
     Card {
         row: usize,
@@ -202,6 +212,9 @@ struct Ui {
     card_docs: alloc::collections::BTreeMap<String, (u64, String, crate::editor::Doc)>,
     /// A presentation is filling the window (src/guest/slides.rs).
     slides_on: bool,
+    /// A base menu's draggable rows as drawn, and the properties list.
+    pop_rows: Vec<(Rect, usize)>,
+    pop_props: Vec<String>,
 }
 
 fn ms() -> u64 {
@@ -395,6 +408,8 @@ impl Ui {
         self.view_areas.clear();
         self.base_pop = None;
         self.board_cols.clear();
+        self.pop_rows.clear();
+        self.pop_props.clear();
         if self.app.is_floating(self.app.pane) {
             self.view = None;
             self.shown.area = None;
@@ -3475,6 +3490,12 @@ impl Ui {
             self.release(px, py);
             return;
         }
+        self.drag_to(px, py);
+    }
+
+    /// A drag goes on to (px, py): from the pointer's position each frame,
+    /// or from a move event, so a drag follows however the moves arrive.
+    fn drag_to(&mut self, px: f32, py: f32) {
         match self.drag.clone() {
             Drag::Select => {
                 if let Some(view) = self.ed_view() {
@@ -3537,6 +3558,21 @@ impl Ui {
                     self.drag = Drag::Row {
                         row,
                         x,
+                        y,
+                        moved: true,
+                    };
+                }
+            }
+            Drag::PopRow {
+                list,
+                from,
+                y,
+                moved,
+            } => {
+                if !moved && (py - y).abs() > 4.0 {
+                    self.drag = Drag::PopRow {
+                        list,
+                        from,
                         y,
                         moved: true,
                     };
@@ -3628,6 +3664,30 @@ impl Ui {
             }
             Drag::Graph { .. } | Drag::Canvas { .. } | Drag::Slider(_) => {
                 self.view_release(drag, px, py);
+            }
+            Drag::PopRow {
+                list, from, moved, ..
+            } => {
+                let target = self
+                    .pop_rows
+                    .iter()
+                    .find(|(r, _)| py >= r.y && py < r.bottom())
+                    .or_else(|| self.pop_rows.iter().rfind(|(r, _)| py >= r.y))
+                    .or_else(|| self.pop_rows.first())
+                    .map(|(_, i)| *i);
+                if !moved {
+                    if list == 1 {
+                        if let Some(p) = self.pop_props.get(from).cloned() {
+                            self.app.base_ui(crate::basemenu::BaseUi::Column(p));
+                        }
+                    }
+                } else if let Some(to) = target {
+                    self.app.base_act(if list == 0 {
+                        crate::basemenu::BaseAct::SortMove(from, to)
+                    } else {
+                        crate::basemenu::BaseAct::ColumnMove(from, to)
+                    });
+                }
             }
             Drag::Card { row, moved, .. } => {
                 if !moved {
@@ -3760,6 +3820,14 @@ impl Ui {
                 };
             }
             Zone::Tree => self.app.click(Hit::TreeBlank, m),
+            Zone::PopRow(list, from) => {
+                self.drag = Drag::PopRow {
+                    list,
+                    from,
+                    y: py,
+                    moved: false,
+                };
+            }
             Zone::BoardCard(row) => {
                 self.drag = Drag::Card {
                     row,
@@ -4246,6 +4314,8 @@ impl krate::Guest for Component {
             board_cols: Vec::new(),
             card_docs: alloc::collections::BTreeMap::new(),
             slides_on: false,
+            pop_rows: Vec::new(),
+            pop_props: Vec::new(),
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4675,6 +4745,11 @@ impl krate::Guest for Component {
                             (None, _) => {
                                 ui.hover_point = Some((p.x, p.y));
                                 ui.files.stirred = krate::time::now_millis();
+                                // A move while a drag is on carries it.
+                                if ui.drag != Drag::None {
+                                    ui.drag_to(p.x, p.y);
+                                    changed = true;
+                                }
                                 let z = ui.zone_at(p.x, p.y);
                                 if ui.graph_hover(p.x, p.y) {
                                     changed = true;
