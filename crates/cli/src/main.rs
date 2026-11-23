@@ -11052,6 +11052,12 @@ fn report_send_command(
             let body = response.into_string().unwrap_or_default();
             let id = extract_json_string(&body, "id").unwrap_or_default();
             println!("sent -- reference {id}");
+            // The secret that reads the founder's replies to this report
+            // from Studio's inbox, signed in or not. Studio keeps it and
+            // never shows it.
+            if let Some(key) = extract_json_string(&body, "key").filter(|k| !k.is_empty()) {
+                println!("reply key {key}");
+            }
             Ok(0)
         }
         Err(ureq::Error::Status(code, response)) => {

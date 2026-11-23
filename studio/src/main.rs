@@ -4220,6 +4220,55 @@ async fn support_reply(
     .map_err(|e| e.to_string())?
 }
 
+/* ---- the inbox: what Krate wrote to this person ------------------------
+ *
+ * The same hub doors the web Studio uses (cloud/worker/src/inbox.js), with
+ * the engine's stored sign-in when there is one. Signed out, the report
+ * secrets the UI kept read the replies to reports sent from here. */
+
+#[tauri::command]
+async fn inbox_list(reports: serde_json::Value, read: f64) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post(
+            "/inbox",
+            hub_token().as_deref(),
+            serde_json::json!({ "reports": reports, "read": read }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn inbox_read(at: f64) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post(
+            "/inbox/read",
+            hub_token().as_deref(),
+            serde_json::json!({ "at": at }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn inbox_answer(
+    report: String,
+    key: String,
+    text: String,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post(
+            "/inbox/answer",
+            hub_token().as_deref(),
+            serde_json::json!({ "report": report, "key": key, "text": text }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// "We'll make it for you": the human fallback when a build dies. Sends
 /// exactly what a person would need to build the app by hand -- the
 /// request, the answers they gave the AI, and an email to return the
@@ -6476,6 +6525,9 @@ fn main() {
             support_new,
             support_list,
             support_reply,
+            inbox_list,
+            inbox_read,
+            inbox_answer,
             sessions_list,
             sessions_pull,
             session_save,
