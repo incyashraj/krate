@@ -1591,25 +1591,106 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
 .kr-chipb:hover { background: var(--hover); color: var(--ink); }
 .kr-sq { width: 38px; height: 38px; border: 0; border-radius: 12px; display: grid; place-items: center; cursor: pointer; background: var(--btn); color: var(--btn-ink); transition: transform .3s var(--spring), border-radius .4s var(--ease); }
 .kr-sq:hover { transform: translateY(-1px); border-radius: 14px; } .kr-sq:active { transform: scale(.92); }
-.kr-newp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 14px 12px; padding: 10px; border-radius: 14px; background: var(--surface-2); animation: krItIn .45s var(--ease) both; }
-.kr-newp input { flex: 1; min-width: 160px; height: 36px; padding: 0 12px; border: 0; outline: 0; border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); font: 400 14px var(--sans); color: var(--ink); }
-.kr-newp .kr-mk, .kr-newp .kr-cx { height: 36px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer; font: 500 13px var(--sans); }
-.kr-newp .kr-mk { background: var(--btn); color: var(--btn-ink); } .kr-newp .kr-cx { background: transparent; color: var(--ink-2); }
-.kr-newp.busy input, .kr-newp.busy button { opacity: .6; }
-.kr-np-line { flex: 1 0 100%; margin: 2px 2px 0; font: 400 12.5px var(--mono); color: var(--ink-3); min-height: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kr-np-line:empty { display: none; }
 .kr-under { width: 100%; margin-top: 26px; text-align: left; animation: krItIn .55s var(--ease) .05s both; }
 .kr-lab { margin: 0 4px 10px; font: 500 12.5px var(--sans); color: var(--ink-3); }
-.kr-starts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.kr-start { border: 0; padding: 0; background: none; cursor: pointer; text-align: left; animation: krRv .6s var(--ease) both; animation-delay: calc(var(--k, 0) * 60ms + 150ms); }
-.kr-start .th { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; background: var(--surface-2); box-shadow: var(--sh-1); color: var(--ink-3); transition: transform .45s var(--ease), box-shadow .3s; }
-.kr-start .th img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
-.kr-start:hover .th { transform: translateY(-3px); box-shadow: var(--sh-2); }
-.kr-start b { display: block; margin-top: 8px; font: 500 13px var(--sans); color: var(--ink); }
-.kr-start small { display: block; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kr-start.newp .th { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
-.kr-start.newp:hover .th { color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink-4); }
-@media (max-width: 860px) { .kr-starts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* What the IDE is, as its three parts: under the question, in place of a
+   sentence. Quiet chips joined by a hairline. */
+#homeSub[hidden], .kr-wbline[hidden] { display: none; }
+#viewHome .bigbar[data-mode="ide"] .home-kb { display: none; }
+/* The IDE door can be taller than the window (twenty projects): the room
+   scrolls from the top instead of centring and clipping the question. */
+#viewHome .home:has(.bigbar[data-mode="ide"]) { overflow-y: auto; justify-content: flex-start; }
+.kr-wbline { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 0; margin: 14px 0 30px; padding: 0; list-style: none; animation: krSwap .55s var(--ease) both; }
+.kr-wbline li { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 5px; border-radius: 999px; font: 400 13.5px var(--sans); color: var(--ink-2); background: var(--surface); box-shadow: var(--sh-1); white-space: nowrap; }
+.kr-wbline li + li { position: relative; margin-left: 24px; }
+.kr-wbline li + li::before { content: ""; position: absolute; left: -24px; top: 50%; width: 24px; height: 1px; background: var(--line-strong); }
+.kr-wbline .ic { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.kr-wbline li:nth-child(1) .ic { color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.kr-wbline li:nth-child(2) .ic { color: var(--green-ink); background: var(--green-soft); }
+.kr-wbline li:nth-child(3) .ic { color: var(--violet); background: color-mix(in srgb, var(--violet) 13%, transparent); }
+
+/* Section heads in the IDE door: a title, a count, and its quiet actions. */
+.kr-idehead { display: flex; align-items: center; gap: 8px; min-height: 34px; margin: 0 0 10px; }
+.kr-idehead .kr-lab { margin: 0 4px; }
+.kr-idehead .grow { flex: 1; }
+.kr-idect { font: 500 11.5px var(--sans); color: var(--ink-3); padding: 1px 7px; border-radius: 999px; background: var(--surface-2); margin-left: -6px; }
+.kr-idect:empty { display: none; }
+.kr-ideopen { height: 30px; font-size: 13px; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.kr-idefilter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow .2s; }
+.kr-idefilter[hidden] { display: none; }
+.kr-idefilter:focus-within { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); color: var(--ink-2); }
+.kr-idefilter input { width: 120px; border: 0; outline: 0; background: none; font: 400 13px var(--sans); color: var(--ink); -webkit-appearance: none; appearance: none; }
+.kr-idefilter input::placeholder { color: var(--ink-4); }
+.kr-idefilter input::-webkit-search-cancel-button { display: none; }
+#homeIdeUnder .kr-panehint { padding: 0 4px 10px; }
+#viewHome .bigbar[data-mode="ide"] ~ #homeHint:empty { display: none; }
+#homeIdeUnder { margin-top: 34px; }
+.kr-st-line .kr-st-open { margin-left: 6px; padding: 0; border: 0; background: none; cursor: pointer; font: 500 12px var(--sans); color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Start a project: the engine's starters, each with its real first frame. */
+#homeIdePane { padding: 14px 16px 16px; }
+#homeIdePane .kr-idehead { min-height: 0; margin-bottom: 12px; }
+.kr-starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kr-starter { position: relative; min-width: 0; border-radius: 16px; animation: krRv .6s var(--ease) both; animation-delay: calc(var(--k, 0) * 60ms + 120ms); transition: opacity .3s var(--ease); }
+.kr-st-go { display: block; width: 100%; border: 0; padding: 0; background: none; cursor: pointer; text-align: left; color: inherit; font: inherit; border-radius: 14px; }
+.kr-st-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.kr-starter .th { position: relative; display: block; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--surface-2); box-shadow: var(--sh-1); transition: transform .45s var(--ease), box-shadow .3s; }
+.kr-starter .th img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+.kr-st-go:hover .th { transform: translateY(-3px); box-shadow: var(--sh-2); }
+.kr-starter b { display: block; margin: 9px 2px 0; font: 500 13.5px var(--sans); color: var(--ink); }
+.kr-starter small { display: block; margin: 1px 2px 0; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The command-line tool's picture is its real output, drawn as text. */
+.kr-starter .th.term { background: var(--surface-2); }
+.kr-starter .th.term code { position: absolute; inset: 0; padding: 10px 12px; font: 400 10.5px/1.5 var(--mono); color: var(--ink-2); white-space: nowrap; overflow: hidden; }
+.kr-starter .th.term i { display: block; margin: -2px 0 5px; font-style: normal; color: var(--ink-3); }
+/* Naming a starter: the card's caption becomes the name and Create. */
+.kr-starters.choosing .kr-starter:not(.naming) { opacity: .45; }
+.kr-starters.choosing .kr-starter:not(.naming):hover { opacity: .8; }
+.kr-starter.naming .th { box-shadow: 0 0 0 2px var(--accent); transform: none; }
+.kr-starter.naming .kr-st-go b, .kr-starter.naming .kr-st-go small { display: none; }
+.kr-st-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; animation: krItIn .35s var(--ease) both; }
+.kr-st-name input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 0; outline: 0; border-radius: 9px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); font: 400 13.5px var(--sans); color: var(--ink); }
+.kr-st-name input:focus { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
+.kr-st-name .kr-mk { height: 32px; padding: 0 12px; border: 0; border-radius: 999px; cursor: pointer; font: 500 13px var(--sans); background: var(--btn); color: var(--btn-ink); }
+.kr-st-name .kr-cx { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; display: grid; place-items: center; cursor: pointer; background: none; color: var(--ink-3); }
+.kr-st-name .kr-cx:hover { background: var(--hover); color: var(--ink); }
+.kr-st-line { flex: 1 0 100%; margin: 2px 2px 0; font-size: 12px; line-height: 1.45; color: var(--ink-3); }
+.kr-st-line:empty { display: none; }
+.kr-st-line.bad { color: var(--danger); }
+.kr-starter.busy .kr-st-name input, .kr-starter.busy .kr-st-name button { opacity: .55; }
+.kr-starter.busy .th::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--surface) 55%, transparent) 50%, transparent 70%); background-size: 250% 100%; animation: krShimmer 1.3s linear infinite; }
+@keyframes krShimmer { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+.kr-starters.making .kr-starter:not(.busy) { opacity: .35; pointer-events: none; }
+
+/* Recent projects: the app's own picture, or its initial on a soft tile. */
+.kr-projs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 12px; }
+.kr-pj { min-width: 0; border: 0; padding: 0; background: none; cursor: pointer; text-align: left; color: inherit; font: inherit; border-radius: 14px; animation: krRv .6s var(--ease) both; animation-delay: calc(var(--k, 0) * 40ms + 120ms); }
+.kr-pj:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.kr-pj .th { position: relative; display: block; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--surface-2); box-shadow: var(--sh-1); transition: transform .45s var(--ease), box-shadow .3s; }
+.kr-pj .th img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.kr-pj:hover .th { transform: translateY(-3px); box-shadow: var(--sh-2); }
+.kr-pj-none { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--t) 9%, var(--surface-2)); }
+.kr-pj-none i { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font: 600 18px var(--sans); font-style: normal; color: var(--t); background: color-mix(in srgb, var(--t) 16%, transparent); }
+.kr-pj b { display: block; margin: 8px 2px 0; font: 500 13px var(--sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kr-pj small { display: flex; gap: 6px; margin: 1px 2px 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.kr-pj small .pth { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kr-pj small .when { flex: none; margin-left: auto; color: var(--ink-4); }
+.kr-pj-empty { grid-column: 1 / -1; margin: 0; padding: 18px; border-radius: 14px; text-align: center; font-size: 13px; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--line); }
+.kr-pj-more { grid-column: 1 / -1; justify-self: center; height: 30px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer; font: 500 12.5px var(--sans); color: var(--ink-2); background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.kr-pj-more:hover { background: var(--hover); color: var(--ink); }
+@media (max-width: 860px) { .kr-projs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .kr-projs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* A narrow window: each starter becomes a row, its picture beside its words. */
+@media (max-width: 640px) {
+  .kr-starters { grid-template-columns: 1fr; gap: 10px; }
+  .kr-st-go { display: grid; grid-template-columns: 128px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 14px; align-items: center; align-content: center; }
+  .kr-st-go .th { grid-row: 1 / 3; }
+  .kr-starter b { margin: 0; align-self: end; }
+  .kr-starter small { align-self: start; }
+  .kr-starter.naming .kr-st-go b, .kr-starter.naming .kr-st-go small { display: block; }
+  .kr-starter .th.term code { padding: 7px 9px; font-size: 8.5px; }
+}
 
 /* ---- the IDE -------------------------------------------------------------- */
 #viewIde { display: flex; flex-direction: column; }
@@ -2106,7 +2187,7 @@ body:not(.light) .kr-failghost { background: var(--surface-2); --g1: #2a2a2f; --
 #planSheet .plan-tag { flex: none; padding: 2px 9px; border-radius: 99px; font: 500 11.5px var(--sans); background: var(--green-soft); color: var(--green-ink); border: 0; }
 #planSheet #planSetUp { flex: none; border-radius: 99px; }
 #planSheet .detail-actions { display: none; }
-.kr-cmprow > .kr-sq:last-child, .kr-cmprow #homeIdeGo { margin-left: auto; }
+.kr-cmprow > .kr-sq:last-child { margin-left: auto; }
 
 /* ---- Home: Port, in the same shape as the IDE door ---------------------- */
 #homePortPane { display: block; padding: 0; }
@@ -3008,13 +3089,6 @@ body.kr-lgopen #viewGate .gate-body { visibility: hidden; }
 .qo-list button.on, .qo-list button:hover { background: var(--hover); }
 .qo-list b { font: 500 13px var(--sans); color: var(--ink); } .qo-list small { font: 12px ui-monospace, Menlo, monospace; color: var(--ink-3); }
 .qo-list p { margin: 10px 12px; font-size: 12.5px; color: var(--ink-3); }
-.kr-np-kinds { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.kr-np-kinds label { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; }
-.kr-np-kinds label:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
-.kr-np-kinds input { position: absolute; opacity: 0; pointer-events: none; }
-.kr-np-kinds b { font: 500 13px var(--sans); color: var(--ink); } .kr-np-kinds small { font-size: 12px; color: var(--ink-3); }
-@media (max-width: 560px) { .kr-np-kinds { grid-template-columns: 1fr; } }
-.kr-newp .kr-np-kinds { flex-basis: 100%; }
 
 /* Beta: Port and the IDE work and still have known limits; said where they are named. */
 .kr-beta { display: inline-flex; align-items: center; height: 16px; margin-left: 6px; padding: 0 6px; border-radius: 999px; vertical-align: 1px; flex: none;
@@ -3025,7 +3099,6 @@ body:not(.light) .kr-beta { color: #b8a6ff; background: color-mix(in srgb, #a891
 
 /* Home's Port and IDE panes come in the way the design's do (facein). */
 .home-idepane:not([hidden]) { animation: krPaneIn .35s var(--ease) both; }
-.kr-ide-none, .kr-ide-more { grid-column: 1 / -1; margin: 4px 2px; font: 400 12.5px var(--sans); color: var(--ink-3); }
 
 /* Reduced motion, everywhere: nothing loops and nothing travels. One rule
  * for the whole UI, so a new animation cannot forget it (the busy dot, the

@@ -260,8 +260,10 @@
     if (sheetLine) sheetLine.classList.toggle("kr-offmode", mode !== "create");
     const kb = $("homeKb");
     if (kb) {
-      kb.hidden = mode === "port";
-      kb.innerHTML = mode === "ide" ? `<kbd>${mod}I</kbd> asks your AI` : mode === "port" ? "Electron · Tauri · web" : "<kbd>↵</kbd> to make";
+      // ⌘I belongs to the workbench, where there is code to ask about; on
+      // Home it named a key that did nothing.
+      kb.hidden = mode === "port" || mode === "ide";
+      kb.innerHTML = mode === "port" ? "Electron · Tauri · web" : "<kbd>↵</kbd> to make";
     }
     placeInd();
     // The question changes with the door: building, porting, working on.
@@ -287,7 +289,11 @@
       sub.classList.remove("kr-swap"); void sub.offsetWidth; sub.classList.add("kr-swap");
     }
     document.dispatchEvent(new CustomEvent("kr-home-mode", { detail: mode }));
-    if (mode === "ide") { const f = $("homeIdeFind"); if (f) setTimeout(() => f.focus({ preventScroll: true }), 120); }
+    // The IDE door leads with things to click, not a box to type in: no
+    // field takes the focus, and its three parts stand in for the sentence.
+    const promise = $("homeIdePromise");
+    if (promise) promise.hidden = mode !== "ide";
+    if (sub) sub.hidden = mode === "ide";
     // The sidebar lights the door that is open.
     const ideRow = $("sideIde"), homeRow = q('#side .side-row[data-side="home"]'), portRow = $("sidePort");
     if (homeRow && !$("viewHome").classList.contains("hidden")) {
