@@ -142,6 +142,27 @@
     const car = document.createElement("span"); car.className = "car";
     rw.append(tw, tq, car);
     rw.dataset.i = "0";
+    // The title is centred, so a word changing length slid "What are we"
+    // back and forth as it was typed (2026-11-23). The word gets a slot as
+    // wide as the widest word with its "?" and caret, typed from the slot's
+    // left edge: the line's width never changes and only the word moves, the
+    // way typing looks. Kept in em so it follows the title's size.
+    const fitSlot = () => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;left:-9999px";
+      rw.appendChild(probe);
+      let widest = 0;
+      for (const w of words) { probe.textContent = w + mark; widest = Math.max(widest, probe.getBoundingClientRect().width); }
+      const caretW = car.getBoundingClientRect().width + parseFloat(getComputedStyle(car).marginLeft || "0");
+      probe.remove();
+      const em = parseFloat(getComputedStyle(rw).fontSize) || 16;
+      if (widest > 0) rw.style.width = `${((widest + caretW) / em + 0.02).toFixed(3)}em`;
+    };
+    fitSlot();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitSlot);
+    // Measured again whenever Home is shown or resized: a hidden title
+    // measures zero, and Studio often starts on another view.
+    if (typeof ResizeObserver === "function" && $("viewHome")) new ResizeObserver(() => fitSlot()).observe($("viewHome"));
     if (!reduce && words.length > 1) {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       // Only animate while Home is on screen; otherwise check back shortly.
