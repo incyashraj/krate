@@ -34,6 +34,8 @@ extern crate alloc;
 extern crate std;
 
 pub mod app;
+pub mod basefile;
+pub mod basemenu;
 pub mod bases;
 pub mod blocks;
 pub mod bookmarks;
@@ -64,6 +66,7 @@ pub mod sample;
 pub mod search;
 pub mod settings;
 pub mod spell;
+pub mod sumformula;
 pub mod svg;
 pub mod tables;
 pub mod text;

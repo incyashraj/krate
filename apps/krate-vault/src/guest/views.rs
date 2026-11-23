@@ -4,6 +4,7 @@
 use super::look::{self, fill, fit, icon, r, round, text, width, Icon, Rgba};
 use super::{Drag, Ui, Zone};
 use crate::app::{Ask, AskFor, Cmd, Hit, Input, ListKind, Mods, Overlay, SettingsPage, View};
+use crate::basemenu::{BaseUi, Panel};
 use crate::canvas::{self, CardKind, Side};
 use crate::graph::{Kind, Raster};
 use crate::workspace::Control;
@@ -1316,6 +1317,14 @@ impl Ui {
     // ---- a base -------------------------------------------------------------------------
 
     pub(super) fn draw_base(&mut self, pane: usize, a: Rect, focused: bool) {
+        self.base_anchors.clear();
+        self.draw_base_inner(pane, a, focused);
+        if focused {
+            self.draw_base_panel(a);
+        }
+    }
+
+    fn draw_base_inner(&mut self, pane: usize, a: Rect, focused: bool) {
         let t = self.t();
         let sz = self.sz;
         let k = sz.scale;
@@ -1363,7 +1372,24 @@ impl Ui {
         if focused {
             self.button(vb, &w.name, Hit::BaseViews);
         }
-        let count = crate::text::count(rows.len(), "result", "results");
+        let (search_on, query, panel) =
+            match self.app.pane_tabs(pane).0.get(self.app.pane_tabs(pane).1) {
+                Some(tb) => match tb.view.as_ref() {
+                    Some(View::Base(b)) => (b.search_on, b.search.clone(), b.panel),
+                    _ => (false, String::new(), None),
+                },
+                None => (false, String::new(), None),
+            };
+        let count = if search_on && !query.trim().is_empty() {
+            let total = self
+                .app
+                .vault
+                .as_ref()
+                .map_or(rows.len(), |v| base.rows(v, view).len());
+            alloc::format!("Showing {} of {}", rows.len(), total)
+        } else {
+            crate::text::count(rows.len(), "result", "results")
+        };
         text(
             self.c,
             &count,
@@ -1372,6 +1398,15 @@ impl Ui {
             sz.ui,
             400,
             t.muted,
+        );
+        self.said.text(
+            r(
+                vb.right() + 12.0 * k,
+                bar.y,
+                width(self.c, &count, sz.ui, 400),
+                bar.h,
+            ),
+            &count,
         );
         // The view's actions, lit when the view uses them (its own sort,
         // its groups, its own filters), as the notes app lights them.
@@ -1412,15 +1447,72 @@ impl Ui {
                 );
             }
             let br = r(x, bar.y + 6.0 * k, lw + 28.0 * k, bar.h - 12.0 * k);
-            if *label == "New" && focused {
-                if self.hovered(&Zone::App(Hit::BaseNew(usize::MAX))) {
+            let hit = match *label {
+                "New" => Hit::BaseNew(usize::MAX),
+                "Sort" => Hit::BaseUi(BaseUi::Tool(Panel::Sort)),
+                "Group" => Hit::BaseUi(BaseUi::Tool(Panel::Group)),
+                "Filter" => Hit::BaseUi(BaseUi::Tool(Panel::Filter)),
+                "Properties" => Hit::BaseUi(BaseUi::Tool(Panel::Properties)),
+                _ => Hit::BaseUi(BaseUi::Search),
+            };
+            let open = match &hit {
+                Hit::BaseUi(BaseUi::Tool(p)) => panel == Some(*p),
+                Hit::BaseUi(BaseUi::Search) => search_on,
+                _ => false,
+            };
+            if focused {
+                if open || self.hovered(&Zone::App(hit.clone())) {
                     round(self.c, br, 4.0 * k, t.hover);
+                    // Drawn again over the hover.
+                    icon(self.c, *ic, x + 9.0 * k, cy, k, c);
+                    if words {
+                        text(
+                            self.c,
+                            label,
+                            x + 22.0 * k,
+                            cy + sz.ui * 0.36,
+                            sz.ui,
+                            400,
+                            c,
+                        );
+                    }
                 }
-                self.button(br, label, Hit::BaseNew(usize::MAX));
+                if let Hit::BaseUi(BaseUi::Tool(p)) = &hit {
+                    self.base_anchors.push((*p, br.x, br.bottom()));
+                }
+                self.button(br, label, hit);
             } else {
                 self.said.text(br, label);
             }
             x -= 6.0 * k;
+        }
+        // The search box, left of the buttons, while it is open.
+        if search_on && focused {
+            let sw = (200.0 * k).min((x - count_end - 16.0 * k).max(80.0 * k));
+            let sb = r(x - sw, bar.y + 7.0 * k, sw, bar.h - 14.0 * k);
+            round(self.c, sb, 4.0 * k, t.field);
+            look::outline(self.c, sb, 4.0 * k, 1.0, t.border_focus);
+            icon(self.c, Icon::Search, sb.x + 13.0 * k, cy, k * 0.85, t.muted);
+            let shown = if query.is_empty() {
+                "Search..."
+            } else {
+                query.as_str()
+            };
+            let qw = fit(
+                self.c,
+                shown,
+                sb.x + 26.0 * k,
+                cy + sz.ui * 0.36,
+                sz.ui,
+                400,
+                if query.is_empty() { t.faint } else { t.text },
+                sb.w - 32.0 * k,
+            );
+            if self.caret_visible() {
+                let cx = sb.x + 26.0 * k + if query.is_empty() { 0.0 } else { qw };
+                fill(self.c, r(cx, cy - 7.0 * k, 1.0, 14.0 * k), t.text);
+            }
+            self.said.field(sb, "Search", &query);
         }
         // The table.
         let cols: Vec<String> = if w.order.is_empty() {
@@ -1443,6 +1535,7 @@ impl Ui {
                 props: m.and_then(|m| m.props.as_ref()),
                 formulas: &base.formulas,
                 today: &base.today,
+                stat: m.and_then(|m| m.stat),
             };
             crate::bases::show(&crate::bases::value(c, &row))
         };
@@ -1768,7 +1861,14 @@ impl Ui {
                 });
                 if let (Some((_, name)), Some(v)) = (sum, self.app.vault.as_ref()) {
                     let vals = base.column_values(v, &rows, c);
-                    if let Some(out) = crate::bases::summarize(name, &vals) {
+                    // The base's own summary of that name first, then the
+                    // built-in one.
+                    let own = base
+                        .custom_summaries
+                        .iter()
+                        .find(|(k, _)| k == name)
+                        .and_then(|(_, f)| crate::sumformula::summary(f, &vals));
+                    if let Some(out) = own.or_else(|| crate::bases::summarize(name, &vals)) {
                         let vw = width(self.c, &out, fsz, 400);
                         let nwid = width(self.c, name, fsz, 400);
                         let right = x + cw - 14.0 * k;

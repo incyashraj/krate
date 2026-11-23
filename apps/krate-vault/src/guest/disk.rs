@@ -250,6 +250,12 @@ impl Vfs for DiskFs {
         fs::remove_file(&self.at_path(path)).map_err(why)
     }
 
+    fn stat(&mut self, path: &str) -> Option<(u64, u64)> {
+        krate::fs::stat(&self.at_path(path))
+            .ok()
+            .map(|st| (st.size, st.modified_millis))
+    }
+
     fn host_path(&self, path: &str) -> Option<String> {
         Some(self.at_path(path))
     }

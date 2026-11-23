@@ -8,6 +8,7 @@
 //! a 40 px tab bar and a 40 px view header, and a small status bar in the
 //! bottom-right corner.
 
+mod basemenus;
 mod boards;
 mod disk;
 mod editor;
@@ -72,6 +73,8 @@ enum Zone {
     Settings,
     /// A PDF's or a player's control, by group.
     File(usize, media::FileCtl),
+    /// A card on a base's board, by its row.
+    BoardCard(usize),
 }
 
 #[derive(Clone, PartialEq)]
@@ -116,6 +119,13 @@ enum Drag {
     },
     /// Dragging a player's scrubber, in a group.
     Scrub(usize),
+    /// A board card being carried to another column.
+    Card {
+        row: usize,
+        x: f32,
+        y: f32,
+        moved: bool,
+    },
 }
 
 struct Ui {
@@ -176,6 +186,12 @@ struct Ui {
     overlay_in: u64,
     /// The window whose state is swapped in now, the same way.
     in_window: u64,
+    /// The base toolbar's menu buttons as drawn: which menu, left, bottom.
+    base_anchors: Vec<(crate::basemenu::Panel, f32, f32)>,
+    /// The open base menu's box, to close it on a press outside.
+    base_pop: Option<Rect>,
+    /// A board's columns as drawn, each with its group.
+    board_cols: Vec<(Rect, usize)>,
 }
 
 fn ms() -> u64 {
@@ -367,6 +383,8 @@ impl Ui {
         self.dividers.clear();
         self.tab_rects.clear();
         self.view_areas.clear();
+        self.base_pop = None;
+        self.board_cols.clear();
         if self.app.is_floating(self.app.pane) {
             self.view = None;
             self.shown.area = None;
@@ -3499,6 +3517,16 @@ impl Ui {
                     };
                 }
             }
+            Drag::Card { row, x, y, moved } => {
+                if !moved && ((px - x).abs() > 5.0 || (py - y).abs() > 5.0) {
+                    self.drag = Drag::Card {
+                        row,
+                        x,
+                        y,
+                        moved: true,
+                    };
+                }
+            }
             Drag::Tab {
                 pane,
                 tab,
@@ -3575,6 +3603,16 @@ impl Ui {
             Drag::Graph { .. } | Drag::Canvas { .. } | Drag::Slider(_) => {
                 self.view_release(drag, px, py);
             }
+            Drag::Card { row, moved, .. } => {
+                if !moved {
+                    self.app.click(Hit::BaseRow(row), self.drag_mods);
+                } else if let Some(&(_, g)) =
+                    self.board_cols.iter().find(|(r, _)| r.contains(px, py))
+                {
+                    // Dropped on a column: the note takes that column's value.
+                    self.app.base_move_card(row, g);
+                }
+            }
             _ => {}
         }
     }
@@ -3629,6 +3667,16 @@ impl Ui {
 
     fn press(&mut self, px: f32, py: f32, m: Mods) {
         self.drag_mods = m;
+        self.app.pointer = (px, py);
+        // A press outside an open base menu closes it.
+        if let Some(pop) = self.base_pop {
+            let inside = pop.contains(px, py)
+                || matches!(self.zone_at(px, py), Some(Zone::App(Hit::BaseUi(_))))
+                || self.app.overlay.is_some();
+            if !inside {
+                self.app.base_ui(crate::basemenu::BaseUi::Close);
+            }
+        }
         // A player's menu or a video filling the window (src/guest/widgets.rs).
         let window = look::r(0.0, 0.0, self.w, self.h);
         if widgets::media_overlay_press(
@@ -3686,6 +3734,14 @@ impl Ui {
                 };
             }
             Zone::Tree => self.app.click(Hit::TreeBlank, m),
+            Zone::BoardCard(row) => {
+                self.drag = Drag::Card {
+                    row,
+                    x: px,
+                    y: py,
+                    moved: false,
+                };
+            }
             Zone::Tab(p, i) => {
                 self.drag = Drag::Tab {
                     pane: p,
@@ -4159,6 +4215,9 @@ impl krate::Guest for Component {
             extra: Vec::new(),
             overlay_in: 0,
             in_window: 0,
+            base_anchors: Vec::new(),
+            base_pop: None,
+            board_cols: Vec::new(),
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4279,6 +4338,19 @@ impl krate::Guest for Component {
                     "newtab" => ui.app.run(Cmd::NewTab),
                     "pin" => ui.app.run(Cmd::TogglePin),
                     "stack" => ui.app.run(Cmd::StackTabs),
+                    "basesort" => ui
+                        .app
+                        .base_ui(crate::basemenu::BaseUi::Tool(crate::basemenu::Panel::Sort)),
+                    "basegroup" => ui
+                        .app
+                        .base_ui(crate::basemenu::BaseUi::Tool(crate::basemenu::Panel::Group)),
+                    "basefilter" => ui.app.base_ui(crate::basemenu::BaseUi::Tool(
+                        crate::basemenu::Panel::Filter,
+                    )),
+                    "baseprops" => ui.app.base_ui(crate::basemenu::BaseUi::Tool(
+                        crate::basemenu::Panel::Properties,
+                    )),
+                    "basesearch" => ui.app.base_ui(crate::basemenu::BaseUi::Search),
                     "newwindow" => ui.app.run(Cmd::OpenInNewWindow),
                     "movewindow" => ui.app.run(Cmd::MoveToNewWindow),
                     "pdfthumbs" => ui.app.menu_action(crate::app::MenuAction::PdfThumbs),

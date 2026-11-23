@@ -395,6 +395,18 @@ pub struct BaseTab {
     pub generation: u64,
     pub scroll: f32,
     pub choosing_view: bool,
+    /// The file's text as last read or written, for the menus.
+    pub source: Option<String>,
+    /// The toolbar menu open (src/basemenu.rs).
+    pub panel: Option<crate::basemenu::Panel>,
+    pub filter_all_open: bool,
+    /// The search box: open, and what is typed in it.
+    pub search_on: bool,
+    pub search: String,
+    /// A filter row being filled in: (all views, where, its property) and
+    /// the operator picked for it.
+    pub draft: Option<(bool, Vec<usize>, Option<String>)>,
+    pub draft_op: Option<String>,
 }
 
 /// A note's saved copies, to look through and bring back.
@@ -1115,6 +1127,8 @@ pub enum MenuAction {
     PdfThumbs,
     /// Play a sound or video over and over, or not.
     MediaLoop,
+    /// A change to a base picked from its menus.
+    Base(crate::basemenu::BaseAct),
 }
 
 /// A menu item's label ends with this when it is ticked.
@@ -1159,6 +1173,12 @@ pub enum AskFor {
     GraphGroup,
     /// A base cell: the note and the property it sets.
     BaseCell(String, String),
+    /// A base column's display name.
+    BaseRename(String),
+    /// A base filter condition's value: (all views, where).
+    BaseFilterValue(bool, Vec<usize>),
+    /// A base filter condition written as a formula.
+    BaseFilterFormula(bool, Vec<usize>),
 }
 
 pub enum Overlay {
@@ -1259,6 +1279,8 @@ pub enum Hit {
     BaseView(usize),
     BaseRow(usize),
     BaseSort(usize),
+    /// A press in a base's toolbar menus (src/basemenu.rs).
+    BaseUi(crate::basemenu::BaseUi),
     /// A base's "New": from the toolbar (`usize::MAX`) or a board column.
     BaseNew(usize),
     /// A cell of a base's table: row and column.
@@ -1306,6 +1328,8 @@ pub struct App {
     pub restoring: bool,
     /// The link groups read from workspace.json, by their id there.
     pub group_ids: Vec<String>,
+    /// Where the last press was, for a dropdown opened by it.
+    pub pointer: (f32, f32),
     /// Tabs closed lately, to bring back (Cmd+Shift+T): their files.
     pub closed: Vec<String>,
     pub settings: Settings,
@@ -1402,6 +1426,7 @@ impl App {
             next_float: 0,
             restoring: false,
             group_ids: Vec::new(),
+            pointer: (0.0, 0.0),
             closed: Vec::new(),
             settings: Settings::new(),
             bookmarks: Vec::new(),
@@ -1763,6 +1788,13 @@ impl App {
                 generation: 0,
                 scroll: 0.0,
                 choosing_view: false,
+                source: Some(text.clone()),
+                panel: None,
+                filter_all_open: false,
+                search_on: false,
+                search: String::new(),
+                draft: None,
+                draft_op: None,
             }))),
             FileKind::Image | FileKind::Pdf | FileKind::Media | FileKind::Other => {
                 Some(View::File(Box::new(FileTab {
@@ -3423,6 +3455,9 @@ impl App {
 
     /// A key press. True when the app used it (and should redraw).
     pub fn key(&mut self, key: &str, m: Mods) -> bool {
+        if self.overlay.is_none() && !m.primary && self.base_search_key(key) {
+            return true;
+        }
         // The find bar, several carets and folding (src/links.rs).
         if let Some(used) = crate::links::key(self, key, m) {
             self.refresh_completion();
@@ -3827,6 +3862,7 @@ impl App {
         if self.focus == Focus::Editor && self.canvas_text(s) {
             return;
         }
+
         if let Some(r) = self.explorer.rename.as_mut() {
             r.input.insert(s);
             return;
@@ -3834,6 +3870,10 @@ impl App {
         if self.focus == Focus::Search {
             self.search.insert(s);
             self.run_search();
+            return;
+        }
+        // The base's own search box, while it is open.
+        if self.base_search_text(s) {
             return;
         }
         if self.focus == Focus::Tree {
@@ -4112,7 +4152,8 @@ impl App {
                     self.open_file(&p, m.primary);
                 }
             }
-            Hit::BaseSort(col) => self.base_sort(col),
+            Hit::BaseSort(col) => self.base_column_menu(col),
+            Hit::BaseUi(u) => self.base_ui(u),
             Hit::BaseNew(group) => self.base_new(group),
             Hit::BaseCell(r, c) => self.edit_base_cell(r, c),
             Hit::AskOk => self.ask_ok(),
@@ -4279,6 +4320,7 @@ impl App {
                     f.thumbs = !f.thumbs;
                 }
             }
+            MenuAction::Base(a) => self.base_act(a),
             MenuAction::MediaLoop => {
                 if let Some(View::File(f)) = self.view_mut() {
                     f.looping = !f.looping;

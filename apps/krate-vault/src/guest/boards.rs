@@ -198,6 +198,7 @@ impl Ui {
         for (gi, (label, list)) in groups.iter().enumerate() {
             let cx = a.x + 12.0 * k + gi as f32 * (col_w + gap);
             let col = r(cx, top, col_w, bottom - top);
+            self.board_cols.push((col, gi));
             round(self.c, col, 8.0 * k, t.code_bg);
             look::outline(self.c, col, 8.0 * k, 1.0, t.border);
             // The column's head: the value in bold and how many.
@@ -275,7 +276,18 @@ impl Ui {
                     py += 48.0 * k;
                 }
                 if focused {
-                    self.button(card, &title, Hit::BaseRow(ri));
+                    // Pressed: open on a click, carry to another column on a drag.
+                    self.said.button(card, &title);
+                    self.hit(card, super::Zone::BoardCard(ri));
+                }
+                if let super::Drag::Card {
+                    row, moved: true, ..
+                } = self.drag
+                {
+                    if row == ri {
+                        // The carried card: faint where it was.
+                        fill(self.c, card, look::alpha(t.bg, 0.6));
+                    }
                 }
                 y += ch + 8.0 * k;
                 ri += 1;
@@ -301,6 +313,43 @@ impl Ui {
             }
         }
         let _ = canvas2d::clear_clip(self.c);
+        // The carried card follows the pointer, as the notes app shows it.
+        if let (
+            super::Drag::Card {
+                row, moved: true, ..
+            },
+            Some((px, py)),
+        ) = (&self.drag, self.hover_point)
+        {
+            if let Some(rv) = rows.get(*row) {
+                let title = rv
+                    .iter()
+                    .enumerate()
+                    .find(|(i, _)| cols.get(*i).is_some_and(|c| c == "file.name"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let card = r(px - 40.0 * k, py - 20.0 * k, col_w - 16.0 * k, 42.0 * k);
+                let _ = canvas2d::drop_shadow_round_rect(
+                    self.c,
+                    look::g(card),
+                    look::radii(6.0 * k),
+                    12.0,
+                    look::alpha(look::hex(0), 0.4),
+                );
+                round(self.c, card, 6.0 * k, t.bg);
+                look::outline(self.c, card, 6.0 * k, 1.0, t.accent);
+                fit(
+                    self.c,
+                    &title,
+                    card.x + 9.0 * k,
+                    card.y + 19.5 * k + sz.medium * 0.36,
+                    sz.medium,
+                    600,
+                    t.text,
+                    card.w - 18.0 * k,
+                );
+            }
+        }
     }
 }
 

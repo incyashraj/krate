@@ -91,6 +91,8 @@ pub struct Row<'a> {
     pub formulas: &'a [(String, String)],
     /// Today, `YYYY-MM-DD`, for `today()` and `now()`.
     pub today: &'a str,
+    /// The file's size and when it changed (Unix ms), when known.
+    pub stat: Option<(u64, u64)>,
 }
 
 impl Base {
@@ -201,6 +203,7 @@ impl Base {
                     props: meta.and_then(|m| m.props.as_ref()),
                     formulas: &self.formulas,
                     today: &self.today,
+                    stat: meta.and_then(|m| m.stat),
                 };
                 value(prop, &row)
             })
@@ -240,6 +243,7 @@ impl Base {
                 props: meta.and_then(|m| m.props.as_ref()),
                 formulas: &self.formulas,
                 today: &self.today,
+                stat: meta.and_then(|m| m.stat),
             };
             let ok = self.filters.as_ref().is_none_or(|f| f.test(&row))
                 && w.filters.as_ref().is_none_or(|f| f.test(&row));
@@ -281,6 +285,21 @@ pub fn value(prop: &str, row: &Row) -> Value {
         }
         "file.tags" => {
             return Value::Arr(row.tags.iter().map(|t| Value::s(t)).collect());
+        }
+        "file.fullname" => return Value::s(name),
+        "file.size" => return row.stat.map_or(Value::Null, |(n, _)| Value::Num(n as f64)),
+        "file.mtime" => {
+            return row.stat.map_or(Value::Null, |(_, ms)| {
+                let secs = (ms / 1000) as i64;
+                let (y, mo, d) = crate::dates::civil_from_days(secs.div_euclid(86_400));
+                let t = secs.rem_euclid(86_400);
+                Value::Str(alloc::format!(
+                    "{y:04}-{mo:02}-{d:02}T{:02}:{:02}:{:02}",
+                    t / 3600,
+                    (t / 60) % 60,
+                    t % 60
+                ))
+            })
         }
         _ => {}
     }
@@ -880,6 +899,7 @@ impl Base {
                 props: meta.and_then(|m| m.props.as_ref()),
                 formulas: &self.formulas,
                 today: &self.today,
+                stat: meta.and_then(|m| m.stat),
             };
             let key = value(&prop, &row);
             let label = show(&key);
@@ -1075,6 +1095,7 @@ mod tests {
             props: meta.props.as_ref(),
             formulas: &b.formulas,
             today: "2026-11-22",
+            stat: None,
         };
         assert_eq!(value("formula.left", &row), Value::s("11 days"));
         assert_eq!(value("formula.label", &row), Value::s("Task 3 (open)"));
@@ -1096,6 +1117,7 @@ mod tests {
             props: meta.props.as_ref(),
             formulas: &[],
             today: "2026-11-22",
+            stat: None,
         };
         assert_eq!(eval("priority + 2 == 5", &row), Value::Bool(true));
         assert_eq!(eval("priority * 2 - 1", &row), Value::Num(5.0));

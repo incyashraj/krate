@@ -37,6 +37,10 @@ pub trait Vfs {
         None
     }
 
+    /// A file's size in bytes and when it last changed (Unix ms).
+    fn stat(&mut self, _path: &str) -> Option<(u64, u64)> {
+        None
+    }
     /// The path Krate knows a vault file by (for a player that opens it by
     /// path). A folder in memory has none.
     fn host_path(&self, _path: &str) -> Option<String> {

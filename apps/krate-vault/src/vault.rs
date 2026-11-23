@@ -49,6 +49,9 @@ pub struct Meta {
     pub tags: Vec<String>,
     /// The note's properties (its `---` block), as a JSON object.
     pub props: Option<crate::json::Value>,
+    /// The file's size in bytes and when it last changed (Unix ms), when
+    /// the folder can tell.
+    pub stat: Option<(u64, u64)>,
 }
 
 /// A note that links to another, and the lines it does it on.
@@ -392,7 +395,8 @@ impl Vault {
             };
             if self.by_path.contains_key(&path) {
                 if let Ok(text) = self.fs.read(&path) {
-                    let m = scan_file(&path, &text);
+                    let mut m = scan_file(&path, &text);
+                    m.stat = self.fs.stat(&path);
                     self.meta.insert(path, m);
                     any = true;
                 }
@@ -407,7 +411,9 @@ impl Vault {
     /// Index one note from text the app already holds (a note just saved).
     pub fn index_text(&mut self, path: &str, text: &str) {
         if self.by_path.contains_key(path) {
-            self.meta.insert(String::from(path), scan_file(path, text));
+            let mut m = scan_file(path, text);
+            m.stat = self.fs.stat(path);
+            self.meta.insert(String::from(path), m);
             self.generation += 1;
         }
     }

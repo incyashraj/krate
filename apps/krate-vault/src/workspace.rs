@@ -709,7 +709,12 @@ impl App {
             return;
         };
         let text = String::from(a.input.text.trim());
-        if text.is_empty() && !matches!(a.purpose, AskFor::GraphSearch | AskFor::BaseCell(..)) {
+        if text.is_empty()
+            && !matches!(
+                a.purpose,
+                AskFor::GraphSearch | AskFor::BaseCell(..) | AskFor::BaseRename(_)
+            )
+        {
             return;
         }
         match a.purpose {
@@ -723,6 +728,11 @@ impl App {
             }
             AskFor::CanvasLink => self.canvas_add(CardKind::Link, &text),
             AskFor::CanvasGroup => self.canvas_add(CardKind::Group, &text),
+            AskFor::BaseRename(p) => {
+                self.base_apply(|d, _| d.set_display_name(&p, &text));
+            }
+            AskFor::BaseFilterValue(g, path) => self.base_filter_value(g, path, &text),
+            AskFor::BaseFilterFormula(g, path) => self.base_filter_formula(g, path, &text),
             AskFor::BaseCell(path, prop) => {
                 self.set_property(&path, &prop, &text);
             }
@@ -1064,6 +1074,35 @@ impl App {
         }
     }
 
+    /// A board card dropped on another column: the note's grouping
+    /// property takes that column's value (none clears it).
+    pub fn base_move_card(&mut self, row: usize, group: usize) {
+        let Some(View::Base(b)) = self.view() else {
+            return;
+        };
+        let Some(path) = b.rows.get(row).cloned() else {
+            return;
+        };
+        let Some((prop, _)) = b.base.views.get(b.view).and_then(|w| w.group_by.clone()) else {
+            return;
+        };
+        let Some((value, _)) = b.groups.get(group).cloned() else {
+            return;
+        };
+        if b.groups
+            .iter()
+            .any(|(l, list)| *l == value && list.contains(&path))
+        {
+            return;
+        }
+        let key = String::from(prop.strip_prefix("note.").unwrap_or(&prop));
+        if key.starts_with("file.") || key.starts_with("formula.") {
+            self.say("A board grouped by a file's own property cannot move cards");
+            return;
+        }
+        self.set_property(&path, &key, &value);
+    }
+
     pub fn edit_base_cell(&mut self, row: usize, col: usize) {
         let Some(View::Base(b)) = self.view() else {
             return;
@@ -1217,6 +1256,21 @@ impl App {
                 Some(View::Base(b)) if showing && b.generation != gen => {
                     b.base.today = today.clone();
                     b.groups = b.base.groups(v, b.view);
+                    // The search box keeps the rows that say what is typed.
+                    let q = crate::text::lower(b.search.trim());
+                    if !q.is_empty() {
+                        for g in &mut b.groups {
+                            g.1.retain(|p| {
+                                crate::text::lower(p).contains(&q)
+                                    || v.meta.get(p).and_then(|m| m.props.as_ref()).is_some_and(
+                                        |pr| {
+                                            crate::text::lower(&crate::bases::show(pr)).contains(&q)
+                                        },
+                                    )
+                            });
+                        }
+                        b.groups.retain(|g| !g.1.is_empty());
+                    }
                     b.rows = b.groups.iter().flat_map(|g| g.1.iter().cloned()).collect();
                     b.generation = gen;
                     changed = true;
@@ -1474,30 +1528,6 @@ impl App {
     }
 
     // ---- bases ----------------------------------------------------------------------
-
-    /// A column header pressed: sort by it, then the other way, then not.
-    pub(crate) fn base_sort(&mut self, col: usize) {
-        if let Some(View::Base(b)) = self.view_mut() {
-            let Some(w) = b.base.views.get_mut(b.view) else {
-                return;
-            };
-            let Some(prop) = w.order.get(col).cloned() else {
-                return;
-            };
-            let now = w.sort.iter().position(|(p, _)| *p == prop);
-            match now.map(|i| (i, w.sort[i].1)) {
-                Some((0, false)) => w.sort[0].1 = true,
-                Some((0, true)) => {
-                    w.sort.remove(0);
-                }
-                _ => {
-                    w.sort.retain(|(p, _)| *p != prop);
-                    w.sort.insert(0, (prop, false));
-                }
-            }
-            b.generation = 0;
-        }
-    }
 
     // ---- daily notes ----------------------------------------------------------------
 
@@ -2592,6 +2622,45 @@ mod tests {
         assert!(path.starts_with("Untitled"), "{path}");
         let t = a.vault.as_mut().unwrap().fs.read(&path).unwrap();
         assert!(t.starts_with("---\nstatus: open\n---"), "{t}");
+    }
+
+    #[test]
+    fn a_board_card_moved_to_a_column_takes_its_value() {
+        let mut a = app();
+        a.vault
+            .as_mut()
+            .unwrap()
+            .fs
+            .write(
+                "B.base",
+                "views:\n  - type: kanban\n    name: Board\n    groupBy:\n      property: status\n      direction: ASC\n",
+            )
+            .unwrap();
+        a.vault
+            .as_mut()
+            .unwrap()
+            .fs
+            .write("Done.md", "---\nstatus: done\n---\nx")
+            .unwrap();
+        a.vault.as_mut().unwrap().scan();
+        a.vault.as_mut().unwrap().reindex_all();
+        a.vault.as_mut().unwrap().index_some(&mut || true);
+        a.open_file("B.base", false);
+        for _ in 0..4 {
+            a.tick(&mut || true);
+        }
+        let (rows, groups) = match a.view() {
+            Some(View::Base(b)) => (b.rows.clone(), b.groups.clone()),
+            _ => panic!("a base"),
+        };
+        let row = rows.iter().position(|p| p == "Plan.md").unwrap();
+        let done = groups
+            .iter()
+            .position(|(l, _)| l == "done")
+            .unwrap_or_else(|| panic!("{groups:?}"));
+        a.base_move_card(row, done);
+        let t = a.vault.as_mut().unwrap().fs.read("Plan.md").unwrap();
+        assert!(t.starts_with("---\nstatus: done\n"), "{t}");
     }
 
     #[test]
