@@ -41,6 +41,7 @@ import { orgBillingRoute } from "./org-billing.js";
 import { mailInvite } from "./org-mail.js";
 import { tellPublished, tellMade } from "./mail.js";
 import { emailHtml } from "./mail-layout.js";
+import { bytesReader, zipListing, zipEntry, asText } from "./code-changes.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
 import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
@@ -1836,7 +1837,114 @@ async function putReport(request, env) {
     state: "new",
   };
   await env.APPS.put(`report:${id}`, JSON.stringify(meta));
+  // The founder hears at once. A report sat unseen until he happened to
+  // open the desk (2026-11-23); the person who sent it was waiting. Never
+  // in the way of the report itself.
+  await notifyFounderOfReport(env, meta, body).catch((error) =>
+    console.error(`could not tell the founder about report ${id}: ${error}`),
+  );
   return json({ ok: true, id });
+}
+
+/// What a report says, read out of its zip: what the person asked, what
+/// went wrong, where. Best effort -- a zip we cannot read still mails, with
+/// the facts the headers carried.
+async function reportFacts(zip) {
+  const facts = {};
+  try {
+    const reader = bytesReader(zip);
+    const listing = (await zipListing(reader)) || [];
+    const read = async (name) => {
+      const entry = listing.find((e) => e.name === name || e.name.endsWith(`/${name}`));
+      return entry ? asText(await zipEntry(reader, entry, 2 * 1024 * 1024)) : null;
+    };
+    const session = JSON.parse((await read("session.json")) || "null");
+    if (session && Array.isArray(session.messages)) {
+      facts.title = String(session.title || "");
+      const asked = session.messages.filter((m) => m && m.who === "YOU" && m.body);
+      if (asked.length) facts.asked = String(asked[asked.length - 1].body);
+      facts.failures = session.messages.filter((m) => m && m.kind === "fail").length;
+    }
+    const build = JSON.parse((await read("build.json")) || "null");
+    if (build && build.state === "failed") facts.error = String(build.error || build.line || "");
+    const about = await read("about.txt");
+    if (about) {
+      const field = (k) => {
+        const line = about.split("\n").find((l) => l.startsWith(`${k}:`));
+        return line ? line.slice(k.length + 1).trim() : "";
+      };
+      facts.where = field("page") ? `Studio on the web (${field("page")})` : about.split("\n")[0];
+    }
+  } catch (error) {
+    facts.unread = String(error).slice(0, 120);
+  }
+  return facts;
+}
+
+function cutLine(text, n) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+}
+
+/// "Report from <who>": subject, text and HTML, short lines for a phone.
+/// To the founder only, so no unsubscribe switch (ESSENTIAL, like sign-ups).
+function founderReportMail(meta, facts) {
+  const named = meta.name && meta.name !== "anonymous";
+  const who = named ? meta.name : "Someone without an account";
+  const at = new Date((meta.received || 0) * 1000).toLocaleString("en-GB", {
+    timeZone: "Asia/Singapore",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const desk = "https://hub.krate.tech/admin#reports";
+  const rows = [
+    ["From", named && meta.from ? `${who} (@${meta.from})` : who],
+    ...(facts.title ? [["Session", cutLine(facts.title, 120)]] : []),
+    ...(facts.asked ? [["They asked", cutLine(facts.asked, 300)]] : []),
+    ...(facts.error ? [["What went wrong", cutLine(facts.error, 300)]] : []),
+    ...(facts.failures ? [["Failed builds", String(facts.failures)]] : []),
+    ...(meta.note ? [["Their note", cutLine(meta.note, 400)]] : []),
+    ["Where", [facts.where || "Studio", meta.os, meta.krate && `Krate ${meta.krate}`].filter(Boolean).join(" · ")],
+    ["When", `${at} Singapore time`],
+    ["Report", meta.id],
+  ];
+  const about = facts.error || facts.title;
+  const subject = `Report from ${who}${about ? `: ${cutLine(about, 60)}` : ""}`;
+  const text = [
+    `${who} sent a report from Studio.`,
+    "",
+    ...rows.map(([k, v]) => `${k}: ${v}`),
+    "",
+    `The evidence and their session: ${desk}`,
+  ].join("\n");
+  const html = emailHtml({
+    title: subject,
+    preheader: facts.error ? cutLine(facts.error, 100) : `Sent ${at} Singapore time.`,
+    heading: `${who} sent a report`,
+    blocks: [{ rows }],
+    button: { label: "Open the report", url: desk },
+    footer: ["Sent to the founder only, when someone sends a report from Studio."],
+  });
+  return { subject, text, html };
+}
+
+async function notifyFounderOfReport(env, meta, zip) {
+  if (!env.RESEND_API_KEY) return;
+  const mail = founderReportMail(meta, await reportFacts(zip));
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Krate <hello@krate.tech>",
+      to: founderInboxes(env),
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    }),
+  });
 }
 
 /// Is this caller one of us? A comma-separated list of GitHub logins in the
@@ -8191,7 +8299,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":location.hash==="#reports"?"reports":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
