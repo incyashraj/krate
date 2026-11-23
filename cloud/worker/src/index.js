@@ -45,6 +45,8 @@ import { bytesReader, zipListing, zipEntry, asText } from "./code-changes.js";
 import { newsMail, wantsNews, unsubscribeRoute, meMailRoute } from "./mail-prefs.js";
 import { announceRoute, deskMailApi, deskMailScript, DESK_MAIL_STYLE, runQueuedAnnouncements, renderAnnouncement } from "./mail-announce.js";
 import { refusalsExhausted, noteRefusal, isRefusal, rateLimitedAnswer } from "./org-limits.js";
+// In-app messages: the founder's notes and report replies, read in Studio.
+import { inboxRoute, deskInboxApi, deskInboxScript, DESK_INBOX_STYLE, deskReport, newReportKey, keyHash } from "./inbox.js";
 // Company sign-in and offline access for organisations (IC-948, F and G).
 import { ssoRoute, oidcStart, oidcCallback, ssoSlugsFor, ssoMarks } from "./org-sso.js";
 import { leaseRoute, leaseKeyRoute, leaseKey } from "./org-lease.js";
@@ -292,6 +294,9 @@ const RATE_LIMITS = {
   usage: 60,
   makeit: 5,
   "support/new": 5,
+  // An answer on a report's thread (inbox.js): one KV write and a mail to
+  // the founder each.
+  "inbox/answer": 10,
   // A person's whole export reads everything the hub keeps about them;
   // deleting reads and removes it. Nobody needs either more than a few
   // times a minute (K-1245).
@@ -934,6 +939,18 @@ export default {
       }
       if (request.method === "POST" && pathname === "/support/reply") {
         return cors(await supportReply(request, env));
+      }
+      // ---- in-app messages: what the founder said, read in Studio ------
+      if (pathname === "/inbox" || pathname.startsWith("/inbox/")) {
+        const answer = await inboxRoute(request, url, env, {
+          verifyGitHub,
+          ownerOf,
+          ownersOf,
+          rateLimited,
+          ctx,
+          tellFounder: notifyFounderOfAnswer,
+        });
+        if (answer) return cors(answer);
       }
       // ---- the admin desk ---------------------------------------------
       if (request.method === "GET" && (pathname === "/admin" || pathname === "/admin/")) {
@@ -1835,7 +1852,15 @@ async function putReport(request, env, ctx) {
   await env.BUNDLES.put(`report:${id}`, body, {
     httpMetadata: { contentType: "application/zip" },
   });
+  // The reply secret (inbox.js): whoever sent this, signed in or not, reads
+  // the founder's replies with it from the same browser or computer. Only
+  // its hash is kept. The same zip sent twice is the same report, so an
+  // earlier send keeps its secret and the thread stays.
+  const before = JSON.parse((await env.APPS.get(`report:${id}`)) || "null");
+  const replyKey = newReportKey();
   const meta = {
+    ...(before && Array.isArray(before.thread) ? { thread: before.thread } : {}),
+    keys: [...(before && Array.isArray(before.keys) ? before.keys : []), await keyHash(replyKey)].slice(-5),
     id,
     from: identity ? identity.login : "anonymous",
     // Whose it is, as a principal nobody can choose (K-1085): what account
@@ -1860,7 +1885,15 @@ async function putReport(request, env, ctx) {
   );
   if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(telling);
   else await telling;
-  return json({ ok: true, id });
+  return json({ ok: true, id, key: replyKey });
+}
+
+/// The person answered on their report's thread in Studio: the same mail
+/// the report sent, with their answer and the conversation first.
+async function notifyFounderOfAnswer(env, meta, answer, identity) {
+  const object = await env.BUNDLES.get(`report:${meta.id}`);
+  const zip = object ? new Uint8Array(await object.arrayBuffer()) : new Uint8Array();
+  await notifyFounderOfReport(env, meta, zip, identity, { answer, thread: meta.thread || [] });
 }
 
 /// What a report says, read out of its zip: what the person asked, what
@@ -1952,13 +1985,19 @@ function money(usd) {
 /// the whole conversation, the build's cost, rounds and ending, their other
 /// recent builds, and the end of the engine log (the whole report and log
 /// are attached). To the founder only, so no unsubscribe switch.
-function founderReportMail(meta, facts, build, replyTo) {
+function founderReportMail(meta, facts, build, replyTo, answered = null) {
   const named = meta.name && meta.name !== "anonymous";
   const who = named ? meta.name : "Someone without an account";
+  // An answer on the report's thread in Studio leads with what they said
+  // and the conversation so far; everything else is the report's own mail.
+  const thread = answered
+    ? (answered.thread || []).map((m) => `${m.who === "krate" ? "YOU" : "THEM"}: ${cutLine(m.text, 600)}`)
+    : [];
   const when = (ms) => new Date(ms).toLocaleString("en-GB", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" });
   const at = when((meta.received || 0) * 1000);
   const desk = "https://hub.krate.tech/admin#reports";
   const rows = [
+    ...(answered ? [["Their answer", cutLine(answered.answer, 2000)]] : []),
     ["From", named && meta.from ? `${who} (@${meta.from})` : who],
     ...(replyTo ? [["Reply to", replyTo]] : []),
     ...(meta.note ? [["Their note", cutLine(meta.note, 400)]] : []),
@@ -1991,12 +2030,15 @@ function founderReportMail(meta, facts, build, replyTo) {
     : "";
 
   const about = facts.error || facts.title;
-  const subject = `Report from ${who}${about ? `: ${cutLine(about, 60)}` : ""}`;
+  const subject = answered
+    ? `Answer from ${who}: ${cutLine(answered.answer, 60)}`
+    : `Report from ${who}${about ? `: ${cutLine(about, 60)}` : ""}`;
   const section = (title, lines) => (lines.length ? ["", `-- ${title} --`, ...lines] : []);
   const text = [
-    `${who} sent a report from Studio.`,
+    answered ? `${who} answered on their report in Studio.` : `${who} sent a report from Studio.`,
     "",
     ...rows.map(([k, v]) => `${k}: ${v}`),
+    ...section("The thread", thread),
     ...section("The build", buildRows.map(([k, v]) => `${k}: ${v}`)),
     ...section("Their other recent builds", recent),
     ...section("The conversation", facts.conversation || []),
@@ -2010,9 +2052,10 @@ function founderReportMail(meta, facts, build, replyTo) {
   const html = emailHtml({
     title: subject,
     preheader: facts.error ? cutLine(facts.error, 100) : `Sent ${at} Singapore time.`,
-    heading: `${who} sent a report`,
+    heading: answered ? `${who} answered on their report` : `${who} sent a report`,
     blocks: [
       { rows },
+      ...(thread.length ? ["The thread", { quote: thread.join("\n\n") }] : []),
       ...(buildRows.length ? ["The build", { rows: buildRows }] : []),
       ...(recent.length ? ["Their other recent builds", { quote: recent.join("\n") }] : []),
       ...(facts.conversation && facts.conversation.length ? ["The conversation", { quote: facts.conversation.join("\n\n") }] : []),
@@ -2032,16 +2075,16 @@ function base64Of(bytes) {
   return btoa(s);
 }
 
-async function notifyFounderOfReport(env, meta, zip, identity) {
+async function notifyFounderOfReport(env, meta, zip, identity, answered = null) {
   if (!env.RESEND_API_KEY) return;
   const facts = await reportFacts(zip);
   const build = await reportedBuild(env, facts.buildId);
   const replyTo = identity && identity.email ? String(identity.email) : "";
-  const mail = founderReportMail(meta, facts, build, replyTo);
+  const mail = founderReportMail(meta, facts, build, replyTo, answered);
   // The report itself and the engine log travel with the mail, so it can be
   // read on a phone and kept; a report over 5 MB stays on the desk only.
   const attachments = [];
-  if (zip.length <= 5 * 1024 * 1024) attachments.push({ filename: `krate-report-${meta.id}.zip`, content: base64Of(zip) });
+  if (zip.length > 0 && zip.length <= 5 * 1024 * 1024) attachments.push({ filename: `krate-report-${meta.id}.zip`, content: base64Of(zip) });
   if (build && build.log) attachments.push({ filename: `engine-${build.id}.log`, content: base64Of(new TextEncoder().encode(build.log)) });
   await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -2084,7 +2127,7 @@ async function listReports(request, env) {
   const reports = [];
   for (const key of listing.keys) {
     const raw = await env.APPS.get(key.name);
-    if (raw) reports.push(JSON.parse(raw));
+    if (raw) reports.push(deskReport(JSON.parse(raw)));
   }
   reports.sort((a, b) => (b.received || 0) - (a.received || 0));
   return json({ reports });
@@ -8050,6 +8093,11 @@ async function adminApi(request, pathname, env) {
     const answer = await deskMailApi(request, route, env, body, admin);
     if (answer) return answer;
   }
+  // Messages in Studio, and replies on a report's thread (inbox.js).
+  if (route === "messages" || route.startsWith("messages/") || route === "report/reply") {
+    const answer = await deskInboxApi(request, route, env, body, admin);
+    if (answer) return answer;
+  }
 
   if (route === "overview") {
     const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
@@ -8197,7 +8245,8 @@ async function adminApi(request, pathname, env) {
     const reports = [];
     for (const k of listing.keys) {
       const r = JSON.parse((await env.APPS.get(k.name)) || "null");
-      if (r) reports.push(r);
+      // Never a report's reply secrets, only whether it has one.
+      if (r) reports.push(deskReport(r));
     }
     reports.sort((a, b) => (b.received || 0) - (a.received || 0));
     return json({ reports });
@@ -8407,6 +8456,7 @@ textarea{min-height:70px;resize:vertical}
 .pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
 #login{max-width:420px}
 ${DESK_MAIL_STYLE}
+${DESK_INBOX_STYLE}
 </style>
 <h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
 <div id="login" class="card" style="display:none">
@@ -8423,6 +8473,7 @@ ${DESK_MAIL_STYLE}
   <button data-t="users">Users</button>
   <button data-t="makeit">Make-it queue</button>
   <button data-t="mail">Mail</button>
+  <button data-t="messages">Messages</button>
 </nav>
 <div id="view"></div>
 </div>
@@ -8436,7 +8487,7 @@ const el=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const when=ms=>new Date(ms).toLocaleString();
 async function boot(){
-  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":location.hash==="#reports"?"reports":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.reports||0} reports · \${o.app_reports||0} reported apps\`;el("#app").style.display="";const first=location.hash==="#people"?"people":location.hash==="#mail"?"mail":location.hash==="#reports"?"reports":location.hash==="#messages"?"messages":"welcome";document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x.dataset.t===first));show(first);}
   catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
@@ -8531,6 +8582,7 @@ async function show(tab){
       d.querySelector(".dl").onclick=async()=>{const res=await fetch(HUB+"/admin/report/"+r.id,{headers:{authorization:"Bearer "+TOKEN}});if(!res.ok){alert("Download failed: "+res.status);return;}const b=await res.blob();const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="krate-report-"+r.id+".zip";a.click();if(!r.state||r.state==="new")api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:"seen"})});};
       d.querySelector(".ses").onclick=()=>sessionsInto(d.querySelector(".sbox"),"login="+encodeURIComponent(r.from||""),r.session);
       d.querySelector(".st").onclick=async()=>{await api("report/state",{method:"POST",body:JSON.stringify({id:r.id,state:r.state==="done"?"seen":"done"})});show("reports");};
+      reportThreadInto(d,r);
       v.appendChild(d);
     }
   }
@@ -8587,6 +8639,7 @@ async function show(tab){
     el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
   }
   if(tab==="mail"){await deskMail(v);}
+  if(tab==="messages"){await deskMessages(v);}
   if(tab==="makeit"){
     const {requests}=await api("makeit");
     v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
@@ -8600,6 +8653,7 @@ async function show(tab){
   }
 }
 ${deskMailScript()}
+${deskInboxScript()}
 boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });

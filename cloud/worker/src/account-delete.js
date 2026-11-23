@@ -485,6 +485,8 @@ const STEP = {
       await env.APPS.delete(`tick:${t}`);
     }
     await env.APPS.delete(`utick:${id}`);
+    // Their messages in Studio (inbox.js), under each name they were sent to.
+    for (const o of owners) await env.APPS.delete(`inbox:${o}`);
     // Studio's support reports: by the owner recorded since K-1245, and
     // before that by the GitHub login they carried.
     await eachKey(env, "report:", async (key) => {
@@ -949,8 +951,14 @@ async function exportRoute(request, env, deps) {
   await eachKey(env, "report:", async (key) => {
     const r = await getJSON(env, key);
     const mine = r && (r.owner ? identity.owners.includes(r.owner) : r.from && identity.github.includes(lower(r.from)));
-    if (mine) reports.push({ id: r.id, received: r.received, note: r.note, krate: r.krate, os: r.os, size: r.size, state: r.state });
+    if (mine) reports.push({ id: r.id, received: r.received, note: r.note, krate: r.krate, os: r.os, size: r.size, state: r.state, thread: r.thread || [] });
   });
+  // Messages sent to them in Studio (inbox.js).
+  const messages = [];
+  for (const o of identity.owners) {
+    const box = await getJSON(env, `inbox:${o}`);
+    for (const m of (box && box.items) || []) messages.push({ at: m.at, text: m.text, kind: m.kind, ...(m.report ? { report: m.report } : {}) });
+  }
   const requests = [];
   await eachKey(env, "makeit:", async (key) => {
     const m = await getJSON(env, key);
@@ -996,6 +1004,7 @@ async function exportRoute(request, env, deps) {
     studio_conversations: conversations,
     support_tickets: tickets,
     support_reports: reports,
+    studio_messages: messages,
     requests_sent: requests,
     founding_list: founding,
     referral: { code: user.refcode || "", people_joined: (await getJSON(env, `refs:${id}`, [])).length },
