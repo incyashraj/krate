@@ -373,23 +373,14 @@
                 <button type="button" class="kr-sq" id="homePortGo" title="Choose a folder"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M3 8h9.4M8.6 4.2L12.8 8l-4.2 3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
               </div>
             </div>
-            <!-- The IDE door: start a project from one of the engine's own
-                 starters (each shows its real first frame), or open one you
-                 have below. ide.js fills it and opens the workbench. -->
+            <!-- The IDE door: start a project from one of Krate's own apps
+                 (each shows its real first frame), or open one you have
+                 below. ide.js fills it and opens the workbench. -->
             <div class="home-idepane" id="homeIdePane" hidden>
               <div class="kr-idehead"><h2 class="kr-lab">Start a project</h2></div>
-              <div class="kr-starters" id="homeIdeStarters">
-                <div class="kr-starter" data-kind="checklist" data-name="My checklist" style="--k:0">
-                  <button type="button" class="kr-st-go" aria-label="Start a window app: a checklist that saves"><span class="th"><img src="starters/checklist.jpg" alt="" /></span><b>A window app</b><small>A checklist that saves</small></button>
-                </div>
-                <div class="kr-starter" data-kind="word-frequency" data-name="Word counter" style="--k:1">
-                  <!-- The tool's real output, run on Krate's README. -->
-                  <button type="button" class="kr-st-go" aria-label="Start a command-line tool: reads a file and counts its words"><span class="th term" aria-hidden="true"><code><i>word-counter · notes.md</i>word,count<br />krate,191<br />the,178<br />a,148<br />and,132<br />app,88</code></span><b>A command-line tool</b><small>Reads a file, counts its words</small></button>
-                </div>
-                <div class="kr-starter" data-kind="voice-prompter" data-name="Voice prompter" style="--k:2">
-                  <button type="button" class="kr-st-go" aria-label="Start a voice app: a prompter that listens to the microphone"><span class="th"><img src="starters/voice-prompter.jpg" alt="" /></span><b>A voice app</b><small>A prompter that listens</small></button>
-                </div>
-              </div>
+              <!-- One card per starter in starters/starters.json, made by
+                   scripts/build-ide-starters.py from Krate's reference apps. -->
+              <div class="kr-starters" id="homeIdeStarters" aria-busy="true"></div>
             </div>
             <div class="attach-row hidden" id="homeAttachRow"></div>
             <textarea id="homePrompt" rows="1" placeholder="Describe an app, or paste code to port…" autocomplete="off" spellcheck="false" maxlength="2000"></textarea>
