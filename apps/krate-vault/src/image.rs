@@ -51,6 +51,15 @@ fn err(s: &str) -> String {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Picture, String> {
+    decode_with(bytes, &mut |_| None)
+}
+
+/// As [`decode`], with `fetch` reading the files an SVG's `<image>`s name
+/// (relative to the SVG).
+pub fn decode_with(
+    bytes: &[u8],
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Result<Picture, String> {
     let pic = if bytes.starts_with(b"\x89PNG") {
         png(bytes)?
     } else if bytes.starts_with(&[0xFF, 0xD8]) {
@@ -82,7 +91,7 @@ pub fn decode(bytes: &[u8]) -> Result<Picture, String> {
         .windows(4)
         .any(|w| w == b"<svg")
     {
-        svg(bytes)?
+        svg(bytes, fetch)?
     } else {
         return Err(err("This file is not a picture Vault can read"));
     };
@@ -91,9 +100,9 @@ pub fn decode(bytes: &[u8]) -> Result<Picture, String> {
 
 /// An SVG rasterised at its own size (at most MAX_SIDE), twice that when
 /// it is small, so it stays sharp on a high-density screen.
-fn svg(bytes: &[u8]) -> Result<Picture, String> {
+fn svg(bytes: &[u8], fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> Result<Picture, String> {
     let text = core::str::from_utf8(bytes).map_err(|_| err("The SVG is not text"))?;
-    let doc = crate::svg::parse(text)?;
+    let doc = crate::svg::parse_with(text, fetch)?;
     let scale = if doc.w.max(doc.h) <= 1024.0 { 2.0 } else { 1.0 };
     let fit = (MAX_SIDE as f32 / (doc.w.max(doc.h) * scale)).min(1.0);
     let w = ((doc.w * scale * fit).round() as u32).max(1);

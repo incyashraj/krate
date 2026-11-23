@@ -51,6 +51,16 @@ impl Tf {
         (a * p.0 + c * p.1 + e, b * p.0 + d * p.1 + f)
     }
 
+    pub fn invert(&self) -> Tf {
+        let [a, b, c, d, e, f] = self.0;
+        let det = a * d - b * c;
+        if det.abs() < 1e-12 {
+            return Tf::ID;
+        }
+        let (ia, ib, ic, id) = (d / det, -b / det, -c / det, a / det);
+        Tf([ia, ib, ic, id, -(ia * e + ic * f), -(ib * e + id * f)])
+    }
+
     fn scale(&self) -> f32 {
         let [a, b, c, d, ..] = self.0;
         ((a * a + b * b).sqrt() + (c * c + d * d).sqrt()) * 0.5
@@ -65,6 +75,14 @@ pub enum Paint {
     /// shape's own user space after its transform.
     Linear(Vec<(f32, [f32; 4])>, Pt, Pt),
     Radial(Vec<(f32, [f32; 4])>, Pt, f32),
+    /// A `<pattern>`: its contents drawn once into a tile (x, y, w, h in
+    /// pattern space) repeated; `tf` maps pattern space to the document.
+    Pattern {
+        items: Vec<Item>,
+        tile: (f32, f32, f32, f32),
+        tf: Tf,
+        op: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,6 +126,7 @@ impl Svg {
                 match it {
                     Item::Shape(s) => out.push(s),
                     Item::Group(g) => go(&g.items, out),
+                    Item::Image { .. } => {}
                 }
             }
         }
@@ -712,6 +731,9 @@ struct Style {
     anchor: u8,
     bold: bool,
     serif: bool,
+    marker_start: Option<String>,
+    marker_mid: Option<String>,
+    marker_end: Option<String>,
     // Not inherited: read afresh for each element.
     own_op: f32,
     clip: Option<String>,
@@ -988,6 +1010,15 @@ fn set_prop(s: &mut Style, k: &str, v: &str) {
         "clip-path" => s.clip = Some(String::from(v.trim())),
         "mask" => s.mask = Some(String::from(v.trim())),
         "filter" => s.filter = Some(String::from(v.trim())),
+        "marker-start" => s.marker_start = Some(String::from(v.trim())),
+        "marker-mid" => s.marker_mid = Some(String::from(v.trim())),
+        "marker-end" => s.marker_end = Some(String::from(v.trim())),
+        "marker" => {
+            let m = Some(String::from(v.trim()));
+            s.marker_start = m.clone();
+            s.marker_mid = m.clone();
+            s.marker_end = m;
+        }
         "display" => s.hidden |= v.trim() == "none",
         "visibility" => s.hidden |= v.trim() == "hidden",
         _ => {}
@@ -1158,6 +1189,15 @@ fn gradients(els: &[El<'_>]) -> Vec<Grad> {
 pub enum Item {
     Shape(Shape),
     Group(Group),
+    /// A picture (`<image>`): straight RGBA pixels and the transform from
+    /// its pixel grid to the document.
+    Image {
+        w: u32,
+        h: u32,
+        rgba: Vec<u8>,
+        tf: Tf,
+        op: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1169,6 +1209,9 @@ pub struct Group {
     /// Drawn and used by its luminance.
     pub mask: Option<Vec<Item>>,
     pub filter: Option<Vec<Prim>>,
+    /// Whether the filter works in linear light (`linearRGB`, the
+    /// default) rather than sRGB.
+    pub linear: bool,
     /// The filter region (x0, y0, x1, y1), in document coordinates:
     /// nothing a filter draws reaches past it.
     pub region: Option<(f32, f32, f32, f32)>,
@@ -1409,11 +1452,18 @@ fn filter_prims(cx: &Cx<'_, '_>, at: usize, tf: Tf) -> Vec<Prim> {
 
 // ---- reading ------------------------------------------------------------------------------
 
+/// Reads a file an `<image>` names.
+type Fetch<'a> = dyn FnMut(&str) -> Option<Vec<u8>> + 'a;
+
 /// What a walk of the document needs.
 struct Cx<'n, 'a> {
     nodes: &'n [Node<'a>],
     rules: Vec<Rule>,
     grads: Vec<Grad>,
+    /// Reads a file an `<image>` names, beside the SVG.
+    fetch: core::cell::RefCell<&'n mut Fetch<'n>>,
+    /// The root's style: what markers and patterns inherit.
+    root: Option<Style>,
 }
 
 impl Cx<'_, '_> {
@@ -1464,6 +1514,17 @@ fn bbox_of(items: &[Item], bb: &mut (f32, f32, f32, f32)) {
                 }
             }
             Item::Group(g) => bbox_of(&g.items, bb),
+            Item::Image { w, h, tf, .. } => {
+                for q in [
+                    (0.0, 0.0),
+                    (*w as f32, 0.0),
+                    (0.0, *h as f32),
+                    (*w as f32, *h as f32),
+                ] {
+                    let q = tf.apply(q);
+                    *bb = (bb.0.min(q.0), bb.1.min(q.1), bb.2.max(q.0), bb.3.max(q.1));
+                }
+            }
         }
     }
 }
@@ -1473,6 +1534,7 @@ fn flat_polys(items: &[Item], out: &mut Vec<Vec<Pt>>) {
         match it {
             Item::Shape(s) => out.extend(s.polys.iter().map(|(p, _)| p.clone())),
             Item::Group(g) => flat_polys(&g.items, out),
+            Item::Image { .. } => {}
         }
     }
 }
@@ -1652,6 +1714,18 @@ fn walk(
     });
     let fnode = st.filter.as_deref().and_then(|f| cx.by_url(f));
     let filter = fnode.map(|fi| filter_prims(cx, fi, st.tf));
+    let linear = fnode.is_none_or(|fi| {
+        let n = &cx.nodes[fi];
+        let said = nattr(n, "color-interpolation-filters").or_else(|| {
+            nattr(n, "style").and_then(|st| {
+                st.split(';')
+                    .filter_map(|d| d.split_once(':'))
+                    .find(|(k, _)| k.trim() == "color-interpolation-filters")
+                    .map(|(_, v)| v.trim())
+            })
+        });
+        said.map(str::trim) != Some("sRGB")
+    });
     // The filter region: by default the shape's box and a tenth more on
     // every side, as Chromium clips Obsidian's.
     let region = fnode.map(|fi| {
@@ -1686,6 +1760,7 @@ fn walk(
         clip,
         mask,
         filter,
+        linear,
         region,
     }));
 }
@@ -1738,6 +1813,10 @@ fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: 
             }
             alloc::vec![(pts, closed)]
         }
+        "image" => {
+            image(cx, n, st, out);
+            return;
+        }
         "text" | "tspan" => {
             let text = unescape(n.text.trim());
             if !text.is_empty() {
@@ -1773,20 +1852,302 @@ fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: 
     let fill = if n.name == "line" {
         Paint::None
     } else {
-        paint(&st.fill, op * st.fill_op, &cx.grads, bb, st.tf)
+        pattern(cx, &st.fill, op * st.fill_op, bb, st.tf)
+            .unwrap_or_else(|| paint(&st.fill, op * st.fill_op, &cx.grads, bb, st.tf))
     };
-    let stroke = paint(&st.stroke, op * st.stroke_op, &cx.grads, bb, st.tf);
+    let stroke = pattern(cx, &st.stroke, op * st.stroke_op, bb, st.tf)
+        .unwrap_or_else(|| paint(&st.stroke, op * st.stroke_op, &cx.grads, bb, st.tf));
     out.push(Item::Shape(Shape {
-        polys,
+        polys: polys.clone(),
         fill,
         stroke,
         width: st.width * st.tf.scale(),
         even_odd: st.even_odd,
     }));
+    if matches!(n.name, "path" | "line" | "polyline" | "polygon") {
+        markers(cx, n, st, out);
+    }
+}
+
+/// A `fill` or `stroke` that names a `<pattern>`: its tile drawn and
+/// repeated, in the pattern's units.
+fn pattern(
+    cx: &Cx<'_, '_>,
+    spec: &str,
+    op: f32,
+    bb: (f32, f32, f32, f32),
+    tf: Tf,
+) -> Option<Paint> {
+    let pi = cx.by_url(spec)?;
+    let mut pn = &cx.nodes[pi];
+    if pn.name != "pattern" {
+        return None;
+    }
+    // A pattern may take its tile and contents from another by href.
+    let mut content = pn;
+    for _ in 0..4 {
+        if !content.kids.is_empty() {
+            break;
+        }
+        match nattr(content, "href")
+            .and_then(|h| h.strip_prefix('#'))
+            .and_then(|h| cx.by_id(h))
+        {
+            Some(o) => content = &cx.nodes[o],
+            None => break,
+        }
+    }
+    let attr_of = |k: &str| nattr(pn, k).or_else(|| nattr(content, k));
+    let units_bb = attr_of("patternUnits") != Some("userSpaceOnUse");
+    let frac = |k: &str| -> f32 {
+        attr_of(k).map_or(0.0, |v| {
+            let pc = v.trim().ends_with('%');
+            num(v).map_or(0.0, |x| if pc { x / 100.0 } else { x })
+        })
+    };
+    let (bw, bh) = (bb.2 - bb.0, bb.3 - bb.1);
+    let (x, y, w, h) = if units_bb {
+        (
+            bb.0 + frac("x") * bw,
+            bb.1 + frac("y") * bh,
+            frac("width") * bw,
+            frac("height") * bh,
+        )
+    } else {
+        (frac("x"), frac("y"), frac("width"), frac("height"))
+    };
+    if w <= 0.0 || h <= 0.0 {
+        return Some(Paint::None);
+    }
+    // Contents: in the tile's own space (origin at its corner), scaled by
+    // the viewBox or by the box when patternContentUnits says so.
+    let vb = attr_of("viewBox").map(numbers).filter(|v| v.len() == 4);
+    let inner = match vb {
+        Some(v) => {
+            let k = (w / v[2].max(1e-3)).min(h / v[3].max(1e-3));
+            Tf([k, 0.0, 0.0, k, -v[0] * k, -v[1] * k])
+        }
+        None if attr_of("patternContentUnits") == Some("objectBoundingBox") => {
+            Tf([bw, 0.0, 0.0, bh, 0.0, 0.0])
+        }
+        None => Tf::ID,
+    };
+    let mut cs = cx.root.clone()?;
+    cs.tf = inner;
+    let mut items = Vec::new();
+    let mut tx = Vec::new();
+    let mut anc = alloc::vec![pi];
+    for &k in &content.kids {
+        walk(cx, k, &mut anc, &cs, &mut items, &mut tx, 4);
+    }
+    let ptf = attr_of("patternTransform").map(transform).unwrap_or(Tf::ID);
+    pn = &cx.nodes[pi];
+    let _ = pn;
+    Some(Paint::Pattern {
+        items,
+        tile: (x, y, w, h),
+        tf: ptf.then(tf),
+        op,
+    })
+}
+
+/// The markers at a line's start, its corners and its end.
+fn markers(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>) {
+    if st.marker_start.is_none() && st.marker_mid.is_none() && st.marker_end.is_none() {
+        return;
+    }
+    let g = |k: &str| nattr(n, k).and_then(num).unwrap_or(0.0);
+    // The vertices as written (a path's flattened curves are not corners:
+    // its mid markers go on its straight segments' ends only).
+    let pts: Vec<Pt> = match n.name {
+        "line" => alloc::vec![(g("x1"), g("y1")), (g("x2"), g("y2"))],
+        "polyline" | "polygon" => {
+            let v = numbers(nattr(n, "points").unwrap_or(""));
+            let mut p: Vec<Pt> = v.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+            if n.name == "polygon" {
+                if let Some(f) = p.first().copied() {
+                    p.push(f);
+                }
+            }
+            p
+        }
+        _ => path(nattr(n, "d").unwrap_or(""))
+            .into_iter()
+            .flat_map(|(p, _)| p)
+            .collect(),
+    };
+    if pts.len() < 2 {
+        return;
+    }
+    let ang = |a: Pt, b: Pt| (b.1 - a.1).atan2(b.0 - a.0);
+    let last = pts.len() - 1;
+    let mut place: Vec<(&Option<String>, Pt, f32, bool)> = Vec::new();
+    place.push((&st.marker_start, pts[0], ang(pts[0], pts[1]), true));
+    if n.name != "path" {
+        for i in 1..last {
+            let a = (ang(pts[i - 1], pts[i]) + ang(pts[i], pts[i + 1])) * 0.5;
+            place.push((&st.marker_mid, pts[i], a, false));
+        }
+    }
+    place.push((
+        &st.marker_end,
+        pts[last],
+        ang(pts[last - 1], pts[last]),
+        false,
+    ));
+    for (spec, at, angle, start) in place {
+        let Some(mi) = spec.as_deref().and_then(|m| cx.by_url(m)) else {
+            continue;
+        };
+        let mn = &cx.nodes[mi];
+        if mn.name != "marker" {
+            continue;
+        }
+        let f = |k: &str, d: f32| nattr(mn, k).and_then(num).unwrap_or(d);
+        let (mw, mh) = (f("markerWidth", 3.0), f("markerHeight", 3.0));
+        let rot = match nattr(mn, "orient").map(str::trim) {
+            Some("auto") => angle,
+            Some("auto-start-reverse") => {
+                if start {
+                    angle + core::f32::consts::PI
+                } else {
+                    angle
+                }
+            }
+            Some(v) => num(v).unwrap_or(0.0).to_radians(),
+            None => 0.0,
+        };
+        let units = if nattr(mn, "markerUnits") == Some("userSpaceOnUse") {
+            1.0
+        } else {
+            st.width
+        };
+        let vb = nattr(mn, "viewBox").map(numbers).filter(|v| v.len() == 4);
+        let (k, ox, oy) = match vb {
+            Some(v) => ((mw / v[2].max(1e-3)).min(mh / v[3].max(1e-3)), v[0], v[1]),
+            None => (1.0, 0.0, 0.0),
+        };
+        let (rx, ry) = (f("refX", 0.0), f("refY", 0.0));
+        let (sn, cs) = (rot.sin(), rot.cos());
+        let place_tf = Tf([1.0, 0.0, 0.0, 1.0, -rx - 0.0, -ry])
+            .then(Tf([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]))
+            .then(Tf([k, 0.0, 0.0, k, 0.0, 0.0]))
+            .then(Tf([units, 0.0, 0.0, units, 0.0, 0.0]))
+            .then(Tf([cs, sn, -sn, cs, 0.0, 0.0]))
+            .then(Tf([1.0, 0.0, 0.0, 1.0, at.0, at.1]))
+            .then(st.tf);
+        let _ = (ox, oy);
+        let Some(mut ms) = cx.root.clone() else {
+            continue;
+        };
+        ms.tf = place_tf;
+        let mut tx = Vec::new();
+        let mut anc = alloc::vec![mi];
+        for &c in &mn.kids {
+            walk(cx, c, &mut anc, &ms, out, &mut tx, 6);
+        }
+    }
+}
+
+/// Standard base64, as a `data:` address carries it.
+fn base64(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => continue,
+        };
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    out
+}
+
+/// An `<image>`: a `data:` address or a file beside the SVG, decoded and
+/// fitted to its box as `preserveAspectRatio` says (default: centred,
+/// whole).
+fn image(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>) {
+    let Some(href) = nattr(n, "href") else {
+        return;
+    };
+    let bytes = if let Some(rest) = href.trim().strip_prefix("data:") {
+        let (meta, data) = rest.split_once(',').unwrap_or(("", rest));
+        if meta.ends_with(";base64") {
+            base64(data)
+        } else {
+            unescape(data).into_bytes()
+        }
+    } else {
+        match (cx.fetch.borrow_mut())(href.trim()) {
+            Some(b) => b,
+            None => return,
+        }
+    };
+    let Ok(pic) = crate::image::decode(&bytes) else {
+        return;
+    };
+    let g = |k: &str| nattr(n, k).and_then(num);
+    let (iw, ih) = (pic.width as f32, pic.height as f32);
+    let (lw, lh) = (pic.logical.0 as f32, pic.logical.1 as f32);
+    let (x, y) = (g("x").unwrap_or(0.0), g("y").unwrap_or(0.0));
+    let w = g("width").unwrap_or(lw);
+    let h = g("height").unwrap_or(lh);
+    let par = nattr(n, "preserveAspectRatio").unwrap_or("xMidYMid meet");
+    let (kx, ky) = if par.trim() == "none" {
+        (w / iw, h / ih)
+    } else {
+        let k = if par.contains("slice") {
+            (w / iw).max(h / ih)
+        } else {
+            (w / iw).min(h / ih)
+        };
+        (k, k)
+    };
+    let (dw, dh) = (iw * kx, ih * ky);
+    let ax = if par.contains("xMin") {
+        0.0
+    } else if par.contains("xMax") {
+        1.0
+    } else {
+        0.5
+    };
+    let ay = if par.contains("YMin") {
+        0.0
+    } else if par.contains("YMax") {
+        1.0
+    } else {
+        0.5
+    };
+    let tf = Tf([kx, 0.0, 0.0, ky, x + (w - dw) * ax, y + (h - dh) * ay]).then(st.tf);
+    out.push(Item::Image {
+        w: pic.width,
+        h: pic.height,
+        rgba: pic.rgba,
+        tf,
+        op: st.opacity * st.own_op,
+    });
 }
 
 /// Read an SVG document.
 pub fn parse(src: &str) -> Result<Svg, String> {
+    parse_with(src, &mut |_| None)
+}
+
+/// Read an SVG document whose `<image>`s may name files: `fetch` reads one
+/// by the name written, relative to the SVG.
+pub fn parse_with(
+    src: &str,
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Result<Svg, String> {
     let els = tags(src);
     let nodes = tree(&els);
     let root = nodes
@@ -1813,10 +2174,12 @@ pub fn parse(src: &str) -> Result<Svg, String> {
         }
         None => Tf::ID,
     };
-    let cx = Cx {
+    let mut cx = Cx {
         nodes: &nodes,
         rules: css(&sheets(src), 0),
         grads: gradients(&els),
+        fetch: core::cell::RefCell::new(fetch),
+        root: None,
     };
     let init = Style {
         tf: base,
@@ -1832,6 +2195,9 @@ pub fn parse(src: &str) -> Result<Svg, String> {
         anchor: 0,
         bold: false,
         serif: true,
+        marker_start: None,
+        marker_mid: None,
+        marker_end: None,
         own_op: 1.0,
         clip: None,
         mask: None,
@@ -1849,6 +2215,12 @@ pub fn parse(src: &str) -> Result<Svg, String> {
     let mut anc = Vec::new();
     let mut rs = style_of(&cx, root, &anc, &init);
     rs.tf = base;
+    let mut rstyle = rs.clone();
+    rstyle.own_op = 1.0;
+    rstyle.clip = None;
+    rstyle.mask = None;
+    rstyle.filter = None;
+    cx.root = Some(rstyle);
     let grouped = rs.clip.is_some() || rs.mask.is_some() || rs.filter.is_some() || rs.own_op < 1.0;
     anc.push(root);
     if grouped {
@@ -1872,6 +2244,7 @@ pub fn parse(src: &str) -> Result<Svg, String> {
                 .as_deref()
                 .and_then(|f| cx.by_url(f))
                 .map(|fi| filter_prims(&cx, fi, base)),
+            linear: true,
             region: None,
         }));
     } else {
@@ -1911,7 +2284,8 @@ fn paint_at(p: &Paint, x: f32, y: f32) -> [f32; 4] {
         stops.last().map_or([0.0; 4], |s| s.1)
     };
     match p {
-        Paint::None => [0.0; 4],
+        // Drawn from its tile by the shape's own sampler.
+        Paint::None | Paint::Pattern { .. } => [0.0; 4],
         Paint::Color(c) => *c,
         Paint::Linear(stops, a, b) => {
             let (dx, dy) = (b.0 - a.0, b.1 - a.1);
@@ -2072,6 +2446,30 @@ fn draw_shape(sh: &Shape, px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32
         layers.push((coverage(&outline, wu, hu, false), scale_paint(&sh.stroke)));
     }
     for (cov, paint) in layers {
+        // A pattern's tile, drawn once at this scale.
+        let tile = match &paint {
+            Paint::Pattern {
+                items,
+                tile,
+                tf,
+                op,
+            } => {
+                let k = tf.scale() * (sx + sy) * 0.5;
+                let tw = ((tile.2 * k).ceil() as usize).clamp(1, 1024);
+                let th = ((tile.3 * k).ceil() as usize).clamp(1, 1024);
+                let mut buf = alloc::vec![0.0f32; tw * th * 4];
+                render(
+                    items,
+                    &mut buf,
+                    tw,
+                    th,
+                    tw as f32 / tile.2,
+                    th as f32 / tile.3,
+                );
+                Some((buf, tw, th, *tile, tf.invert(), *op))
+            }
+            _ => None,
+        };
         for y in 0..hu {
             for x in 0..wu {
                 let i = y * wu + x;
@@ -2079,7 +2477,20 @@ fn draw_shape(sh: &Shape, px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32
                 if a <= 0.0 {
                     continue;
                 }
-                let c = paint_at(&paint, x as f32 + 0.5, y as f32 + 0.5);
+                let c = match &tile {
+                    Some((buf, tw, th, t, inv, op)) => {
+                        let p = inv.apply(((x as f32 + 0.5) / sx, (y as f32 + 0.5) / sy));
+                        let u = ((p.0 - t.0).rem_euclid(t.2) / t.2 * *tw as f32) as usize;
+                        let v = ((p.1 - t.1).rem_euclid(t.3) / t.3 * *th as f32) as usize;
+                        let j = (v.min(th - 1) * tw + u.min(tw - 1)) * 4;
+                        let pa = buf[j + 3];
+                        if pa <= 0.0 {
+                            continue;
+                        }
+                        [buf[j] / pa, buf[j + 1] / pa, buf[j + 2] / pa, pa * op]
+                    }
+                    None => paint_at(&paint, x as f32 + 0.5, y as f32 + 0.5),
+                };
                 let alpha = a * c[3];
                 if let Some(d) = px.get_mut(i * 4..i * 4 + 4) {
                     // Premultiplied "over".
@@ -2089,6 +2500,82 @@ fn draw_shape(sh: &Shape, px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32
                     d[3] = alpha + d[3] * (1.0 - alpha);
                 }
             }
+        }
+    }
+}
+
+/// A picture put down through its transform, sampled between pixels.
+#[allow(clippy::too_many_arguments)]
+fn draw_image(
+    w: u32,
+    h: u32,
+    rgba: &[u8],
+    tf: Tf,
+    op: f32,
+    px: &mut [f32],
+    wu: usize,
+    hu: usize,
+    sx: f32,
+    sy: f32,
+) {
+    let (iw, ih) = (w as usize, h as usize);
+    if iw == 0 || ih == 0 || rgba.len() < iw * ih * 4 {
+        return;
+    }
+    let to_px = tf.then(Tf([sx, 0.0, 0.0, sy, 0.0, 0.0]));
+    let inv = to_px.invert();
+    let corners = [
+        (0.0, 0.0),
+        (w as f32, 0.0),
+        (0.0, h as f32),
+        (w as f32, h as f32),
+    ]
+    .map(|q| to_px.apply(q));
+    let x0 = corners
+        .iter()
+        .map(|c| c.0)
+        .fold(f32::MAX, f32::min)
+        .floor()
+        .max(0.0) as usize;
+    let x1 = (corners.iter().map(|c| c.0).fold(f32::MIN, f32::max).ceil() as usize).min(wu);
+    let y0 = corners
+        .iter()
+        .map(|c| c.1)
+        .fold(f32::MAX, f32::min)
+        .floor()
+        .max(0.0) as usize;
+    let y1 = (corners.iter().map(|c| c.1).fold(f32::MIN, f32::max).ceil() as usize).min(hu);
+    let at = |x: usize, y: usize, c: usize| f32::from(rgba[(y * iw + x) * 4 + c]) / 255.0;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let p = inv.apply((x as f32 + 0.5, y as f32 + 0.5));
+            if p.0 < 0.0 || p.1 < 0.0 || p.0 >= w as f32 || p.1 >= h as f32 {
+                continue;
+            }
+            // Bilinear, on premultiplied colour.
+            let (fx, fy) = ((p.0 - 0.5).max(0.0), (p.1 - 0.5).max(0.0));
+            let (ax, ay) = ((fx as usize).min(iw - 1), (fy as usize).min(ih - 1));
+            let (bx, by) = ((ax + 1).min(iw - 1), (ay + 1).min(ih - 1));
+            let (tx, ty) = (fx - ax as f32, fy - ay as f32);
+            let mut c = [0.0f32; 4];
+            for (qx, qy, wgt) in [
+                (ax, ay, (1.0 - tx) * (1.0 - ty)),
+                (bx, ay, tx * (1.0 - ty)),
+                (ax, by, (1.0 - tx) * ty),
+                (bx, by, tx * ty),
+            ] {
+                let a = at(qx, qy, 3);
+                c[0] += at(qx, qy, 0) * a * wgt;
+                c[1] += at(qx, qy, 1) * a * wgt;
+                c[2] += at(qx, qy, 2) * a * wgt;
+                c[3] += a * wgt;
+            }
+            let i = (y * wu + x) * 4;
+            let k = 1.0 - c[3] * op;
+            px[i] = c[0] * op + px[i] * k;
+            px[i + 1] = c[1] * op + px[i + 1] * k;
+            px[i + 2] = c[2] * op + px[i + 2] * k;
+            px[i + 3] = c[3] * op + px[i + 3] * k;
         }
     }
 }
@@ -2247,8 +2734,59 @@ fn composite(a: &[f32], b: &[f32], op: &str, k: [f32; 4]) -> Vec<f32> {
     out
 }
 
-/// Run a filter's primitives over a group's drawing.
-fn filter(prims: &[Prim], graphic: Vec<f32>, wu: usize, hu: usize, sx: f32, sy: f32) -> Vec<f32> {
+/// sRGB to linear light and back, on premultiplied pixels.
+fn to_linear(v: f32) -> f32 {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn to_srgb(v: f32) -> f32 {
+    if v <= 0.003_130_8 {
+        v * 12.92
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+fn light(px: &mut [f32], into_linear: bool) {
+    for p in px.chunks_exact_mut(4) {
+        let a = p[3];
+        if a <= 0.0 {
+            continue;
+        }
+        for c in p.iter_mut().take(3) {
+            let v = (*c / a).clamp(0.0, 1.0);
+            *c = if into_linear {
+                to_linear(v)
+            } else {
+                to_srgb(v)
+            } * a;
+        }
+    }
+}
+
+fn colour_in(c: [f32; 4], linear: bool) -> [f32; 4] {
+    if linear {
+        [to_linear(c[0]), to_linear(c[1]), to_linear(c[2]), c[3]]
+    } else {
+        c
+    }
+}
+
+/// Run a filter's primitives over a group's drawing (`linear`: the
+/// drawing is in linear light, and so must the flood colours be).
+fn filter(
+    prims: &[Prim],
+    graphic: Vec<f32>,
+    wu: usize,
+    hu: usize,
+    sx: f32,
+    sy: f32,
+    linear: bool,
+) -> Vec<f32> {
     let alpha: Vec<f32> = graphic
         .chunks_exact(4)
         .flat_map(|p| [0.0, 0.0, 0.0, p[3]])
@@ -2284,6 +2822,7 @@ fn filter(prims: &[Prim], graphic: Vec<f32>, wu: usize, hu: usize, sx: f32, sy: 
             ),
             Prim::Matrix { input, m, out } => (matrix(&get(input, &last, &named), m), out),
             Prim::Flood { color, out } => {
+                let color = colour_in(*color, linear);
                 let a = color[3];
                 let px = [color[0] * a, color[1] * a, color[2] * a, a];
                 (px.iter().copied().cycle().take(wu * hu * 4).collect(), out)
@@ -2309,6 +2848,7 @@ fn filter(prims: &[Prim], graphic: Vec<f32>, wu: usize, hu: usize, sx: f32, sy: 
                 color,
                 out,
             } => {
+                let color = colour_in(*color, linear);
                 let src = get(input, &last, &named);
                 let a = color[3];
                 let shade: Vec<f32> = src
@@ -2343,11 +2883,20 @@ fn render(items: &[Item], px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32
     for it in items {
         match it {
             Item::Shape(sh) => draw_shape(sh, px, wu, hu, sx, sy),
+            Item::Image { w, h, rgba, tf, op } => {
+                draw_image(*w, *h, rgba, *tf, *op, px, wu, hu, sx, sy)
+            }
             Item::Group(g) => {
                 let mut layer = alloc::vec![0.0f32; wu * hu * 4];
                 render(&g.items, &mut layer, wu, hu, sx, sy);
                 if let Some(prims) = &g.filter {
-                    layer = filter(prims, layer, wu, hu, sx, sy);
+                    if g.linear {
+                        light(&mut layer, true);
+                        layer = filter(prims, layer, wu, hu, sx, sy, true);
+                        light(&mut layer, false);
+                    } else {
+                        layer = filter(prims, layer, wu, hu, sx, sy, false);
+                    }
                     if let Some((x0, y0, x1, y1)) = g.region {
                         let (x0, x1) = (x0 * sx, x1 * sx);
                         let (y0, y1) = (y0 * sy, y1 * sy);
@@ -2630,5 +3179,70 @@ mod tests {
         );
         assert_eq!(px(&rgba, 60, 51, 10)[3], 0, "moved off");
         assert_eq!(px(&rgba, 60, 56, 10)[3], 255, "moved on");
+    }
+
+    #[test]
+    fn patterns_markers_and_pictures() {
+        const RED: &str = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4z8DwH4QZYAwAR8oH+WdZbrcAAAAASUVORK5CYII=";
+        let src = alloc::format!(
+            r##"<svg width="60" height="20">
+            <defs>
+              <pattern id="p" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="2" height="4" fill="#00f"/></pattern>
+              <marker id="m" markerWidth="4" markerHeight="4" refX="0" refY="2" orient="auto" markerUnits="userSpaceOnUse"><rect width="4" height="4" fill="#0f0"/></marker>
+            </defs>
+            <rect x="0" y="0" width="20" height="20" fill="url(#p)"/>
+            <line x1="22" y1="10" x2="34" y2="10" stroke="#000" marker-end="url(#m)"/>
+            <image x="40" y="0" width="10" height="10" href="data:image/png;base64,{RED}"/>
+            <image x="50" y="0" width="10" height="10" href="dot.png"/>
+            </svg>"##
+        );
+        let mut asked = Vec::new();
+        let svg = parse_with(&src, &mut |h| {
+            asked.push(String::from(h));
+            Some(base64(RED))
+        })
+        .unwrap();
+        assert_eq!(
+            asked,
+            ["dot.png"],
+            "a file beside the SVG is asked for by name"
+        );
+        let (rgba, _) = rasterise(&svg, 60, 20);
+        assert_eq!(px(&rgba, 60, 1, 5), [0, 0, 255, 255], "the tile's stripe");
+        assert_eq!(px(&rgba, 60, 3, 5)[3], 0, "the tile's gap");
+        assert_eq!(px(&rgba, 60, 5, 5), [0, 0, 255, 255], "repeated");
+        assert_eq!(
+            px(&rgba, 60, 36, 10),
+            [0, 255, 0, 255],
+            "the marker past the line's end"
+        );
+        assert_eq!(px(&rgba, 60, 45, 5), [255, 0, 0, 255], "a data: picture");
+        assert_eq!(
+            px(&rgba, 60, 55, 5),
+            [255, 0, 0, 255],
+            "a picture read beside it"
+        );
+        assert_eq!(px(&rgba, 60, 45, 15)[3], 0, "only in its box");
+    }
+
+    #[test]
+    fn filters_mix_in_linear_light() {
+        // Red beside blue, blurred: where they meet, linear light mixes to
+        // a brighter purple (188) than sRGB arithmetic does (128).
+        let doc = |cif: &str| {
+            alloc::format!(
+                r##"<svg width="40" height="10"><filter id="b" x="0" y="0" width="1" height="1"{cif}><feGaussianBlur stdDeviation="4 0"/></filter>
+                <g filter="url(#b)"><rect x="0" y="0" width="20" height="10" fill="#f00"/><rect x="20" y="0" width="20" height="10" fill="#00f"/></g></svg>"##
+            )
+        };
+        let (a, _) = rasterise(&parse(&doc("")).unwrap(), 40, 10);
+        let (b, _) = rasterise(
+            &parse(&doc(" color-interpolation-filters=\"sRGB\"")).unwrap(),
+            40,
+            10,
+        );
+        let (la, sa) = (px(&a, 40, 20, 5), px(&b, 40, 20, 5));
+        assert!(la[0] > 160 && la[2] > 160, "linear: {la:?}");
+        assert!(sa[0] < 150 && sa[2] < 150, "sRGB: {sa:?}");
     }
 }
