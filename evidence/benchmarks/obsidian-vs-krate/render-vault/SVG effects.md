@@ -1,0 +1,3 @@
+# SVG effects
+
+![[effects.svg]]

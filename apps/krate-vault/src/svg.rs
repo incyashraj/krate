@@ -7,8 +7,12 @@
 //! `polygon` and `text`/`tspan`; `fill`, `stroke`, `stroke-width`,
 //! `opacity`, `fill-opacity`, `stroke-opacity`, `fill-rule`, `style=""`,
 //! `transform` (matrix, translate, scale, rotate, skew), and linear and
-//! radial gradients by `url(#id)`. Not read: filters, masks, clip paths,
-//! patterns, markers, CSS `<style>` sheets, `<use>`, embedded images.
+//! radial gradients by `url(#id)`; `<defs>`, `<use>` and `<symbol>`;
+//! `<style>` sheets (type, class, id and descendant selectors); clip
+//! paths, masks and group opacity, each group drawn on a layer of its own;
+//! and the common filters (feGaussianBlur, feOffset, feColorMatrix,
+//! feDropShadow, feFlood, feComposite, feMerge, feBlend). Not read:
+//! patterns, markers, embedded images, the other filter primitives.
 //! Text is not rasterised here (there is no font in the app): it comes
 //! back as runs the caller draws with the canvas's own text.
 
@@ -92,8 +96,25 @@ pub struct Shape {
 pub struct Svg {
     pub w: f32,
     pub h: f32,
-    pub shapes: Vec<Shape>,
+    pub items: Vec<Item>,
     pub texts: Vec<Text>,
+}
+
+impl Svg {
+    /// Every shape, groups opened, in drawing order.
+    pub fn shapes(&self) -> Vec<&Shape> {
+        fn go<'a>(items: &'a [Item], out: &mut Vec<&'a Shape>) {
+            for it in items {
+                match it {
+                    Item::Shape(s) => out.push(s),
+                    Item::Group(g) => go(&g.items, out),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        go(&self.items, &mut out);
+        out
+    }
 }
 
 // ---- numbers and colours ------------------------------------------------------------------
@@ -680,14 +701,65 @@ struct Style {
     fill: String,
     stroke: String,
     width: f32,
+    /// What the element's ancestors' opacity left for it, when they were
+    /// not drawn as a group of their own.
     opacity: f32,
     fill_op: f32,
     stroke_op: f32,
     even_odd: bool,
+    clip_even_odd: bool,
     font: f32,
     anchor: u8,
     bold: bool,
     serif: bool,
+    // Not inherited: read afresh for each element.
+    own_op: f32,
+    clip: Option<String>,
+    mask: Option<String>,
+    filter: Option<String>,
+    hidden: bool,
+}
+
+/// A node of the document: an element with its children, by index.
+struct Node<'a> {
+    name: &'a str,
+    attrs: Vec<(&'a str, String)>,
+    kids: Vec<usize>,
+    text: &'a str,
+}
+
+/// The document as a tree; node 0 holds the top-level elements.
+fn tree<'a>(els: &[El<'a>]) -> Vec<Node<'a>> {
+    let mut nodes = alloc::vec![Node {
+        name: "",
+        attrs: Vec::new(),
+        kids: Vec::new(),
+        text: "",
+    }];
+    let mut open: Vec<usize> = alloc::vec![0];
+    for e in els {
+        if e.close {
+            if let Some(at) = open.iter().rposition(|i| nodes[*i].name == e.name) {
+                if at > 0 {
+                    open.truncate(at);
+                }
+            }
+            continue;
+        }
+        let i = nodes.len();
+        nodes.push(Node {
+            name: e.name,
+            attrs: e.attrs.clone(),
+            kids: Vec::new(),
+            text: e.text,
+        });
+        let parent = open.last().copied().unwrap_or(0);
+        nodes[parent].kids.push(i);
+        if !e.selfclose {
+            open.push(i);
+        }
+    }
+    nodes
 }
 
 fn attr<'a>(e: &'a El<'_>, k: &str) -> Option<&'a str> {
@@ -697,16 +769,198 @@ fn attr<'a>(e: &'a El<'_>, k: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
-fn style_of(e: &El<'_>, parent: &Style) -> Style {
-    let mut s = parent.clone();
-    let mut set = |k: &str, v: &str| match k {
+fn nattr<'a>(n: &'a Node<'_>, k: &str) -> Option<&'a str> {
+    n.attrs
+        .iter()
+        .find(|(a, _)| *a == k)
+        .map(|(_, v)| v.as_str())
+}
+
+// ---- CSS ----------------------------------------------------------------------------------
+
+/// One compound selector: `tag.class#id`, any part optional.
+#[derive(Debug, Clone, PartialEq)]
+struct Compound {
+    tag: Option<String>,
+    id: Option<String>,
+    classes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Rule {
+    /// Compounds left to right, each an ancestor of the next.
+    sel: Vec<Compound>,
+    spec: u32,
+    order: usize,
+    decls: Vec<(String, String)>,
+}
+
+fn compound(s: &str) -> Option<Compound> {
+    let mut c = Compound {
+        tag: None,
+        id: None,
+        classes: Vec::new(),
+    };
+    let mut cur = String::new();
+    let mut kind = 't';
+    let flush = |c: &mut Compound, kind: char, cur: &mut String| {
+        if !cur.is_empty() {
+            match kind {
+                '.' => c.classes.push(core::mem::take(cur)),
+                '#' => c.id = Some(core::mem::take(cur)),
+                _ if cur.as_str() == "*" => cur.clear(),
+                _ => c.tag = Some(core::mem::take(cur)),
+            }
+        }
+    };
+    for ch in s.chars() {
+        match ch {
+            '.' | '#' => {
+                flush(&mut c, kind, &mut cur);
+                kind = ch;
+            }
+            ':' | '[' => return None,
+            _ => cur.push(ch),
+        }
+    }
+    flush(&mut c, kind, &mut cur);
+    Some(c)
+}
+
+/// The rules of `<style>` sheets: type, class and id selectors, compound
+/// and descendant; anything else (pseudo-classes, attributes, `>` and `+`)
+/// is skipped rather than guessed at.
+fn css(sheet: &str, first: usize) -> Vec<Rule> {
+    let mut out = Vec::new();
+    // Comments out.
+    let mut text = String::new();
+    let mut rest = sheet;
+    while let Some(i) = rest.find("/*") {
+        text.push_str(rest.get(..i).unwrap_or(""));
+        rest = rest
+            .get(i..)
+            .and_then(|r| r.find("*/").map(|e| r.get(e + 2..).unwrap_or("")))
+            .unwrap_or("");
+    }
+    text.push_str(rest);
+    let mut order = first;
+    let mut rest = text.as_str();
+    while let Some(open) = rest.find('{') {
+        let head = rest.get(..open).unwrap_or("").trim();
+        let close = rest
+            .get(open..)
+            .and_then(|r| r.find('}'))
+            .map_or(rest.len(), |c| open + c);
+        let body = rest.get(open + 1..close).unwrap_or("");
+        rest = rest.get(close + 1..).unwrap_or("");
+        if head.starts_with('@') {
+            continue;
+        }
+        let decls: Vec<(String, String)> = body
+            .split(';')
+            .filter_map(|d| d.split_once(':'))
+            .map(|(k, v)| {
+                let v = v.trim().trim_end_matches("!important").trim();
+                (String::from(k.trim()), String::from(v))
+            })
+            .collect();
+        for sel in head.split(',') {
+            if sel.contains(['>', '+', '~']) {
+                continue;
+            }
+            let parts: Option<Vec<Compound>> = sel.split_whitespace().map(compound).collect();
+            let Some(parts) = parts.filter(|p| !p.is_empty()) else {
+                continue;
+            };
+            let spec = parts
+                .iter()
+                .map(|c| {
+                    u32::from(c.id.is_some()) * 100
+                        + c.classes.len() as u32 * 10
+                        + u32::from(c.tag.is_some())
+                })
+                .sum();
+            out.push(Rule {
+                sel: parts,
+                spec,
+                order,
+                decls: decls.clone(),
+            });
+            order += 1;
+        }
+    }
+    out
+}
+
+fn matches_compound(c: &Compound, n: &Node<'_>) -> bool {
+    if c.tag.as_deref().is_some_and(|t| t != n.name) {
+        return false;
+    }
+    if let Some(id) = &c.id {
+        if nattr(n, "id") != Some(id.as_str()) {
+            return false;
+        }
+    }
+    let classes = nattr(n, "class").unwrap_or("");
+    c.classes
+        .iter()
+        .all(|k| classes.split_whitespace().any(|x| x == k))
+}
+
+fn matches(rule: &Rule, nodes: &[Node<'_>], at: usize, anc: &[usize]) -> bool {
+    let Some((last, before)) = rule.sel.split_last() else {
+        return false;
+    };
+    if !matches_compound(last, &nodes[at]) {
+        return false;
+    }
+    // Each earlier compound on some ancestor, outermost first.
+    let mut a = anc.len();
+    for c in before.iter().rev() {
+        loop {
+            if a == 0 {
+                return false;
+            }
+            a -= 1;
+            if matches_compound(c, &nodes[anc[a]]) {
+                break;
+            }
+        }
+    }
+    true
+}
+
+/// The text of every `<style>` sheet, CDATA unwrapped.
+fn sheets(src: &str) -> String {
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(i) = rest.find("<style") {
+        let after = rest.get(i..).unwrap_or("");
+        let Some(gt) = after.find('>') else {
+            break;
+        };
+        let body = after.get(gt + 1..).unwrap_or("");
+        let end = body.find("</style").unwrap_or(body.len());
+        let sheet = body.get(..end).unwrap_or("");
+        out.push_str(&sheet.replace("<![CDATA[", "").replace("]]>", ""));
+        out.push('\n');
+        rest = body.get(end..).unwrap_or("");
+    }
+    out
+}
+
+// ---- styles -------------------------------------------------------------------------------
+
+fn set_prop(s: &mut Style, k: &str, v: &str) {
+    match k {
         "fill" => s.fill = String::from(v.trim()),
         "stroke" => s.stroke = String::from(v.trim()),
         "stroke-width" => s.width = num(v).unwrap_or(s.width),
-        "opacity" => s.opacity *= num(v).unwrap_or(1.0),
+        "opacity" => s.own_op = num(v).unwrap_or(1.0).clamp(0.0, 1.0),
         "fill-opacity" => s.fill_op = num(v).unwrap_or(1.0),
         "stroke-opacity" => s.stroke_op = num(v).unwrap_or(1.0),
         "fill-rule" => s.even_odd = v.trim() == "evenodd",
+        "clip-rule" => s.clip_even_odd = v.trim() == "evenodd",
         "font-size" => s.font = num(v).unwrap_or(s.font),
         "text-anchor" => {
             s.anchor = match v.trim() {
@@ -731,19 +985,47 @@ fn style_of(e: &El<'_>, parent: &Style) -> Style {
             .iter()
             .any(|w| f.contains(w));
         }
+        "clip-path" => s.clip = Some(String::from(v.trim())),
+        "mask" => s.mask = Some(String::from(v.trim())),
+        "filter" => s.filter = Some(String::from(v.trim())),
+        "display" => s.hidden |= v.trim() == "none",
+        "visibility" => s.hidden |= v.trim() == "hidden",
         _ => {}
-    };
-    for (k, v) in &e.attrs {
-        set(k, v);
     }
-    if let Some(st) = attr(e, "style") {
+}
+
+/// An element's style: its parent's, then its attributes, then the style
+/// sheets' rules in specificity order, then its own `style=""`.
+fn style_of(cx: &Cx<'_, '_>, at: usize, anc: &[usize], parent: &Style) -> Style {
+    let n = &cx.nodes[at];
+    let mut s = parent.clone();
+    s.own_op = 1.0;
+    s.clip = None;
+    s.mask = None;
+    s.filter = None;
+    s.hidden = false;
+    for (k, v) in &n.attrs {
+        set_prop(&mut s, k, v);
+    }
+    let mut hits: Vec<&Rule> = cx
+        .rules
+        .iter()
+        .filter(|r| matches(r, cx.nodes, at, anc))
+        .collect();
+    hits.sort_by_key(|r| (r.spec, r.order));
+    for r in hits {
+        for (k, v) in &r.decls {
+            set_prop(&mut s, k, v);
+        }
+    }
+    if let Some(st) = nattr(n, "style") {
         for decl in st.split(';') {
             if let Some((k, v)) = decl.split_once(':') {
-                set(k.trim(), v);
+                set_prop(&mut s, k.trim(), v);
             }
         }
     }
-    if let Some(t) = attr(e, "transform") {
+    if let Some(t) = nattr(n, "transform") {
         s.tf = transform(t).then(parent.tf);
     }
     s
@@ -802,33 +1084,7 @@ fn paint(spec: &str, op: f32, grads: &[Grad], bbox: (f32, f32, f32, f32), tf: Tf
     }
 }
 
-/// Read an SVG document.
-pub fn parse(src: &str) -> Result<Svg, String> {
-    let els = tags(src);
-    let root = els
-        .iter()
-        .find(|e| e.name == "svg" && !e.close)
-        .ok_or_else(|| String::from("This is not an SVG picture"))?;
-    let vb = attr(root, "viewBox").map(numbers).filter(|v| v.len() == 4);
-    let w = attr(root, "width")
-        .and_then(num)
-        .or(vb.as_ref().and_then(|v| v.get(2).copied()))
-        .unwrap_or(300.0);
-    let h = attr(root, "height")
-        .and_then(num)
-        .or(vb.as_ref().and_then(|v| v.get(3).copied()))
-        .unwrap_or(150.0);
-    let base = match &vb {
-        Some(v) => {
-            let (vx, vy, vw, vh) = (v[0], v[1], v[2].max(1e-3), v[3].max(1e-3));
-            let s = (w / vw).min(h / vh);
-            let ox = (w - vw * s) * 0.5;
-            let oy = (h - vh * s) * 0.5;
-            Tf([s, 0.0, 0.0, s, ox - vx * s, oy - vy * s])
-        }
-        None => Tf::ID,
-    };
-    // Gradients first, wherever they are.
+fn gradients(els: &[El<'_>]) -> Vec<Grad> {
     let mut grads: Vec<Grad> = Vec::new();
     let mut k = 0;
     while k < els.len() {
@@ -891,11 +1147,676 @@ pub fn parse(src: &str) -> Result<Svg, String> {
         }
         k += 1;
     }
-    let mut svg = Svg {
-        w,
-        h,
-        shapes: Vec::new(),
-        texts: Vec::new(),
+    grads
+}
+
+// ---- groups: clip paths, masks, filters ---------------------------------------------------
+
+/// What is drawn: shapes, and groups drawn on their own and then put
+/// down through their clip path, mask, filter and opacity.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Item {
+    Shape(Shape),
+    Group(Group),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Group {
+    pub items: Vec<Item>,
+    pub opacity: f32,
+    /// Shapes that clip it, in document coordinates.
+    pub clip: Option<(Vec<Vec<Pt>>, bool)>,
+    /// Drawn and used by its luminance.
+    pub mask: Option<Vec<Item>>,
+    pub filter: Option<Vec<Prim>>,
+    /// The filter region (x0, y0, x1, y1), in document coordinates:
+    /// nothing a filter draws reaches past it.
+    pub region: Option<(f32, f32, f32, f32)>,
+}
+
+/// A filter's input or output: the group's own drawing, its alpha alone,
+/// the step before, or a named result.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Src {
+    Graphic,
+    Alpha,
+    Last,
+    Named(String),
+}
+
+/// One filter primitive, lengths already in document units.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Prim {
+    Blur {
+        input: Src,
+        sx: f32,
+        sy: f32,
+        out: String,
+    },
+    Offset {
+        input: Src,
+        dx: f32,
+        dy: f32,
+        out: String,
+    },
+    /// A 4 by 5 matrix over un-premultiplied RGBA.
+    Matrix {
+        input: Src,
+        m: [f32; 20],
+        out: String,
+    },
+    Flood {
+        color: [f32; 4],
+        out: String,
+    },
+    /// Porter-Duff: over, in, out, atop, xor; or arithmetic k1..k4.
+    Composite {
+        a: Src,
+        b: Src,
+        op: String,
+        k: [f32; 4],
+        out: String,
+    },
+    Merge {
+        inputs: Vec<Src>,
+        out: String,
+    },
+    Shadow {
+        input: Src,
+        dx: f32,
+        dy: f32,
+        sx: f32,
+        sy: f32,
+        color: [f32; 4],
+        out: String,
+    },
+}
+
+fn src_of(v: Option<&str>) -> Src {
+    match v.map(str::trim) {
+        None | Some("") => Src::Last,
+        Some("SourceGraphic") => Src::Graphic,
+        Some("SourceAlpha") => Src::Alpha,
+        Some(n) => Src::Named(String::from(n)),
+    }
+}
+
+fn hue_matrix(deg: f32) -> [f32; 20] {
+    let (s, c) = (deg.to_radians().sin(), deg.to_radians().cos());
+    [
+        0.213 + c * 0.787 - s * 0.213,
+        0.715 - c * 0.715 - s * 0.715,
+        0.072 - c * 0.072 + s * 0.928,
+        0.0,
+        0.0,
+        0.213 - c * 0.213 + s * 0.143,
+        0.715 + c * 0.285 + s * 0.140,
+        0.072 - c * 0.072 - s * 0.283,
+        0.0,
+        0.0,
+        0.213 - c * 0.213 - s * 0.787,
+        0.715 - c * 0.715 + s * 0.715,
+        0.072 + c * 0.928 + s * 0.072,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+    ]
+}
+
+fn color_matrix(n: &Node<'_>) -> [f32; 20] {
+    let vals = numbers(nattr(n, "values").unwrap_or(""));
+    let id = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        1.0, 0.0,
+    ];
+    match nattr(n, "type").unwrap_or("matrix") {
+        "saturate" => {
+            let s = vals.first().copied().unwrap_or(1.0);
+            [
+                0.213 + 0.787 * s,
+                0.715 - 0.715 * s,
+                0.072 - 0.072 * s,
+                0.0,
+                0.0,
+                0.213 - 0.213 * s,
+                0.715 + 0.285 * s,
+                0.072 - 0.072 * s,
+                0.0,
+                0.0,
+                0.213 - 0.213 * s,
+                0.715 - 0.715 * s,
+                0.072 + 0.928 * s,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            ]
+        }
+        "hueRotate" => hue_matrix(vals.first().copied().unwrap_or(0.0)),
+        "luminanceToAlpha" => [
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2125,
+            0.7154, 0.0721, 0.0, 0.0,
+        ],
+        _ if vals.len() == 20 => {
+            let mut m = [0.0; 20];
+            m.copy_from_slice(&vals);
+            m
+        }
+        _ => id,
+    }
+}
+
+/// A `<filter>`'s primitives, lengths scaled by the user space's `k`.
+fn filter_prims(cx: &Cx<'_, '_>, at: usize, tf: Tf) -> Vec<Prim> {
+    let k = tf.scale();
+    let mut out = Vec::new();
+    for &i in &cx.nodes[at].kids {
+        let n = &cx.nodes[i];
+        let f = |a: &str, d: f32| nattr(n, a).and_then(num).unwrap_or(d);
+        let res = String::from(nattr(n, "result").unwrap_or(""));
+        let input = src_of(nattr(n, "in"));
+        let flood = || {
+            let c =
+                color(nattr(n, "flood-color").unwrap_or("black")).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+            [c[0], c[1], c[2], c[3] * f("flood-opacity", 1.0)]
+        };
+        let sd = || {
+            let v = numbers(nattr(n, "stdDeviation").unwrap_or("0"));
+            let a = v.first().copied().unwrap_or(0.0);
+            (a * k, v.get(1).copied().unwrap_or(a) * k)
+        };
+        let shift = |dx: f32, dy: f32| {
+            let [a, b, c, d, ..] = tf.0;
+            (a * dx + c * dy, b * dx + d * dy)
+        };
+        match n.name {
+            "feGaussianBlur" => {
+                let (sx, sy) = sd();
+                out.push(Prim::Blur {
+                    input,
+                    sx,
+                    sy,
+                    out: res,
+                });
+            }
+            "feOffset" => {
+                let (dx, dy) = shift(f("dx", 0.0), f("dy", 0.0));
+                out.push(Prim::Offset {
+                    input,
+                    dx,
+                    dy,
+                    out: res,
+                });
+            }
+            "feColorMatrix" => out.push(Prim::Matrix {
+                input,
+                m: color_matrix(n),
+                out: res,
+            }),
+            "feFlood" => out.push(Prim::Flood {
+                color: flood(),
+                out: res,
+            }),
+            "feComposite" => out.push(Prim::Composite {
+                a: input,
+                b: src_of(nattr(n, "in2")),
+                op: String::from(nattr(n, "operator").unwrap_or("over")),
+                k: [f("k1", 0.0), f("k2", 0.0), f("k3", 0.0), f("k4", 0.0)],
+                out: res,
+            }),
+            "feBlend" => out.push(Prim::Composite {
+                a: input,
+                b: src_of(nattr(n, "in2")),
+                op: String::from("over"),
+                k: [0.0; 4],
+                out: res,
+            }),
+            "feMerge" => out.push(Prim::Merge {
+                inputs: cx.nodes[i]
+                    .kids
+                    .iter()
+                    .filter(|j| cx.nodes[**j].name == "feMergeNode")
+                    .map(|j| src_of(nattr(&cx.nodes[*j], "in")))
+                    .collect(),
+                out: res,
+            }),
+            "feDropShadow" => {
+                let (dx, dy) = shift(f("dx", 2.0), f("dy", 2.0));
+                let v = numbers(nattr(n, "stdDeviation").unwrap_or("2"));
+                let a = v.first().copied().unwrap_or(2.0);
+                out.push(Prim::Shadow {
+                    input,
+                    dx,
+                    dy,
+                    sx: a * k,
+                    sy: v.get(1).copied().unwrap_or(a) * k,
+                    color: flood(),
+                    out: res,
+                });
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+// ---- reading ------------------------------------------------------------------------------
+
+/// What a walk of the document needs.
+struct Cx<'n, 'a> {
+    nodes: &'n [Node<'a>],
+    rules: Vec<Rule>,
+    grads: Vec<Grad>,
+}
+
+impl Cx<'_, '_> {
+    fn by_id(&self, id: &str) -> Option<usize> {
+        self.nodes.iter().position(|n| nattr(n, "id") == Some(id))
+    }
+
+    fn by_url(&self, spec: &str) -> Option<usize> {
+        let id = spec
+            .trim()
+            .strip_prefix("url(")?
+            .trim_start_matches(['"', '\'']);
+        let id = id.strip_prefix('#')?;
+        let id = id.split([')', '"', '\'']).next()?;
+        self.by_id(id)
+    }
+}
+
+/// Elements that are never drawn where they stand.
+fn is_def(name: &str) -> bool {
+    matches!(
+        name,
+        "defs"
+            | "clipPath"
+            | "mask"
+            | "pattern"
+            | "symbol"
+            | "marker"
+            | "linearGradient"
+            | "radialGradient"
+            | "style"
+            | "filter"
+            | "title"
+            | "desc"
+            | "metadata"
+            | "script"
+    )
+}
+
+fn bbox_of(items: &[Item], bb: &mut (f32, f32, f32, f32)) {
+    for it in items {
+        match it {
+            Item::Shape(s) => {
+                for (p, _) in &s.polys {
+                    for q in p {
+                        *bb = (bb.0.min(q.0), bb.1.min(q.1), bb.2.max(q.0), bb.3.max(q.1));
+                    }
+                }
+            }
+            Item::Group(g) => bbox_of(&g.items, bb),
+        }
+    }
+}
+
+fn flat_polys(items: &[Item], out: &mut Vec<Vec<Pt>>) {
+    for it in items {
+        match it {
+            Item::Shape(s) => out.extend(s.polys.iter().map(|(p, _)| p.clone())),
+            Item::Group(g) => flat_polys(&g.items, out),
+        }
+    }
+}
+
+const MAX_DEPTH: usize = 24;
+
+/// Draw node `at` and its children into `out`.
+fn walk(
+    cx: &Cx<'_, '_>,
+    at: usize,
+    anc: &mut Vec<usize>,
+    parent: &Style,
+    out: &mut Vec<Item>,
+    texts: &mut Vec<Text>,
+    depth: usize,
+) {
+    if depth > MAX_DEPTH {
+        return;
+    }
+    let n = &cx.nodes[at];
+    if is_def(n.name) {
+        return;
+    }
+    let st = style_of(cx, at, anc, parent);
+    if st.hidden {
+        return;
+    }
+    let g = |k: &str| nattr(n, k).and_then(num).unwrap_or(0.0);
+    let container = matches!(n.name, "g" | "svg" | "a" | "switch" | "use" | "symbol");
+    // A group of its own when something applies to it as a whole.
+    let grouped = st.clip.is_some()
+        || st.mask.is_some()
+        || st.filter.is_some()
+        || (container && st.own_op < 1.0);
+    let mut inner_style = st.clone();
+    if grouped {
+        // The group's opacity is applied once, to the group.
+        if container {
+            inner_style.own_op = 1.0;
+        }
+    } else if container {
+        inner_style.opacity *= st.own_op;
+    }
+    let mut items: Vec<Item> = Vec::new();
+    {
+        let target = if grouped { &mut items } else { &mut *out };
+        match n.name {
+            "g" | "a" | "switch" => {
+                anc.push(at);
+                for &k in &n.kids {
+                    walk(cx, k, anc, &inner_style, target, texts, depth + 1);
+                }
+                anc.pop();
+            }
+            "svg" | "symbol" => {
+                // A nested viewport: its x and y, and its viewBox fitted to
+                // its width and height.
+                let mut s = inner_style.clone();
+                let place = Tf([1.0, 0.0, 0.0, 1.0, g("x"), g("y")]);
+                let vb = nattr(n, "viewBox").map(numbers).filter(|v| v.len() == 4);
+                let fit = match (
+                    &vb,
+                    nattr(n, "width").and_then(num),
+                    nattr(n, "height").and_then(num),
+                ) {
+                    (Some(v), Some(w), Some(h)) => {
+                        let k = (w / v[2].max(1e-3)).min(h / v[3].max(1e-3));
+                        Tf([k, 0.0, 0.0, k, -v[0] * k, -v[1] * k])
+                    }
+                    _ => Tf::ID,
+                };
+                s.tf = fit.then(place).then(inner_style.tf);
+                anc.push(at);
+                for &k in &n.kids {
+                    walk(cx, k, anc, &s, target, texts, depth + 1);
+                }
+                anc.pop();
+            }
+            "use" => {
+                let href = nattr(n, "href").and_then(|h| h.strip_prefix('#'));
+                if let Some(t) = href.and_then(|h| cx.by_id(h)) {
+                    let mut s = inner_style.clone();
+                    s.tf = Tf([1.0, 0.0, 0.0, 1.0, g("x"), g("y")]).then(inner_style.tf);
+                    let tn = &cx.nodes[t];
+                    anc.push(at);
+                    if tn.name == "symbol" {
+                        // A symbol is drawn at the use's width and height.
+                        let ts = style_of(cx, t, anc, &s);
+                        let vb = nattr(tn, "viewBox").map(numbers).filter(|v| v.len() == 4);
+                        let (w, h) = (
+                            nattr(n, "width").and_then(num),
+                            nattr(n, "height").and_then(num),
+                        );
+                        let fit = match (&vb, w, h) {
+                            (Some(v), Some(w), Some(h)) => {
+                                let k = (w / v[2].max(1e-3)).min(h / v[3].max(1e-3));
+                                Tf([k, 0.0, 0.0, k, -v[0] * k, -v[1] * k])
+                            }
+                            _ => Tf::ID,
+                        };
+                        let mut ss = ts;
+                        ss.tf = fit.then(s.tf);
+                        anc.push(t);
+                        for &k in &tn.kids {
+                            walk(cx, k, anc, &ss, target, texts, depth + 1);
+                        }
+                        anc.pop();
+                    } else if !anc.contains(&t) {
+                        walk_used(cx, t, anc, &s, target, texts, depth + 1);
+                    }
+                    anc.pop();
+                }
+            }
+            "text" | "tspan" => {
+                shape(cx, n, &st, target, texts);
+                anc.push(at);
+                for &k in &n.kids {
+                    walk(cx, k, anc, &st, target, texts, depth + 1);
+                }
+                anc.pop();
+            }
+            _ => shape(cx, n, &st, target, texts),
+        }
+    }
+    if !grouped {
+        return;
+    }
+    let mut bb = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    bbox_of(&items, &mut bb);
+    let unit = Tf([bb.2 - bb.0, 0.0, 0.0, bb.3 - bb.1, bb.0, bb.1]);
+    let clip = st.clip.as_deref().and_then(|c| cx.by_url(c)).map(|ci| {
+        let cn = &cx.nodes[ci];
+        let mut cs = st.clone();
+        cs.own_op = 1.0;
+        cs.clip = None;
+        cs.tf = if nattr(cn, "clipPathUnits") == Some("objectBoundingBox") {
+            unit
+        } else {
+            st.tf
+        };
+        if let Some(t) = nattr(cn, "transform") {
+            cs.tf = transform(t).then(cs.tf);
+        }
+        let mut shapes = Vec::new();
+        let mut tx = Vec::new();
+        anc.push(ci);
+        for &k in &cn.kids {
+            walk(cx, k, anc, &cs, &mut shapes, &mut tx, depth + 1);
+        }
+        anc.pop();
+        let even_odd = cn
+            .kids
+            .first()
+            .map(|k| style_of(cx, *k, anc, &cs).clip_even_odd)
+            .unwrap_or(false);
+        let mut polys = Vec::new();
+        flat_polys(&shapes, &mut polys);
+        (polys, even_odd)
+    });
+    let mask = st.mask.as_deref().and_then(|m| cx.by_url(m)).map(|mi| {
+        let mn = &cx.nodes[mi];
+        let mut ms = st.clone();
+        ms.own_op = 1.0;
+        ms.opacity = 1.0;
+        ms.mask = None;
+        if nattr(mn, "maskContentUnits") == Some("objectBoundingBox") {
+            ms.tf = unit;
+        }
+        let mut m = Vec::new();
+        let mut tx = Vec::new();
+        anc.push(mi);
+        for &k in &mn.kids {
+            walk(cx, k, anc, &ms, &mut m, &mut tx, depth + 1);
+        }
+        anc.pop();
+        m
+    });
+    let fnode = st.filter.as_deref().and_then(|f| cx.by_url(f));
+    let filter = fnode.map(|fi| filter_prims(cx, fi, st.tf));
+    // The filter region: by default the shape's box and a tenth more on
+    // every side, as Chromium clips Obsidian's.
+    let region = fnode.map(|fi| {
+        let fnn = &cx.nodes[fi];
+        let frac = |k: &str, d: f32| {
+            nattr(fnn, k).map_or(d, |v| {
+                let pc = v.trim().ends_with('%');
+                num(v).map_or(d, |x| if pc { x / 100.0 } else { x })
+            })
+        };
+        let (bw, bh) = (bb.2 - bb.0, bb.3 - bb.1);
+        if nattr(fnn, "filterUnits") == Some("userSpaceOnUse") {
+            let a = st.tf.apply((frac("x", 0.0), frac("y", 0.0)));
+            let b = st.tf.apply((
+                frac("x", 0.0) + frac("width", 0.0),
+                frac("y", 0.0) + frac("height", 0.0),
+            ));
+            (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1))
+        } else {
+            let (x, y) = (bb.0 + frac("x", -0.1) * bw, bb.1 + frac("y", -0.1) * bh);
+            (
+                x,
+                y,
+                x + frac("width", 1.2) * bw,
+                y + frac("height", 1.2) * bh,
+            )
+        }
+    });
+    out.push(Item::Group(Group {
+        items,
+        opacity: if container { st.own_op } else { 1.0 },
+        clip,
+        mask,
+        filter,
+        region,
+    }));
+}
+
+/// The element a `<use>` points at, drawn in the use's place.
+fn walk_used(
+    cx: &Cx<'_, '_>,
+    t: usize,
+    anc: &mut Vec<usize>,
+    s: &Style,
+    out: &mut Vec<Item>,
+    texts: &mut Vec<Text>,
+    depth: usize,
+) {
+    let tn = &cx.nodes[t];
+    if is_def(tn.name) && tn.name != "symbol" {
+        // A use of something inside <defs> is fine; of <defs> itself, not.
+        return;
+    }
+    walk(cx, t, anc, s, out, texts, depth);
+}
+
+/// A basic shape or text, in `st`'s user space.
+fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: &mut Vec<Text>) {
+    let g = |k: &str| nattr(n, k).and_then(num).unwrap_or(0.0);
+    let polys: Vec<(Vec<Pt>, bool)> = match n.name {
+        "path" => path(nattr(n, "d").unwrap_or("")),
+        "rect" => {
+            let (rx, ry) = match (nattr(n, "rx").and_then(num), nattr(n, "ry").and_then(num)) {
+                (Some(a), Some(b)) => (a, b),
+                (Some(a), None) | (None, Some(a)) => (a, a),
+                _ => (0.0, 0.0),
+            };
+            alloc::vec![(
+                rounded_rect(g("x"), g("y"), g("width"), g("height"), rx, ry),
+                true
+            )]
+        }
+        "circle" => alloc::vec![(ellipse(g("cx"), g("cy"), g("r"), g("r")), true)],
+        "ellipse" => alloc::vec![(ellipse(g("cx"), g("cy"), g("rx"), g("ry")), true)],
+        "line" => alloc::vec![(alloc::vec![(g("x1"), g("y1")), (g("x2"), g("y2"))], false)],
+        "polyline" | "polygon" => {
+            let v = numbers(nattr(n, "points").unwrap_or(""));
+            let mut pts: Vec<Pt> = v.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+            let closed = n.name == "polygon";
+            if closed {
+                if let Some(f) = pts.first().copied() {
+                    pts.push(f);
+                }
+            }
+            alloc::vec![(pts, closed)]
+        }
+        "text" | "tspan" => {
+            let text = unescape(n.text.trim());
+            if !text.is_empty() {
+                let p = st.tf.apply((g("x"), g("y")));
+                let c = color(&st.fill).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                texts.push(Text {
+                    x: p.0,
+                    y: p.1,
+                    size: st.font * st.tf.scale(),
+                    text,
+                    color: [c[0], c[1], c[2], c[3] * st.opacity * st.own_op * st.fill_op],
+                    anchor: st.anchor,
+                    bold: st.bold,
+                    serif: st.serif,
+                });
+            }
+            return;
+        }
+        _ => return,
+    };
+    // The bounding box in the shape's own space, for gradients.
+    let mut bb = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for (p, _) in &polys {
+        for q in p {
+            bb = (bb.0.min(q.0), bb.1.min(q.1), bb.2.max(q.0), bb.3.max(q.1));
+        }
+    }
+    let polys: Vec<(Vec<Pt>, bool)> = polys
+        .into_iter()
+        .map(|(p, c)| (p.into_iter().map(|q| st.tf.apply(q)).collect(), c))
+        .collect();
+    let op = st.opacity * st.own_op;
+    let fill = if n.name == "line" {
+        Paint::None
+    } else {
+        paint(&st.fill, op * st.fill_op, &cx.grads, bb, st.tf)
+    };
+    let stroke = paint(&st.stroke, op * st.stroke_op, &cx.grads, bb, st.tf);
+    out.push(Item::Shape(Shape {
+        polys,
+        fill,
+        stroke,
+        width: st.width * st.tf.scale(),
+        even_odd: st.even_odd,
+    }));
+}
+
+/// Read an SVG document.
+pub fn parse(src: &str) -> Result<Svg, String> {
+    let els = tags(src);
+    let nodes = tree(&els);
+    let root = nodes
+        .iter()
+        .position(|n| n.name == "svg")
+        .ok_or_else(|| String::from("This is not an SVG picture"))?;
+    let rn = &nodes[root];
+    let vb = nattr(rn, "viewBox").map(numbers).filter(|v| v.len() == 4);
+    let w = nattr(rn, "width")
+        .and_then(num)
+        .or(vb.as_ref().and_then(|v| v.get(2).copied()))
+        .unwrap_or(300.0);
+    let h = nattr(rn, "height")
+        .and_then(num)
+        .or(vb.as_ref().and_then(|v| v.get(3).copied()))
+        .unwrap_or(150.0);
+    let base = match &vb {
+        Some(v) => {
+            let (vx, vy, vw, vh) = (v[0], v[1], v[2].max(1e-3), v[3].max(1e-3));
+            let s = (w / vw).min(h / vh);
+            let ox = (w - vw * s) * 0.5;
+            let oy = (h - vh * s) * 0.5;
+            Tf([s, 0.0, 0.0, s, ox - vx * s, oy - vy * s])
+        }
+        None => Tf::ID,
+    };
+    let cx = Cx {
+        nodes: &nodes,
+        rules: css(&sheets(src), 0),
+        grads: gradients(&els),
     };
     let init = Style {
         tf: base,
@@ -906,173 +1827,57 @@ pub fn parse(src: &str) -> Result<Svg, String> {
         fill_op: 1.0,
         stroke_op: 1.0,
         even_odd: false,
+        clip_even_odd: false,
         font: 16.0,
         anchor: 0,
         bold: false,
         serif: true,
+        own_op: 1.0,
+        clip: None,
+        mask: None,
+        filter: None,
+        hidden: false,
     };
-    let mut stack: Vec<Style> = alloc::vec![init];
-    let mut skip_depth = 0usize;
-    for e in &els {
-        let parent = stack.last().cloned().unwrap_or_else(|| stack[0].clone());
-        if e.close {
-            if matches!(e.name, "g" | "svg" | "a" | "text" | "switch") && stack.len() > 1 {
-                stack.pop();
-            }
-            if matches!(
-                e.name,
-                "defs"
-                    | "clipPath"
-                    | "mask"
-                    | "pattern"
-                    | "symbol"
-                    | "marker"
-                    | "linearGradient"
-                    | "radialGradient"
-                    | "style"
-            ) {
-                skip_depth = skip_depth.saturating_sub(1);
-            }
-            continue;
+    let mut svg = Svg {
+        w,
+        h,
+        items: Vec::new(),
+        texts: Vec::new(),
+    };
+    // The root's own presentation attributes and styles apply to all; its
+    // viewBox is the base transform.
+    let mut anc = Vec::new();
+    let mut rs = style_of(&cx, root, &anc, &init);
+    rs.tf = base;
+    let grouped = rs.clip.is_some() || rs.mask.is_some() || rs.filter.is_some() || rs.own_op < 1.0;
+    anc.push(root);
+    if grouped {
+        // Rare: the root drawn as one group.
+        let mut items = Vec::new();
+        let mut inner = rs.clone();
+        inner.own_op = 1.0;
+        inner.clip = None;
+        inner.mask = None;
+        inner.filter = None;
+        for &k in &rn.kids {
+            walk(&cx, k, &mut anc, &inner, &mut items, &mut svg.texts, 1);
         }
-        if matches!(
-            e.name,
-            "defs"
-                | "clipPath"
-                | "mask"
-                | "pattern"
-                | "symbol"
-                | "marker"
-                | "linearGradient"
-                | "radialGradient"
-                | "style"
-        ) {
-            if !e.selfclose {
-                skip_depth += 1;
-            }
-            continue;
+        svg.items.push(Item::Group(Group {
+            items,
+            opacity: rs.own_op,
+            clip: None,
+            mask: None,
+            filter: rs
+                .filter
+                .as_deref()
+                .and_then(|f| cx.by_url(f))
+                .map(|fi| filter_prims(&cx, fi, base)),
+            region: None,
+        }));
+    } else {
+        for &k in &rn.kids {
+            walk(&cx, k, &mut anc, &rs, &mut svg.items, &mut svg.texts, 1);
         }
-        if skip_depth > 0 {
-            continue;
-        }
-        let st = style_of(e, &parent);
-        if matches!(e.name, "g" | "svg" | "a" | "switch") {
-            let is_root = e.name == "svg" && core::ptr::eq(e, root);
-            if !e.selfclose && !is_root {
-                stack.push(st);
-            } else if is_root {
-                // The root's own presentation attributes apply to all.
-                let mut s = st;
-                s.tf = base;
-                stack.push(s);
-            }
-            continue;
-        }
-        let g = |n: &str| attr(e, n).and_then(num).unwrap_or(0.0);
-        let polys: Vec<(Vec<Pt>, bool)> = match e.name {
-            "path" => path(attr(e, "d").unwrap_or("")),
-            "rect" => {
-                let (rx, ry) = match (attr(e, "rx").and_then(num), attr(e, "ry").and_then(num)) {
-                    (Some(a), Some(b)) => (a, b),
-                    (Some(a), None) | (None, Some(a)) => (a, a),
-                    _ => (0.0, 0.0),
-                };
-                alloc::vec![(
-                    rounded_rect(g("x"), g("y"), g("width"), g("height"), rx, ry),
-                    true
-                )]
-            }
-            "circle" => alloc::vec![(ellipse(g("cx"), g("cy"), g("r"), g("r")), true)],
-            "ellipse" => alloc::vec![(ellipse(g("cx"), g("cy"), g("rx"), g("ry")), true)],
-            "line" => alloc::vec![(alloc::vec![(g("x1"), g("y1")), (g("x2"), g("y2"))], false)],
-            "polyline" | "polygon" => {
-                let v = numbers(attr(e, "points").unwrap_or(""));
-                let mut pts: Vec<Pt> = v.chunks_exact(2).map(|c| (c[0], c[1])).collect();
-                let closed = e.name == "polygon";
-                if closed {
-                    if let Some(f) = pts.first().copied() {
-                        pts.push(f);
-                    }
-                }
-                alloc::vec![(pts, closed)]
-            }
-            "text" | "tspan" => {
-                let text = unescape(e.text.trim());
-                if !text.is_empty() {
-                    let (x, y) = (g("x"), g("y"));
-                    let p = st.tf.apply((x, y));
-                    let c = color(&st.fill).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-                    svg.texts.push(Text {
-                        x: p.0,
-                        y: p.1,
-                        size: st.font * st.tf.scale(),
-                        text,
-                        color: [c[0], c[1], c[2], c[3] * st.opacity * st.fill_op],
-                        anchor: st.anchor,
-                        bold: st.bold,
-                        serif: st.serif,
-                    });
-                }
-                if e.name == "text" && !e.selfclose {
-                    stack.push(st);
-                }
-                continue;
-            }
-            _ => continue,
-        };
-        let polys: Vec<(Vec<Pt>, bool)> = polys
-            .into_iter()
-            .map(|(p, c)| (p.into_iter().map(|q| st.tf.apply(q)).collect(), c))
-            .collect();
-        let mut bb = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-        // The bounding box in the shape's own space, for gradients.
-        let inv_src: Vec<(Vec<Pt>, bool)> = match e.name {
-            "path" => path(attr(e, "d").unwrap_or("")),
-            _ => Vec::new(),
-        };
-        let pts_for_bb: Vec<Pt> = if !inv_src.is_empty() {
-            inv_src
-                .iter()
-                .flat_map(|(p, _)| p.iter().copied())
-                .collect()
-        } else {
-            match e.name {
-                "rect" => alloc::vec![
-                    (g("x"), g("y")),
-                    (g("x") + g("width"), g("y") + g("height"))
-                ],
-                "circle" => alloc::vec![
-                    (g("cx") - g("r"), g("cy") - g("r")),
-                    (g("cx") + g("r"), g("cy") + g("r"))
-                ],
-                "ellipse" => alloc::vec![
-                    (g("cx") - g("rx"), g("cy") - g("ry")),
-                    (g("cx") + g("rx"), g("cy") + g("ry"))
-                ],
-                _ => alloc::vec![(0.0, 0.0), (1.0, 1.0)],
-            }
-        };
-        for p in pts_for_bb {
-            bb = (bb.0.min(p.0), bb.1.min(p.1), bb.2.max(p.0), bb.3.max(p.1));
-        }
-        let fill = paint(&st.fill, st.opacity * st.fill_op, &grads, bb, st.tf);
-        let stroke = paint(&st.stroke, st.opacity * st.stroke_op, &grads, bb, st.tf);
-        let fill = if matches!(e.name, "line" | "polyline")
-            && attr(e, "fill").is_none()
-            && !st.fill.is_empty()
-            && e.name == "line"
-        {
-            Paint::None
-        } else {
-            fill
-        };
-        svg.shapes.push(Shape {
-            polys,
-            fill,
-            stroke,
-            width: st.width * st.tf.scale(),
-            even_odd: st.even_odd,
-        });
     }
     Ok(svg)
 }
@@ -1241,6 +2046,348 @@ fn stroke_polys(polys: &[(Vec<Pt>, bool)], width: f32) -> Vec<Vec<Pt>> {
     out
 }
 
+/// Draw one shape into premultiplied RGBA `px` (`wu` by `hu`), with the
+/// document scaled by (sx, sy).
+fn draw_shape(sh: &Shape, px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32) {
+    let scale = |p: &Pt| (p.0 * sx, p.1 * sy);
+    let polys: Vec<(Vec<Pt>, bool)> = sh
+        .polys
+        .iter()
+        .map(|(p, c)| (p.iter().map(scale).collect(), *c))
+        .collect();
+    let scale_paint = |p: &Paint| -> Paint {
+        match p {
+            Paint::Linear(s, a, b) => Paint::Linear(s.clone(), scale(a), scale(b)),
+            Paint::Radial(s, c, r) => Paint::Radial(s.clone(), scale(c), r * (sx + sy) * 0.5),
+            o => o.clone(),
+        }
+    };
+    let mut layers: Vec<(Vec<f32>, Paint)> = Vec::new();
+    if sh.fill != Paint::None {
+        let fills: Vec<Vec<Pt>> = polys.iter().map(|(p, _)| p.clone()).collect();
+        layers.push((coverage(&fills, wu, hu, sh.even_odd), scale_paint(&sh.fill)));
+    }
+    if sh.stroke != Paint::None && sh.width > 0.0 {
+        let outline = stroke_polys(&polys, sh.width * (sx + sy) * 0.5);
+        layers.push((coverage(&outline, wu, hu, false), scale_paint(&sh.stroke)));
+    }
+    for (cov, paint) in layers {
+        for y in 0..hu {
+            for x in 0..wu {
+                let i = y * wu + x;
+                let a = cov.get(i).copied().unwrap_or(0.0).min(1.0);
+                if a <= 0.0 {
+                    continue;
+                }
+                let c = paint_at(&paint, x as f32 + 0.5, y as f32 + 0.5);
+                let alpha = a * c[3];
+                if let Some(d) = px.get_mut(i * 4..i * 4 + 4) {
+                    // Premultiplied "over".
+                    d[0] = c[0] * alpha + d[0] * (1.0 - alpha);
+                    d[1] = c[1] * alpha + d[1] * (1.0 - alpha);
+                    d[2] = c[2] * alpha + d[2] * (1.0 - alpha);
+                    d[3] = alpha + d[3] * (1.0 - alpha);
+                }
+            }
+        }
+    }
+}
+
+/// `top` over `under`, both premultiplied.
+fn over(top: &[f32], under: &mut [f32]) {
+    for (d, s) in under.chunks_exact_mut(4).zip(top.chunks_exact(4)) {
+        let k = 1.0 - s[3];
+        d[0] = s[0] + d[0] * k;
+        d[1] = s[1] + d[1] * k;
+        d[2] = s[2] + d[2] * k;
+        d[3] = s[3] + d[3] * k;
+    }
+}
+
+/// Three box blurs, close to a Gaussian of `sigma` pixels, along x or y.
+fn blur_axis(px: &mut [f32], wu: usize, hu: usize, sigma: f32, along_x: bool) {
+    if sigma < 0.3 {
+        return;
+    }
+    // Box widths for three passes (W3C's filter-effects approximation).
+    let d = (sigma * 3.0 * (2.0 * core::f32::consts::PI).sqrt() / 4.0 + 0.5).floor() as usize;
+    let d = d.max(1);
+    let (lines, len) = if along_x { (hu, wu) } else { (wu, hu) };
+    let idx = |line: usize, i: usize| {
+        if along_x {
+            (line * wu + i) * 4
+        } else {
+            (i * wu + line) * 4
+        }
+    };
+    let mut tmp = alloc::vec![0.0f32; len * 4];
+    for pass in 0..3 {
+        // Even widths shift by half a pixel, alternately, as the spec says.
+        let (lo, hi) = if d % 2 == 1 {
+            (d / 2, d / 2)
+        } else if pass == 0 {
+            (d / 2, d / 2 - 1)
+        } else if pass == 1 {
+            (d / 2 - 1, d / 2)
+        } else {
+            (d / 2, d / 2)
+        };
+        let width = (lo + hi + 1) as f32;
+        for line in 0..lines {
+            let mut acc = [0.0f32; 4];
+            // Running sum over [i - lo, i + hi].
+            for j in 0..=hi.min(len.saturating_sub(1)) {
+                let k = idx(line, j);
+                for c in 0..4 {
+                    acc[c] += px[k + c];
+                }
+            }
+            for i in 0..len {
+                for c in 0..4 {
+                    tmp[i * 4 + c] = acc[c] / width;
+                }
+                let add = i + hi + 1;
+                if add < len {
+                    let k = idx(line, add);
+                    for c in 0..4 {
+                        acc[c] += px[k + c];
+                    }
+                }
+                if i >= lo {
+                    let k = idx(line, i - lo);
+                    for c in 0..4 {
+                        acc[c] -= px[k + c];
+                    }
+                }
+            }
+            for i in 0..len {
+                let k = idx(line, i);
+                px[k..k + 4].copy_from_slice(&tmp[i * 4..i * 4 + 4]);
+            }
+        }
+    }
+}
+
+fn blur(px: &[f32], wu: usize, hu: usize, sx: f32, sy: f32) -> Vec<f32> {
+    let mut out = px.to_vec();
+    blur_axis(&mut out, wu, hu, sx, true);
+    blur_axis(&mut out, wu, hu, sy, false);
+    out
+}
+
+fn offset(px: &[f32], wu: usize, hu: usize, dx: f32, dy: f32) -> Vec<f32> {
+    let (ox, oy) = (dx.round() as isize, dy.round() as isize);
+    let mut out = alloc::vec![0.0f32; px.len()];
+    for y in 0..hu as isize {
+        let fy = y - oy;
+        if fy < 0 || fy >= hu as isize {
+            continue;
+        }
+        for x in 0..wu as isize {
+            let fx = x - ox;
+            if fx < 0 || fx >= wu as isize {
+                continue;
+            }
+            let d = ((y as usize) * wu + x as usize) * 4;
+            let s = ((fy as usize) * wu + fx as usize) * 4;
+            out[d..d + 4].copy_from_slice(&px[s..s + 4]);
+        }
+    }
+    out
+}
+
+fn matrix(px: &[f32], m: &[f32; 20]) -> Vec<f32> {
+    let mut out = alloc::vec![0.0f32; px.len()];
+    for (d, s) in out.chunks_exact_mut(4).zip(px.chunks_exact(4)) {
+        let a = s[3];
+        let (r, g, b) = if a > 0.0 {
+            (s[0] / a, s[1] / a, s[2] / a)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let row = |i: usize| {
+            (m[i] * r + m[i + 1] * g + m[i + 2] * b + m[i + 3] * a + m[i + 4]).clamp(0.0, 1.0)
+        };
+        let na = row(15);
+        d[0] = row(0) * na;
+        d[1] = row(5) * na;
+        d[2] = row(10) * na;
+        d[3] = na;
+    }
+    out
+}
+
+fn composite(a: &[f32], b: &[f32], op: &str, k: [f32; 4]) -> Vec<f32> {
+    let mut out = alloc::vec![0.0f32; a.len()];
+    for ((d, s), u) in out
+        .chunks_exact_mut(4)
+        .zip(a.chunks_exact(4))
+        .zip(b.chunks_exact(4))
+    {
+        let (aa, ab) = (s[3], u[3]);
+        for c in 0..4 {
+            d[c] = match op {
+                "in" => s[c] * ab,
+                "out" => s[c] * (1.0 - ab),
+                "atop" => s[c] * ab + u[c] * (1.0 - aa),
+                "xor" => s[c] * (1.0 - ab) + u[c] * (1.0 - aa),
+                "arithmetic" => {
+                    (k[0] * s[c] * u[c] + k[1] * s[c] + k[2] * u[c] + k[3]).clamp(0.0, 1.0)
+                }
+                _ => s[c] + u[c] * (1.0 - aa),
+            };
+        }
+        if op == "arithmetic" {
+            // Keep premultiplied colour within its alpha.
+            for c in 0..3 {
+                d[c] = d[c].min(d[3]);
+            }
+        }
+    }
+    out
+}
+
+/// Run a filter's primitives over a group's drawing.
+fn filter(prims: &[Prim], graphic: Vec<f32>, wu: usize, hu: usize, sx: f32, sy: f32) -> Vec<f32> {
+    let alpha: Vec<f32> = graphic
+        .chunks_exact(4)
+        .flat_map(|p| [0.0, 0.0, 0.0, p[3]])
+        .collect();
+    let mut named: Vec<(String, Vec<f32>)> = Vec::new();
+    let mut last = graphic.clone();
+    let get = |s: &Src, last: &Vec<f32>, named: &Vec<(String, Vec<f32>)>| -> Vec<f32> {
+        match s {
+            Src::Graphic => graphic.clone(),
+            Src::Alpha => alpha.clone(),
+            Src::Last => last.clone(),
+            Src::Named(n) => named
+                .iter()
+                .rev()
+                .find(|(k, _)| k == n)
+                .map_or_else(|| last.clone(), |(_, v)| v.clone()),
+        }
+    };
+    for p in prims {
+        let (res, name) = match p {
+            Prim::Blur {
+                input,
+                sx: bx,
+                sy: by,
+                out,
+            } => (
+                blur(&get(input, &last, &named), wu, hu, bx * sx, by * sy),
+                out,
+            ),
+            Prim::Offset { input, dx, dy, out } => (
+                offset(&get(input, &last, &named), wu, hu, dx * sx, dy * sy),
+                out,
+            ),
+            Prim::Matrix { input, m, out } => (matrix(&get(input, &last, &named), m), out),
+            Prim::Flood { color, out } => {
+                let a = color[3];
+                let px = [color[0] * a, color[1] * a, color[2] * a, a];
+                (px.iter().copied().cycle().take(wu * hu * 4).collect(), out)
+            }
+            Prim::Composite { a, b, op, k, out } => (
+                composite(&get(a, &last, &named), &get(b, &last, &named), op, *k),
+                out,
+            ),
+            Prim::Merge { inputs, out } => {
+                let mut acc = alloc::vec![0.0f32; wu * hu * 4];
+                for i in inputs {
+                    let layer = get(i, &last, &named);
+                    over(&layer, &mut acc);
+                }
+                (acc, out)
+            }
+            Prim::Shadow {
+                input,
+                dx,
+                dy,
+                sx: bx,
+                sy: by,
+                color,
+                out,
+            } => {
+                let src = get(input, &last, &named);
+                let a = color[3];
+                let shade: Vec<f32> = src
+                    .chunks_exact(4)
+                    .flat_map(|p| {
+                        let k = p[3] * a;
+                        [color[0] * k, color[1] * k, color[2] * k, k]
+                    })
+                    .collect();
+                let mut sh = offset(
+                    &blur(&shade, wu, hu, bx * sx, by * sy),
+                    wu,
+                    hu,
+                    dx * sx,
+                    dy * sy,
+                );
+                over(&src, &mut sh);
+                (sh, out)
+            }
+        };
+        if !name.is_empty() {
+            named.push((name.clone(), res.clone()));
+        }
+        last = res;
+    }
+    last
+}
+
+/// Draw items into `px`: shapes in order; a group into a layer of its
+/// own, then through its filter, clip path, mask and opacity, then over.
+fn render(items: &[Item], px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32) {
+    for it in items {
+        match it {
+            Item::Shape(sh) => draw_shape(sh, px, wu, hu, sx, sy),
+            Item::Group(g) => {
+                let mut layer = alloc::vec![0.0f32; wu * hu * 4];
+                render(&g.items, &mut layer, wu, hu, sx, sy);
+                if let Some(prims) = &g.filter {
+                    layer = filter(prims, layer, wu, hu, sx, sy);
+                    if let Some((x0, y0, x1, y1)) = g.region {
+                        let (x0, x1) = (x0 * sx, x1 * sx);
+                        let (y0, y1) = (y0 * sy, y1 * sy);
+                        for (i, p) in layer.chunks_exact_mut(4).enumerate() {
+                            let (x, y) = ((i % wu) as f32 + 0.5, (i / wu) as f32 + 0.5);
+                            if x < x0 || x > x1 || y < y0 || y > y1 {
+                                p.iter_mut().for_each(|v| *v = 0.0);
+                            }
+                        }
+                    }
+                }
+                if let Some((polys, even_odd)) = &g.clip {
+                    let scaled: Vec<Vec<Pt>> = polys
+                        .iter()
+                        .map(|p| p.iter().map(|q| (q.0 * sx, q.1 * sy)).collect())
+                        .collect();
+                    let cov = coverage(&scaled, wu, hu, *even_odd);
+                    for (p, c) in layer.chunks_exact_mut(4).zip(cov.iter()) {
+                        let k = c.min(1.0);
+                        p.iter_mut().for_each(|v| *v *= k);
+                    }
+                }
+                if let Some(mask) = &g.mask {
+                    let mut m = alloc::vec![0.0f32; wu * hu * 4];
+                    render(mask, &mut m, wu, hu, sx, sy);
+                    for (p, q) in layer.chunks_exact_mut(4).zip(m.chunks_exact(4)) {
+                        // Luminance of the premultiplied mask: colour times alpha.
+                        let k = (0.2125 * q[0] + 0.7154 * q[1] + 0.0721 * q[2]).clamp(0.0, 1.0);
+                        p.iter_mut().for_each(|v| *v *= k);
+                    }
+                }
+                if g.opacity < 1.0 {
+                    layer.iter_mut().for_each(|v| *v *= g.opacity);
+                }
+                over(&layer, px);
+            }
+        }
+    }
+}
+
 /// Paint the drawing into `w` by `h` RGBA pixels (scaled to fit), and
 /// say where its text goes in those pixels.
 pub fn rasterise(svg: &Svg, w: u32, h: u32) -> (Vec<u8>, Vec<Text>) {
@@ -1248,50 +2395,7 @@ pub fn rasterise(svg: &Svg, w: u32, h: u32) -> (Vec<u8>, Vec<Text>) {
     let sx = w as f32 / svg.w.max(1e-3);
     let sy = h as f32 / svg.h.max(1e-3);
     let mut px = alloc::vec![0.0f32; wu * hu * 4];
-    let scale = |p: &Pt| (p.0 * sx, p.1 * sy);
-    for sh in &svg.shapes {
-        let polys: Vec<(Vec<Pt>, bool)> = sh
-            .polys
-            .iter()
-            .map(|(p, c)| (p.iter().map(scale).collect(), *c))
-            .collect();
-        let scale_paint = |p: &Paint| -> Paint {
-            match p {
-                Paint::Linear(s, a, b) => Paint::Linear(s.clone(), scale(a), scale(b)),
-                Paint::Radial(s, c, r) => Paint::Radial(s.clone(), scale(c), r * (sx + sy) * 0.5),
-                o => o.clone(),
-            }
-        };
-        let mut layers: Vec<(Vec<f32>, Paint)> = Vec::new();
-        if sh.fill != Paint::None {
-            let fills: Vec<Vec<Pt>> = polys.iter().map(|(p, _)| p.clone()).collect();
-            layers.push((coverage(&fills, wu, hu, sh.even_odd), scale_paint(&sh.fill)));
-        }
-        if sh.stroke != Paint::None && sh.width > 0.0 {
-            let outline = stroke_polys(&polys, sh.width * (sx + sy) * 0.5);
-            layers.push((coverage(&outline, wu, hu, false), scale_paint(&sh.stroke)));
-        }
-        for (cov, paint) in layers {
-            for y in 0..hu {
-                for x in 0..wu {
-                    let i = y * wu + x;
-                    let a = cov.get(i).copied().unwrap_or(0.0).min(1.0);
-                    if a <= 0.0 {
-                        continue;
-                    }
-                    let c = paint_at(&paint, x as f32 + 0.5, y as f32 + 0.5);
-                    let alpha = a * c[3];
-                    if let Some(d) = px.get_mut(i * 4..i * 4 + 4) {
-                        // Premultiplied "over".
-                        d[0] = c[0] * alpha + d[0] * (1.0 - alpha);
-                        d[1] = c[1] * alpha + d[1] * (1.0 - alpha);
-                        d[2] = c[2] * alpha + d[2] * (1.0 - alpha);
-                        d[3] = alpha + d[3] * (1.0 - alpha);
-                    }
-                }
-            }
-        }
-    }
+    render(&svg.items, &mut px, wu, hu, sx, sy);
     let mut rgba = Vec::with_capacity(wu * hu * 4);
     for p in px.chunks_exact(4) {
         let a = p[3];
@@ -1333,10 +2437,11 @@ pub fn icon_lines(elements: &str, x: f32, y: f32, size: f32) -> Vec<Vec<Pt>> {
     };
     let s = size / 24.0;
     let mut out = Vec::new();
-    for sh in svg.shapes {
-        for (p, _) in sh.polys {
+    for sh in svg.shapes() {
+        for (p, _) in &sh.polys {
             out.push(
-                p.into_iter()
+                p.iter()
+                    .copied()
                     .map(|(px, py)| (x + (px - 12.0) * s, y + (py - 12.0) * s))
                     .collect(),
             );
@@ -1386,7 +2491,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((svg.w, svg.h), (40.0, 20.0));
-        assert_eq!(svg.shapes.len(), 2);
+        assert_eq!(svg.shapes().len(), 2);
         assert_eq!(svg.texts[0].text, "Hi & bye");
         assert_eq!(svg.texts[0].anchor, 1);
         let (rgba, texts) = rasterise(&svg, 80, 40);
@@ -1421,5 +2526,109 @@ mod tests {
             24.0,
         );
         assert_eq!(list[1].len(), 3);
+    }
+
+    fn px(rgba: &[u8], w: usize, x: usize, y: usize) -> [u8; 4] {
+        let i = (y * w + x) * 4;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    }
+
+    #[test]
+    fn use_symbols_and_style_sheets() {
+        let svg = parse(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="20">
+            <style><![CDATA[ .red { fill: #f00 } #b { fill: blue } g.k rect { fill: lime } ]]></style>
+            <defs><rect id="sq" width="10" height="10"/>
+              <symbol id="dot" viewBox="0 0 2 2"><circle cx="1" cy="1" r="1"/></symbol></defs>
+            <use xlink:href="#sq" x="0" y="0" class="red"/>
+            <use href="#sq" x="10" y="0" id="b"/>
+            <g class="k"><rect x="20" y="0" width="10" height="10" fill="black"/></g>
+            <use href="#dot" x="30" y="0" width="10" height="10" fill="#ff0"/>
+            <rect x="0" y="10" width="10" height="10" style="display:none"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let (rgba, _) = rasterise(&svg, 40, 20);
+        assert_eq!(
+            px(&rgba, 40, 5, 5),
+            [255, 0, 0, 255],
+            "class rule on the use reaches the rect"
+        );
+        assert_eq!(px(&rgba, 40, 15, 5), [0, 0, 255, 255], "id rule");
+        assert_eq!(
+            px(&rgba, 40, 25, 5),
+            [0, 255, 0, 255],
+            "descendant rule beats the attribute"
+        );
+        assert_eq!(
+            px(&rgba, 40, 35, 5),
+            [255, 255, 0, 255],
+            "symbol fitted to the use's box"
+        );
+        assert_eq!(px(&rgba, 40, 5, 15)[3], 0, "display:none draws nothing");
+    }
+
+    #[test]
+    fn clip_paths_masks_and_group_opacity() {
+        let svg = parse(
+            r##"<svg width="40" height="20">
+            <defs>
+              <clipPath id="c"><rect x="0" y="0" width="5" height="20"/></clipPath>
+              <mask id="m"><rect x="10" y="0" width="10" height="20" fill="white"/><rect x="15" y="0" width="5" height="20" fill="black"/></mask>
+            </defs>
+            <rect x="0" y="0" width="10" height="20" fill="red" clip-path="url(#c)"/>
+            <rect x="10" y="0" width="10" height="20" fill="blue" mask="url(#m)"/>
+            <g opacity="0.5"><rect x="20" y="0" width="20" height="20" fill="#000"/><rect x="20" y="0" width="20" height="20" fill="#000"/></g>
+            </svg>"##,
+        )
+        .unwrap();
+        let (rgba, _) = rasterise(&svg, 40, 20);
+        assert_eq!(px(&rgba, 40, 2, 10)[3], 255, "inside the clip");
+        assert_eq!(px(&rgba, 40, 7, 10)[3], 0, "outside the clip");
+        assert_eq!(px(&rgba, 40, 12, 10), [0, 0, 255, 255], "white mask shows");
+        assert_eq!(px(&rgba, 40, 17, 10)[3], 0, "black mask hides");
+        // Two overlapping shapes in a half-opaque group: half, not three quarters.
+        let a = px(&rgba, 40, 30, 10)[3];
+        assert!((126..=129).contains(&a), "{a}");
+    }
+
+    #[test]
+    fn filters_blur_offset_and_shadow() {
+        let svg = parse(
+            r##"<svg width="60" height="20">
+            <filter id="s" x="-100%" width="300%"><feDropShadow dx="4" dy="0" stdDeviation="0" flood-color="#000" flood-opacity="1"/></filter>
+            <filter id="b"><feGaussianBlur stdDeviation="2"/></filter>
+            <filter id="g"><feColorMatrix type="saturate" values="0"/></filter>
+            <filter id="o" x="-100%" width="300%"><feOffset in="SourceGraphic" dx="3" dy="0" result="x"/><feMerge><feMergeNode in="x"/></feMerge></filter>
+            <rect x="0" y="5" width="6" height="10" fill="#f00" filter="url(#s)"/>
+            <rect x="20" y="0" width="10" height="20" fill="#000" filter="url(#b)"/>
+            <rect x="40" y="0" width="5" height="20" fill="#f00" filter="url(#g)"/>
+            <rect x="50" y="0" width="5" height="20" fill="#000" filter="url(#o)"/>
+            </svg>"##,
+        )
+        .unwrap();
+        let (rgba, _) = rasterise(&svg, 60, 20);
+        assert_eq!(
+            px(&rgba, 60, 2, 10),
+            [255, 0, 0, 255],
+            "the shape stays on top"
+        );
+        assert_eq!(
+            px(&rgba, 60, 8, 10),
+            [0, 0, 0, 255],
+            "its shadow shows beside it"
+        );
+        let edge = px(&rgba, 60, 19, 10)[3];
+        assert!(
+            edge > 20 && edge < 200,
+            "blur spreads past the edge: {edge}"
+        );
+        let grey = px(&rgba, 60, 42, 10);
+        assert!(
+            grey[0] == grey[1] && grey[1] == grey[2] && grey[0] > 30,
+            "saturate 0 greys: {grey:?}"
+        );
+        assert_eq!(px(&rgba, 60, 51, 10)[3], 0, "moved off");
+        assert_eq!(px(&rgba, 60, 56, 10)[3], 255, "moved on");
     }
 }

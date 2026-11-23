@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="480" height="260" viewBox="0 0 480 260">
+  <style>
+    .card { fill: #2b6cb0; }
+    .card.alt { fill: #c05621; }
+    #title { fill: #1a202c; font-family: Helvetica, sans-serif; font-size: 18px; }
+    g.ring circle { fill: none; stroke: #38a169; stroke-width: 6; }
+  </style>
+  <defs>
+    <filter id="shadow"><feDropShadow dx="4" dy="6" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/></filter>
+    <filter id="blur"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="grey"><feColorMatrix type="saturate" values="0"/></filter>
+    <filter id="glow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="b"/>
+      <feOffset in="b" dx="0" dy="0" result="o"/>
+      <feFlood flood-color="#d53f8c" result="f"/>
+      <feComposite in="f" in2="o" operator="in" result="g"/>
+      <feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="circleClip"><circle cx="60" cy="60" r="44"/></clipPath>
+    <linearGradient id="fade" x1="0" x2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
+    <mask id="fadeMask"><rect x="300" y="0" width="120" height="120" fill="url(#fade)"/></mask>
+    <symbol id="star" viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5 2 7.5-6.5-4.5-6.5 4.5 2-7.5L2 9h7z"/></symbol>
+    <rect id="chip" width="40" height="24" rx="6"/>
+  </defs>
+  <text id="title" x="16" y="26">use, symbol, style, clip, mask, filters</text>
+  <g transform="translate(16,40)">
+    <rect class="card" width="120" height="120" rx="12" filter="url(#shadow)"/>
+    <g transform="translate(150,0)" clip-path="url(#circleClip)">
+      <rect width="120" height="120" class="card alt"/>
+      <rect y="60" width="120" height="60" fill="#ecc94b"/>
+    </g>
+    <rect x="300" width="120" height="120" fill="#805ad5" mask="url(#fadeMask)"/>
+  </g>
+  <g transform="translate(16,180)">
+    <use href="#chip" fill="#e53e3e"/>
+    <use xlink:href="#chip" x="50" fill="#e53e3e" filter="url(#grey)"/>
+    <use href="#star" x="110" y="-6" width="36" height="36" fill="#d69e2e"/>
+    <use href="#star" x="160" y="-6" width="36" height="36" fill="#fff" filter="url(#glow)"/>
+    <rect x="220" width="40" height="24" fill="#3182ce" filter="url(#blur)"/>
+    <g opacity="0.5"><rect x="290" width="50" height="24" fill="#000"/><rect x="310" width="50" height="24" fill="#000"/></g>
+    <g class="ring"><circle cx="410" cy="12" r="14"/></g>
+  </g>
+</svg>
