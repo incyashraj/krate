@@ -2275,9 +2275,7 @@ pub fn mention_count(line: &str, key: &str) -> usize {
         let after = l[i + key.len()..].chars().next();
         let word = before.is_none_or(|c| !c.is_alphanumeric())
             && after.is_none_or(|c| !c.is_alphanumeric());
-        let in_link = l[..i]
-            .rfind("[[")
-            .is_some_and(|o| l[o..i].find("]]").is_none());
+        let in_link = l[..i].rfind("[[").is_some_and(|o| !l[o..i].contains("]]"));
         if word && !in_link {
             n += 1;
         }
