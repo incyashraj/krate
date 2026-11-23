@@ -2596,6 +2596,8 @@ const COMMANDS = {
   async latest_release() { return null; },
   async install_update() {},
   async restart_for_update() {},
+  // A tab is always the newest Studio, so no update was ever rolled back.
+  async update_outcome() { return null; },
   async first_run_setup() {},
 
   /* ---- the gallery ------------------------------------------------------
