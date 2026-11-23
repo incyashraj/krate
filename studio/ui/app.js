@@ -1582,8 +1582,13 @@ function placeInThread(el, note, when) {
     group.querySelector(".thought-steps").appendChild(el);
     paintThoughtHead(group);
   } else {
-    // The answer closes whatever was being thought about.
-    const live = thread.querySelector(".thought.live");
+    // The answer closes whatever was being thought about. A replayed
+    // session has no live group, so the thought just before the answer is
+    // settled too -- it came back reading "Looking at your request" in the
+    // present tense over a finished app (K-1371).
+    const last = thread.lastElementChild;
+    const live = thread.querySelector(".thought.live")
+      || (last && last.classList.contains("thought") && !last.dataset.settled ? last : null);
     if (live) settleThought(live, at);
     thread.querySelectorAll(".msg.last").forEach((m) => m.classList.remove("last"));
     el.classList.add("last");
@@ -1619,6 +1624,7 @@ function paintThoughtHead(group) {
 function settleThought(group, endMs) {
   clearInterval(group._clock);
   group.classList.remove("live");
+  group.dataset.settled = "1";
   const n = group.querySelectorAll(".thought-steps > .msg").length;
   const secs = Math.max(1, Math.round((endMs - Number(group.dataset.t0)) / 1000));
   group.querySelector(".t-now").textContent = `Thought for ${durationText(secs)} · ${n} step${n === 1 ? "" : "s"}`;
