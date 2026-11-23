@@ -922,6 +922,22 @@ export function buildImports(ctx) {
       if (!Number.isFinite(volume)) throw new HostError({ tag: 'unsupported', val: 'a volume is a number from 0.0 to 1.0' });
       videoControl(v, 'volume', Math.min(1, Math.max(0, volume)));
     },
+    startFloating(v) {
+      videoOf(v);
+      videoCall('video.float', { id: String(v), on: true });
+    },
+    stopFloating(v) {
+      if (!videos.has(String(v))) return;
+      bridge.call('video.float', { id: String(v), on: false });
+    },
+    floating(v) {
+      if (!videos.has(String(v))) return false;
+      return Boolean(bridge.call('video.floating', { id: String(v) }).json.ok);
+    },
+    setRate(v, rate) {
+      if (!Number.isFinite(rate)) throw new HostError({ tag: 'unsupported', val: 'a rate is a number from 0.25 to 4.0' });
+      videoControl(v, 'rate', Math.min(4, Math.max(0.25, rate)));
+    },
     state(v) {
       videoOf(v);
       const s = videoCall('video.state', { id: String(v) }).json.ok;

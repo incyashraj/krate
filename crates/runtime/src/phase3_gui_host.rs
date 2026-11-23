@@ -40,6 +40,40 @@ mod gpu_host;
 /// How long `events.wait` sleeps between polls.
 const WAIT_POLL_INTERVAL_MILLIS: u64 = 10;
 
+/// A video floating in a window of its own (K-1358).
+struct VideoFloat {
+    window: WindowId,
+    /// The canvas that fills the window.
+    canvas: u64,
+    /// The frame painted last, so an unchanged one is not painted again.
+    /// Held, not remembered by address: a freed frame's address is the
+    /// next one's, and comparing addresses skipped most new frames.
+    painted: Option<Arc<ImagePixels>>,
+    /// Frames painted so far.
+    frames: u32,
+}
+
+/// A floating window's size for a picture `width` x `height`: 360 points
+/// wide, the picture's shape, 16:9 before the size is known.
+fn float_size(width: u32, height: u32) -> (u32, u32) {
+    if width == 0 || height == 0 {
+        return (360, 203);
+    }
+    let h = (360.0 * height as f32 / width as f32).round() as u32;
+    (360, h.clamp(120, 640))
+}
+
+/// The largest rect of the picture's shape inside a `cw` x `ch` canvas,
+/// centred: the rest is black bars.
+fn letterbox(cw: f32, ch: f32, pw: f32, ph: f32) -> (f32, f32, f32, f32) {
+    if pw <= 0.0 || ph <= 0.0 || cw <= 0.0 || ch <= 0.0 {
+        return (0.0, 0.0, cw.max(0.0), ch.max(0.0));
+    }
+    let scale = (cw / pw).min(ch / ph);
+    let (w, h) = (pw * scale, ph * scale);
+    ((cw - w) / 2.0, (ch - h) / 2.0, w, h)
+}
+
 /// How many idle `events.wait` calls a headless run tolerates before the host
 /// reports the window closed. Small enough that `krate run` on a GUI app
 /// finishes in about a second instead of spinning out the app's wait budget,
@@ -221,6 +255,10 @@ pub struct Phase3GuiHost {
     pub(crate) video_states: std::cell::RefCell<
         std::collections::BTreeMap<u64, (std::time::Instant, crate::video::State)>,
     >,
+    /// Videos floating in a window of their own (K-1358), by video.
+    video_floats: std::cell::RefCell<std::collections::BTreeMap<u64, VideoFloat>>,
+    /// Floating windows the person closed, let go of on the next pump.
+    float_closes: std::cell::RefCell<Vec<WindowId>>,
     /// Where the app's bundled assets are, for a video named by path.
     pub(crate) asset_root: Option<std::path::PathBuf>,
     /// The app's own folder (the sandbox), for a video or sound file the app
@@ -683,6 +721,8 @@ impl Phase3GuiHost {
             pdfs: Default::default(),
             videos: std::cell::RefCell::new(crate::video::Videos::default()),
             video_frames: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            video_floats: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            float_closes: std::cell::RefCell::new(Vec::new()),
             video_states: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             asset_root: None,
             sandbox_root: None,
@@ -3801,6 +3841,173 @@ impl Phase3GuiHost {
         }
     }
 
+    fn is_float_window(&self, window: WindowId) -> bool {
+        self.video_floats
+            .borrow()
+            .values()
+            .any(|float| float.window == window)
+    }
+
+    /// True while `video` floats in a window of its own (K-1358).
+    pub(crate) fn is_floating(&self, video: u64) -> bool {
+        self.video_floats.borrow().contains_key(&video)
+    }
+
+    /// Float `video` in a small window kept above every other window,
+    /// showing only the picture, `width` x `height` being the picture's own
+    /// size (0 when not known yet). The window is Krate's: the app never
+    /// sees its events, and closing it brings the video back (K-1358).
+    pub(crate) fn start_floating(
+        &mut self,
+        video: u64,
+        width: u32,
+        height: u32,
+    ) -> Result<(), gfx::types::GfxError> {
+        use gfx::types::GfxError;
+        if self.is_floating(video) {
+            return Ok(());
+        }
+        let (w, h) = float_size(width, height);
+        let platform = |error: String| GfxError::Platform(error);
+        let size = WindowSize::new(w, h).map_err(|e| platform(e.to_string()))?;
+        let options = WindowOptions::new("Video", size)
+            .map_err(|e| platform(e.to_string()))?
+            .on_top();
+        let id = self
+            .dispatcher()
+            .create_window(options)
+            .map_err(|e| platform(e.to_string()))?;
+        self.windows.push(id);
+        self.requested_sizes
+            .borrow_mut()
+            .insert(id, (w as f32, h as f32));
+        let canvas = (|| {
+            let root = WidgetId::new(1).map_err(|e| platform(e.to_string()))?;
+            self.set_root_widget(id.get(), WidgetNode::new(root, WidgetKind::Canvas))
+                .map_err(|_| GfxError::InvalidTarget)?;
+            match <Self as gfx::canvas2d::Host>::bind(self, id.get(), 1) {
+                Ok(bound) => bound,
+                Err(error) => Err(platform(error.to_string())),
+            }
+        })();
+        let canvas = match canvas {
+            Ok(canvas) => canvas,
+            Err(error) => {
+                let _ = self.dispatcher().close_window(id);
+                self.windows.retain(|w| *w != id);
+                return Err(error);
+            }
+        };
+        let _ = self.dispatcher().show_window(id);
+        self.video_floats.borrow_mut().insert(
+            video,
+            VideoFloat {
+                window: id,
+                canvas,
+                painted: None,
+                frames: 0,
+            },
+        );
+        self.pump_video_floats();
+        Ok(())
+    }
+
+    /// Bring `video` back from floating: its window closes.
+    pub(crate) fn stop_floating(&mut self, video: u64) {
+        let Some(float) = self.video_floats.borrow_mut().remove(&video) else {
+            return;
+        };
+        tracing::debug!(video, frames = float.frames, "a floating video came back");
+        self.canvases.borrow_mut().remove(&float.canvas);
+        let _ = self.dispatcher().close_window(float.window);
+        self.windows.retain(|w| *w != float.window);
+        self.requested_sizes.borrow_mut().remove(&float.window);
+    }
+
+    /// Paint every floating video's newest frame, and let go of the ones
+    /// whose window the person closed: the app is sent a redraw so a wait
+    /// returns and it sees `floating` turn false.
+    pub(crate) fn pump_video_floats(&mut self) {
+        let closed = std::mem::take(&mut *self.float_closes.borrow_mut());
+        let mut told = false;
+        for window in closed {
+            let video = self
+                .video_floats
+                .borrow()
+                .iter()
+                .find(|(_, float)| float.window == window)
+                .map(|(video, _)| *video);
+            if let Some(video) = video {
+                self.stop_floating(video);
+                if !told {
+                    if let Some(main) = self.windows.first() {
+                        self.pending_events
+                            .borrow_mut()
+                            .push_back(ui::types::Event::RedrawRequested(main.get()));
+                    }
+                    told = true;
+                }
+            }
+        }
+        let floats: Vec<(u64, u64, Option<Arc<ImagePixels>>)> = self
+            .video_floats
+            .borrow()
+            .iter()
+            .map(|(video, float)| (*video, float.canvas, float.painted.clone()))
+            .collect();
+        for (video, canvas, painted) in floats {
+            // A video the app closed stops floating with it.
+            if !self.videos.borrow().owns(video) {
+                self.stop_floating(video);
+                continue;
+            }
+            if let Ok(Some(frame)) = crate::video::frame(video) {
+                self.video_frames
+                    .borrow_mut()
+                    .insert(video, Arc::new(frame));
+            }
+            let Some(frame) = self.video_frames.borrow().get(&video).cloned() else {
+                continue;
+            };
+            if painted
+                .as_ref()
+                .is_some_and(|painted| Arc::ptr_eq(painted, &frame))
+            {
+                continue;
+            }
+            drop(painted);
+            self.fit_unasked_canvas(canvas);
+            let Ok(Ok(size)) = <Self as gfx::canvas2d::Host>::canvas_size(self, canvas) else {
+                continue;
+            };
+            let black = gfx::types::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            };
+            let _ = <Self as gfx::canvas2d::Host>::clear(self, canvas, black);
+            let (x, y, w, h) = letterbox(
+                size.width,
+                size.height,
+                frame.width as f32,
+                frame.height as f32,
+            );
+            let area = gfx::types::Rect {
+                x,
+                y,
+                width: w,
+                height: h,
+            };
+            let _ = self.draw_image(canvas, frame.clone(), area, None);
+            let _ = self.present_frame(canvas);
+            if let Some(float) = self.video_floats.borrow_mut().get_mut(&video) {
+                float.painted = Some(frame);
+                float.frames += 1;
+            }
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         if let Some(event) = self.peeked_event.borrow_mut().take() {
             return Ok(Some(event));
@@ -3982,6 +4189,15 @@ impl Phase3GuiHost {
 
         // Skip host-side bookkeeping events that have no portable WIT shape.
         while let Some(event) = dispatcher.poll_event()? {
+            // A floating video's window is Krate's, not the app's (K-1358):
+            // nothing in it reaches the app. Its close button lets the video
+            // go back; the next pump closes the window and tells the app.
+            if let Some(window) = event.window().filter(|w| self.is_float_window(*w)) {
+                if matches!(event, UiEvent::WindowCloseRequested(_)) {
+                    self.float_closes.borrow_mut().push(window);
+                }
+                continue;
+            }
             // A window losing focus means every release from now on goes
             // somewhere else. Forget what was held, or an app polling
             // `key-held` sees a key that will never come back up -- the player
@@ -6162,6 +6378,7 @@ impl ui::events::Host for Phase3GuiHost {
         if let Some(ended) = self.ended_by_person() {
             return Err(ended);
         }
+        self.pump_video_floats();
         // A game never calls `wait` -- it polls at the top of every frame and
         // draws regardless. Driving only from `wait` means such an app is never
         // stepped and never released, so the run hangs until the outer
@@ -6310,6 +6527,7 @@ impl ui::events::Host for Phase3GuiHost {
                 }
             }
             self.pump_native_windows();
+            self.pump_video_floats();
             let event = self
                 .poll_one_event()
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
@@ -6391,8 +6609,11 @@ impl ui::events::Host for Phase3GuiHost {
             // 16ms timeout used to overshoot to ~20ms, and a game pacing
             // itself with wait(16) ran at 41fps on an idle machine -- the
             // slice must never be the thing that misses the frame.
+            // A floating video is painted between the app's own turns, so
+            // a wait keeps to short slices while one floats (K-1358).
             let slice = std::time::Duration::from_millis(match deadline {
                 Some(_) => WAIT_POLL_INTERVAL_MILLIS,
+                None if !self.video_floats.borrow().is_empty() => WAIT_POLL_INTERVAL_MILLIS,
                 None => 250,
             });
             let park = match deadline {
@@ -9178,6 +9399,31 @@ pub(crate) fn choose_file_on_host(
 
 #[cfg(test)]
 mod tests {
+    /// K-1358: a floating video's window takes the picture's shape, and the
+    /// picture fills it without stretching.
+    #[test]
+    fn a_floating_window_keeps_the_pictures_shape() {
+        assert_eq!(super::float_size(1920, 1080), (360, 203));
+        assert_eq!(
+            super::float_size(1080, 1920),
+            (360, 640),
+            "a tall one is capped"
+        );
+        assert_eq!(
+            super::float_size(0, 0),
+            (360, 203),
+            "16:9 before the size is known"
+        );
+        let (x, y, w, h) = super::letterbox(400.0, 400.0, 1920.0, 1080.0);
+        assert_eq!((x, w), (0.0, 400.0));
+        assert!(
+            (h - 225.0).abs() < 0.01 && (y - 87.5).abs() < 0.01,
+            "{y} {h}"
+        );
+        let (x, _, w, h) = super::letterbox(400.0, 200.0, 100.0, 100.0);
+        assert_eq!((x, w, h), (100.0, 200.0, 200.0), "bars at the sides");
+    }
+
     use super::*;
 
     #[test]

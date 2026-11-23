@@ -692,6 +692,11 @@ in the app's own folder it may read, or an \
 sound, so never decode frames yourself. Build the controls as ordinary \
 buttons calling `play`, `pause`, `seek(v, ms)`, `set_looping`, \
 `set_muted`, `set_volume(v, 0.0..=1.0)` (a volume slider; muting wins), \
+`set_rate(v, 0.25..=4.0)` (a speed menu: 0.5, 1, 1.5, 2; the pitch is \
+kept), `start_floating(v)` from a button to float it in a small window \
+above every other (picture in picture; a phone answers \
+`Err(Unsupported)`), `stop_floating(v)`, and `floating(v)` each frame -- \
+it turns false when the person closes that window -- \
 and read `state(v)` each frame for `position_millis`, \
 `duration_millis`, `ready` (draw \"Loading\" until true), `ended` and \
 the picture's `width`/`height` -- fit the rect to that shape. A \

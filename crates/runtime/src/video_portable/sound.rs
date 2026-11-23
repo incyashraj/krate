@@ -249,6 +249,140 @@ impl Resampler {
     }
 }
 
+/// Sound played faster or slower with its pitch kept (K-1357): WSOLA.
+/// Each step copies a short stretch of the input to the output, taken from
+/// near where the rate says the input should be, at the offset whose shape
+/// best continues what was copied before, and crossfades the two, so a
+/// voice at 2x sounds like the same voice talking fast rather than a
+/// chipmunk. At 1.0 it passes the sound through untouched.
+pub(super) struct Stretch {
+    channels: usize,
+    speed: f64,
+    /// Output frames per step, and the crossfade's length (20 ms).
+    hop: usize,
+    /// How far either side of the nominal place to look (10 ms).
+    search: usize,
+    /// Input not yet used, interleaved.
+    input: Vec<f32>,
+    /// Where, in `input` frames, the last copied stretch began; `None`
+    /// before the first.
+    last: Option<usize>,
+    /// Where the rate says the next stretch should begin, in `input` frames.
+    nominal: f64,
+}
+
+impl Stretch {
+    pub(super) fn new(rate: u32, channels: usize, speed: f64) -> Self {
+        let rate = rate.max(1000) as usize;
+        Self {
+            channels: channels.max(1),
+            speed: speed.clamp(0.25, 4.0),
+            hop: rate / 50,
+            search: rate / 100,
+            input: Vec::new(),
+            last: None,
+            nominal: 0.0,
+        }
+    }
+
+    pub(super) fn speed(&self) -> f64 {
+        self.speed
+    }
+
+    pub(super) fn reset(&mut self) {
+        self.input.clear();
+        self.last = None;
+        self.nominal = 0.0;
+    }
+
+    fn frames(&self) -> usize {
+        self.input.len() / self.channels
+    }
+
+    /// How well the stretch at `at` continues the one at `from`: a dot
+    /// product over every fourth frame of the crossfade.
+    fn likeness(&self, from: usize, at: usize) -> f32 {
+        let c = self.channels;
+        (0..self.hop)
+            .step_by(4)
+            .map(|i| {
+                let a = &self.input[(from + i) * c..(from + i + 1) * c];
+                let b = &self.input[(at + i) * c..(at + i + 1) * c];
+                a.iter().zip(b).map(|(a, b)| a * b).sum::<f32>()
+            })
+            .sum()
+    }
+
+    /// Stretch interleaved `samples` and append what is ready to `out`.
+    pub(super) fn push(&mut self, samples: &[f32], out: &mut Vec<f32>) {
+        if (self.speed - 1.0).abs() < 1e-6 {
+            out.extend_from_slice(samples);
+            return;
+        }
+        self.input.extend_from_slice(samples);
+        let (c, hop, search) = (self.channels, self.hop, self.search);
+        let step = hop as f64 * self.speed;
+        loop {
+            let nominal = self.nominal.round() as usize;
+            // Room for the furthest place the search may pick, and for the
+            // previous stretch's natural continuation.
+            let need = (nominal + search + hop).max(self.last.map_or(0, |l| l + 2 * hop));
+            if self.frames() < need + 1 {
+                break;
+            }
+            let start = match self.last {
+                None => nominal,
+                Some(last) => {
+                    let follow = last + hop;
+                    // Coarse, every eighth place, then every place around
+                    // the best: a tenth of the work of trying them all,
+                    // which keeps up in real time even unoptimised.
+                    let low = nominal.saturating_sub(search);
+                    let mut best = (f32::MIN, nominal);
+                    for at in (low..=nominal + search).step_by(8) {
+                        let score = self.likeness(follow, at);
+                        if score > best.0 {
+                            best = (score, at);
+                        }
+                    }
+                    let around = best.1;
+                    for at in around.saturating_sub(7).max(low)..=(around + 7).min(nominal + search)
+                    {
+                        let score = self.likeness(follow, at);
+                        if score > best.0 {
+                            best = (score, at);
+                        }
+                    }
+                    best.1
+                }
+            };
+            match self.last {
+                None => out.extend_from_slice(&self.input[start * c..(start + hop) * c]),
+                Some(last) => {
+                    let follow = last + hop;
+                    for i in 0..hop {
+                        let w = (i as f32 + 0.5) / hop as f32;
+                        for ch in 0..c {
+                            let old = self.input[(follow + i) * c + ch];
+                            let new = self.input[(start + i) * c + ch];
+                            out.push(old * (1.0 - w) + new * w);
+                        }
+                    }
+                }
+            }
+            self.last = Some(start);
+            self.nominal += step;
+            // Drop what no later step can reach.
+            let keep_from = start.min(self.nominal as usize).saturating_sub(search);
+            if keep_from > 4 * hop {
+                self.input.drain(..keep_from * c);
+                self.last = Some(start - keep_from);
+                self.nominal -= keep_from as f64;
+            }
+        }
+    }
+}
+
 /// The system's sound output for one video: a ring of samples in the
 /// device's own layout, drained by the device, counting what it plays.
 pub(super) struct Speaker {
@@ -424,6 +558,66 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.contains("not a sound or video"), "{error}");
+    }
+
+    fn tone(rate: u32, hz: f32, seconds: f32) -> Vec<f32> {
+        (0..(rate as f32 * seconds) as usize)
+            .map(|i| (i as f32 / rate as f32 * hz * std::f32::consts::TAU).sin() * 0.5)
+            .collect()
+    }
+
+    /// Upward zero crossings a second: the tone's pitch.
+    fn pitch(samples: &[f32], rate: u32) -> f32 {
+        let ups = samples
+            .windows(2)
+            .filter(|w| w[0] < 0.0 && w[1] >= 0.0)
+            .count();
+        ups as f32 / (samples.len() as f32 / rate as f32)
+    }
+
+    #[test]
+    fn a_rate_changes_the_length_and_keeps_the_pitch() {
+        // Kept small: the search is a debug build's slowest loop.
+        let rate = 16_000;
+        let input = tone(rate, 440.0, 1.5);
+        for speed in [0.5, 1.5, 2.0, 0.25, 4.0] {
+            let mut stretch = Stretch::new(rate, 1, speed);
+            let mut out = Vec::new();
+            for chunk in input.chunks(1_000) {
+                stretch.push(chunk, &mut out);
+            }
+            let want = input.len() as f64 / speed;
+            assert!(
+                (out.len() as f64 - want).abs() < 0.06 * want,
+                "{speed}x: {} frames for {want}",
+                out.len()
+            );
+            let heard = pitch(&out, rate);
+            assert!((heard - 440.0).abs() < 8.0, "{speed}x: pitch {heard} Hz");
+            let worst = out
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0.0, f32::max);
+            // A 440 Hz sine at 16 kHz moves at most 0.086 a sample.
+            assert!(worst < 0.2, "{speed}x: a click of {worst}");
+        }
+        // Keeps up: a second of 48 kHz stereo at 2x in well under a second,
+        // even in a debug build.
+        let stereo: Vec<f32> = tone(48_000, 440.0, 1.0)
+            .iter()
+            .flat_map(|s| [*s, *s])
+            .collect();
+        let started = std::time::Instant::now();
+        let mut out = Vec::new();
+        Stretch::new(48_000, 2, 2.0).push(&stereo, &mut out);
+        let took = started.elapsed();
+        assert!(
+            took < std::time::Duration::from_millis(400),
+            "{took:?} for a second"
+        );
+        let mut same = Vec::new();
+        Stretch::new(rate, 2, 1.0).push(&[0.1, 0.2, 0.3, 0.4], &mut same);
+        assert_eq!(same, [0.1, 0.2, 0.3, 0.4], "1.0 passes it through");
     }
 
     #[test]

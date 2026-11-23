@@ -23,6 +23,10 @@ pub(super) struct Clock {
     base: f64,
     running: bool,
     follow: Follow,
+    /// Media milliseconds per real millisecond: the playback rate
+    /// (K-1357). The sound is stretched to it before the speakers, so a
+    /// frame the speakers play stands for `speed` frames of the media.
+    speed: f64,
 }
 
 impl Clock {
@@ -32,6 +36,7 @@ impl Clock {
             base: 0.0,
             running: false,
             follow: Follow::Wall { since: None },
+            speed: 1.0,
         }
     }
 
@@ -45,6 +50,7 @@ impl Clock {
                 at_base: played,
                 rate: rate.max(1),
             },
+            speed: 1.0,
         }
     }
 
@@ -61,12 +67,13 @@ impl Clock {
     pub(super) fn millis(&self, played: u64, now: Instant) -> f64 {
         match self.follow {
             Follow::Sound { at_base, rate } => {
-                self.base + played.saturating_sub(at_base) as f64 * 1000.0 / f64::from(rate)
+                self.base
+                    + played.saturating_sub(at_base) as f64 * 1000.0 / f64::from(rate) * self.speed
             }
             Follow::Wall { since } => {
                 self.base
                     + since.map_or(0.0, |since| {
-                        now.saturating_duration_since(since).as_secs_f64() * 1000.0
+                        now.saturating_duration_since(since).as_secs_f64() * 1000.0 * self.speed
                     })
             }
         }
@@ -84,6 +91,13 @@ impl Clock {
                 since: self.running.then_some(now),
             },
         };
+    }
+
+    /// Play at `speed` from here on.
+    pub(super) fn set_speed(&mut self, speed: f64, played: u64, now: Instant) {
+        let at = self.millis(played, now);
+        self.speed = speed;
+        self.set(at, played, now);
     }
 
     pub(super) fn start(&mut self, played: u64, now: Instant) {
@@ -152,6 +166,30 @@ mod tests {
         assert!((held - 250.0).abs() < 0.001, "paused stays put: {held}");
         clock.set(1_000.0, 0, t0);
         assert_eq!(clock.millis(0, t0 + Duration::from_secs(9)), 1_000.0);
+    }
+
+    #[test]
+    fn at_a_rate_the_clock_moves_that_much_faster() {
+        let t0 = Instant::now();
+        let mut sound = Clock::sound(1_000, 0);
+        sound.start(0, t0);
+        sound.set_speed(2.0, 0, t0);
+        assert_eq!(
+            sound.millis(500, t0),
+            1_000.0,
+            "half a second heard is a second played"
+        );
+        sound.set_speed(0.5, 500, t0);
+        assert_eq!(
+            sound.millis(900, t0),
+            1_200.0,
+            "changed where it was, not from the start"
+        );
+        let mut wall = Clock::wall();
+        wall.start(0, t0);
+        wall.set_speed(4.0, 0, t0);
+        let at = wall.millis(0, t0 + Duration::from_millis(100));
+        assert!((at - 400.0).abs() < 0.001, "{at}");
     }
 
     #[test]

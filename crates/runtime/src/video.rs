@@ -35,6 +35,9 @@ pub(crate) enum Control {
     Muted(bool),
     /// How loud, 0.0 (silent) to 1.0 (as recorded) (K-1351).
     Volume(f32),
+    /// How fast, 0.25 to 4.0, 1.0 as recorded; the sound keeps its pitch
+    /// (K-1357).
+    Rate(f32),
 }
 
 /// Where a video is and what it is doing; the WIT `video-state`.
@@ -90,6 +93,7 @@ struct Asked {
     looping: bool,
     muted: bool,
     volume: Option<f32>,
+    rate: Option<f32>,
     seek: Option<u64>,
 }
 
@@ -185,6 +189,7 @@ pub(crate) fn control(video: u64, control: Control) -> Result<(), String> {
             Control::Looping(looping) => entry.asked.looping = looping,
             Control::Muted(muted) => entry.asked.muted = muted,
             Control::Volume(volume) => entry.asked.volume = Some(volume),
+            Control::Rate(rate) => entry.asked.rate = Some(rate),
         }
         entry.player
     };
@@ -200,6 +205,7 @@ fn fall_back(video: u64, native_id: u64, entry: &Entry) -> Option<State> {
     let asked = entry.asked;
     let mut replay = vec![Control::Looping(asked.looping), Control::Muted(asked.muted)];
     replay.extend(asked.volume.map(Control::Volume));
+    replay.extend(asked.rate.map(Control::Rate));
     replay.extend(asked.seek.map(Control::Seek));
     if asked.playing {
         replay.push(Control::Play);

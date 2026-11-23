@@ -292,6 +292,9 @@ pub struct WindowOptions {
     pub title: String,
     pub size: WindowSize,
     pub state: WindowState,
+    /// Kept above every other window, as a floating video is (K-1358).
+    /// Systems without window levels (phones, a tab) ignore it.
+    pub on_top: bool,
 }
 
 impl WindowOptions {
@@ -304,7 +307,14 @@ impl WindowOptions {
             title,
             size,
             state: WindowState::Normal,
+            on_top: false,
         })
+    }
+
+    /// The same request, kept above every other window.
+    pub fn on_top(mut self) -> Self {
+        self.on_top = true;
+        self
     }
 }
 
@@ -1002,6 +1012,37 @@ pub enum UiEvent {
         window: WindowId,
         over: bool,
     },
+}
+
+impl UiEvent {
+    /// The window this event is about, when it is about one.
+    pub fn window(&self) -> Option<WindowId> {
+        match self {
+            Self::WindowCreated(id)
+            | Self::WindowShown(id)
+            | Self::WindowClosed(id)
+            | Self::WindowCloseRequested(id)
+            | Self::RedrawRequested(id) => Some(*id),
+            Self::NativeWindowAttached { id, .. }
+            | Self::NativeWindowDetached { id, .. }
+            | Self::WindowFocused { id, .. }
+            | Self::ScaleChanged { id, .. }
+            | Self::Resized { id, .. }
+            | Self::TitleChanged { id, .. } => Some(*id),
+            Self::WidgetRootSet { window, .. }
+            | Self::WidgetUpdated { window, .. }
+            | Self::WidgetRemoved { window, .. }
+            | Self::FocusChanged { window, .. }
+            | Self::FileDropped { window, .. }
+            | Self::FileHovering { window, .. } => Some(*window),
+            Self::Pointer(event) => Some(event.window),
+            Self::Wheel(event) => Some(event.window),
+            Self::Key(event) => Some(event.window),
+            Self::TextInput(event) => Some(event.window),
+            Self::TextChanged(event) => Some(event.window),
+            Self::ThemeChanged { .. } => None,
+        }
+    }
 }
 
 /// Summary from one non-blocking host event-loop tick.

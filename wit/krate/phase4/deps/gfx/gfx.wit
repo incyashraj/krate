@@ -711,6 +711,28 @@ interface video {
   /// default); outside that it is clamped. Muting silences it whatever the
   /// volume, and unmuting brings this volume back.
   set-volume: func(video: u64, volume: f32) -> result<_, gfx-error>;
+  /// How fast it plays: 1.0 as recorded (the default), 0.5 half speed, 2.0
+  /// twice as fast, from 0.25 to 4.0; outside that it is clamped. The sound
+  /// keeps its pitch on every system. `position-millis` moves at this rate,
+  /// and a paused video keeps the rate for when it plays.
+  set-rate: func(video: u64, rate: f32) -> result<_, gfx-error>;
+  /// Float it in a small window of its own, kept above every other window
+  /// (picture in picture), so it keeps playing while the person works in
+  /// another app. It plays on as it was; the app's own `draw` still works.
+  /// A Mac, Windows and Linux open a Krate window that shows only the
+  /// picture, at the picture's shape, which the person moves, resizes and
+  /// closes like any window. A browser tab uses the browser's own picture
+  /// in picture, which most browsers allow only from a tap or a click. An
+  /// iPhone and an Android phone answer `unsupported` for now. Call it from
+  /// a button the person pressed.
+  start-floating: func(video: u64) -> result<_, gfx-error>;
+  /// Bring a floating video back: its window closes.
+  stop-floating: func(video: u64);
+  /// True while it floats. When the person closes the floating window it
+  /// turns false -- on a computer the app is also sent `redraw-requested`,
+  /// so a waiting app wakes -- and the app shows the video in its own
+  /// layout again.
+  floating: func(video: u64) -> bool;
   /// Where it is and what it is doing.
   state: func(video: u64) -> result<video-state, gfx-error>;
   /// Draw the current frame into `area` of a canvas, stretched to fill it.

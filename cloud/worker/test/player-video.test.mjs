@@ -74,8 +74,13 @@ test("a video the app did not open is not its to control, and a volume must be a
   refused(() => w.video.setVolume(v, NaN), "unsupported");
   w.video.setMuted(v, true);
   w.video.seek(v, 1500n);
+  w.video.setRate(v, 2);
+  w.video.setRate(v, 0.1);
+  refused(() => w.video.setRate(v, Infinity), "unsupported");
   const controls = w.calls.filter((c) => c.op === "video.control").map((c) => [c.args.kind, c.args.value]);
-  assert.deepStrictEqual(controls, [["volume", 0.25], ["volume", 1], ["muted", true], ["seek", 1500]]);
+  assert.deepStrictEqual(controls, [
+    ["volume", 0.25], ["volume", 1], ["muted", true], ["seek", 1500], ["rate", 2], ["rate", 0.25],
+  ]);
 });
 
 test("a picture is kept once and drawn by handle until a newer one comes", () => {
@@ -110,6 +115,28 @@ test("a picture is kept once and drawn by handle until a newer one comes", () =>
   w.video.close(v);
   assert.deepStrictEqual(w.canvas.at(-1), ["forget", 9n, 2n]);
   refused(() => w.video.draw(9n, v, AREA), "invalid-target");
+});
+
+test("floating asks the page, and a video the app did not open never floats", () => {
+  const w = worker({
+    answer: (op) => {
+      if (op === "video.open") return { json: { ok: "4" } };
+      if (op === "video.floating") return { json: { ok: true } };
+      return { json: { ok: null } };
+    },
+  });
+  assert.strictEqual(w.video.floating(4n), false);
+  refused(() => w.video.startFloating(4n), "invalid-target");
+  w.video.stopFloating(4n);
+  assert.deepStrictEqual(w.calls, [], "nothing reached the page for a video not opened");
+  const v = w.video.open("clips/a.mp4");
+  w.video.startFloating(v);
+  assert.strictEqual(w.video.floating(v), true);
+  w.video.stopFloating(v);
+  assert.deepStrictEqual(
+    w.calls.filter((c) => c.op === "video.float").map((c) => c.args.on),
+    [true, false],
+  );
 });
 
 test("before its first picture a video draws nothing", () => {

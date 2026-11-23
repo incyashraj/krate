@@ -29,7 +29,7 @@ use krate_adapter_common::ui::ImagePixels;
 use crate::video::{Control, Source, State};
 use clock::Clock;
 use picture::{Found, Frame, Picture};
-use sound::{Resampler, Sound, Speaker};
+use sound::{Resampler, Sound, Speaker, Stretch};
 
 /// Most portable videos open at once, across every app: each holds a
 /// thread, a decoder and a sound output.
@@ -224,6 +224,10 @@ struct Player {
     picture_done: bool,
     sound: Option<Sound>,
     resampler: Option<Resampler>,
+    /// The sound at the playback rate, pitch kept (K-1357).
+    stretch: Option<Stretch>,
+    /// The playback rate, 0.25 to 4.0.
+    speed: f64,
     speaker: Option<Speaker>,
     sound_done: bool,
     clock: Clock,
@@ -309,6 +313,8 @@ fn load(source: &Source, output: Output) -> Result<(Player, String), String> {
             looping: false,
             muted: false,
             volume: 1.0,
+            stretch: None,
+            speed: 1.0,
             ended: false,
             shown_once: false,
             dropped: 0,
@@ -352,17 +358,7 @@ impl Player {
         } else {
             millis.max(0.0)
         };
-        if let Some(speaker) = &self.speaker {
-            speaker.set_running(false);
-            speaker.clear();
-        }
-        if let Some(sound) = &mut self.sound {
-            sound.seek(millis)?;
-            self.sound_done = false;
-        }
-        if let Some(resampler) = &mut self.resampler {
-            resampler.reset();
-        }
+        self.restart_sound(millis)?;
         let (played, now) = (self.played(), Instant::now());
         if let (Some(speaker), Some(_), false) =
             (&self.speaker, &self.sound, self.clock.follows_sound())
@@ -393,12 +389,58 @@ impl Player {
         Ok(shown)
     }
 
+    /// Start the sound again at `millis`: what is queued for the speakers
+    /// was made for the old place (or the old rate) and is dropped.
+    fn restart_sound(&mut self, millis: f64) -> Result<(), String> {
+        if let Some(speaker) = &self.speaker {
+            speaker.set_running(false);
+            speaker.clear();
+        }
+        if let Some(sound) = &mut self.sound {
+            sound.seek(millis)?;
+            self.sound_done = false;
+        }
+        if let Some(resampler) = &mut self.resampler {
+            resampler.reset();
+        }
+        if let Some(stretch) = &mut self.stretch {
+            stretch.reset();
+        }
+        Ok(())
+    }
+
+    /// Play at `speed` from where it is now (K-1357).
+    fn set_rate(&mut self, speed: f64) -> Result<(), String> {
+        let speed = speed.clamp(0.25, 4.0);
+        let (played, now) = (self.played(), Instant::now());
+        let at = self.clock.millis(played, now);
+        self.speed = speed;
+        self.stretch = None;
+        if self.speaker.is_some() && self.sound.is_some() {
+            // The queued sound was stretched for the old rate: start the
+            // sound again here, at the new one.
+            self.restart_sound(at)?;
+            let played = self.played();
+            if let (Some(speaker), false) = (&self.speaker, self.clock.follows_sound()) {
+                self.clock.follow_sound(speaker.rate, played, now);
+            }
+            self.clock.set(at, played, now);
+            if let Some(speaker) = &self.speaker {
+                speaker.set_running(self.clock.running());
+            }
+        }
+        let played = self.played();
+        self.clock.set_speed(speed, played, now);
+        Ok(())
+    }
+
     /// Keep the speakers fed.
     fn feed(&mut self) -> Result<(), String> {
         let (Some(sound), Some(speaker)) = (&mut self.sound, &self.speaker) else {
             return Ok(());
         };
         let mut out = Vec::new();
+        let mut stretched = Vec::new();
         for _ in 0..32 {
             if self.sound_done || speaker.queued_millis() >= SOUND_AHEAD_MILLIS {
                 break;
@@ -418,7 +460,15 @@ impl Player {
                     };
                     out.clear();
                     resampler.push(&chunk.samples, &mut out);
-                    speaker.push(&out);
+                    let stretch = match &mut self.stretch {
+                        Some(stretch) if stretch.speed() == self.speed => stretch,
+                        slot => {
+                            slot.insert(Stretch::new(speaker.rate, speaker.channels, self.speed))
+                        }
+                    };
+                    stretched.clear();
+                    stretch.push(&out, &mut stretched);
+                    speaker.push(&stretched);
                 }
                 None => self.sound_done = true,
             }
@@ -505,6 +555,11 @@ fn play(shared: &Shared, source: &Source, output: Output) {
                 Control::Muted(muted) => {
                     player.muted = muted;
                     player.apply_gain();
+                }
+                Control::Rate(rate) => {
+                    if let Err(problem) = player.set_rate(f64::from(rate)) {
+                        publish(&mut |inner| inner.state.problem = problem.clone());
+                    }
                 }
                 Control::Volume(volume) => {
                     player.volume = volume.clamp(0.0, 1.0);
@@ -683,6 +738,19 @@ mod tests {
             "kept to the clock: {at} ms at {wall} ms"
         );
         assert!(frames >= 8, "frames advance: {frames} in 400 ms at 30 fps");
+
+        // Twice as fast: the clock moves twice as far (K-1357).
+        control(video, Control::Rate(2.0)).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        let (from, wall) = (state(video).unwrap().position_millis, Instant::now());
+        std::thread::sleep(Duration::from_millis(150));
+        let moved = state(video).unwrap().position_millis.saturating_sub(from) as f64;
+        let real = wall.elapsed().as_millis() as f64;
+        assert!(
+            (moved / real - 2.0).abs() < 0.35,
+            "{moved} ms in {real} ms at 2x"
+        );
+        control(video, Control::Rate(1.0)).unwrap();
 
         control(video, Control::Pause).unwrap();
         assert!(!state(video).unwrap().playing, "paused at once");

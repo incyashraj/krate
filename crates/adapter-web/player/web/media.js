@@ -153,6 +153,12 @@ export function pageVideo({ bundle, report }) {
         case 'looping': v.looping = !!value; break;
         case 'muted': el.muted = !!value; break;
         case 'volume': el.volume = Math.min(1, Math.max(0, Number(value))); break;
+        // K-1357: the browser keeps the pitch (preservesPitch is its default).
+        case 'rate':
+          el.preservesPitch = true;
+          el.playbackRate = Math.min(4, Math.max(0.25, Number(value)));
+          el.defaultPlaybackRate = el.playbackRate;
+          break;
         default: return no('platform', `no ${kind}`);
       }
       return ok();
@@ -202,6 +208,32 @@ export function pageVideo({ bundle, report }) {
       v.lastTime = el.currentTime;
       state.frames += 1;
       return { json: { ok: { width: w, height: h } }, body: new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength) };
+    },
+    // K-1358: the browser's own picture in picture, where it has one. Most
+    // browsers start it only inside a tap or a click; the app calls this
+    // from a button, and the call arrives within that click's grace.
+    'video.float': async ({ id, on }) => {
+      const v = video(id);
+      if (!v) return no('invalid-target');
+      if (!on) {
+        if (document.pictureInPictureElement === v.el) await document.exitPictureInPicture().catch(() => {});
+        return ok();
+      }
+      if (!document.pictureInPictureEnabled || typeof v.el.requestPictureInPicture !== 'function') {
+        return no('unsupported', 'this browser cannot float a video; it floats in Krate on a computer');
+      }
+      try {
+        await v.el.requestPictureInPicture();
+        return ok();
+      } catch (e) {
+        return no('unsupported', e && e.name === 'NotAllowedError'
+          ? 'the browser floats a video only from a tap or a click: call it from a button'
+          : `the browser could not float this video: ${(e && e.message) || e}`);
+      }
+    },
+    'video.floating': ({ id }) => {
+      const v = video(id);
+      return ok(Boolean(v && document.pictureInPictureElement === v.el));
     },
     'video.close': ({ id }) => {
       const v = video(id);

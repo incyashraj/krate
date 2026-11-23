@@ -7,7 +7,7 @@
 //                                          then one line and exit:
 //                                          `video:ready=yes duration=8000
 //                                          size=960x540 moved=yes frames=N
-//                                          volume=ok`
+//                                          volume=ok rate=ok float=ok`
 //                                          or `video:problem=<why>`
 #![no_std]
 extern crate alloc;
@@ -210,9 +210,15 @@ fn quick(canvas: u64, source: &str) -> i32 {
     let _ = video::set_muted(v, true);
     // K-1351: a volume is taken, and one that is not a number is refused.
     let volume = video::set_volume(v, 0.5).is_ok() && video::set_volume(v, f32::NAN).is_err();
+    // K-1358: it floats in a window of its own while it plays.
+    let floated = video::start_floating(v);
     let _ = video::play(v);
     let mut frames = 0u32;
     let mut first = None;
+    let mut fast: Option<(u64, u32)> = None;
+    let mut rate_ok = false;
+    let mut fast_last: Option<(u64, u32)> = None;
+    let mut step = 0u32;
     let mut last = video::state(v);
     // About three seconds, drawing as an app would. Nothing is presented
     // until the video plays, so `--shoot` captures a real frame of it.
@@ -230,19 +236,50 @@ fn quick(canvas: u64, source: &str) -> i32 {
             if s.ready && first.is_none() {
                 first = Some(s.position_millis);
             }
+            // K-1357: from the first second on, twice as fast.
+            if s.position_millis >= 1000 && fast.is_none() {
+                rate_ok = video::set_rate(v, 2.0).is_ok() && video::set_rate(v, f32::NAN).is_err();
+                fast = Some((s.position_millis, step));
+            }
+            // The last moment it was still playing: a short clip ends at
+            // 2x, and the clock stands still after that.
+            if fast.is_some() && s.playing && !s.ended {
+                fast_last = Some((s.position_millis, step));
+            }
         }
+        step += 1;
         let _ = events::wait(Some(33));
     }
+    // ... and comes back.
+    let float = match floated {
+        Ok(()) if video::floating(v) => {
+            video::stop_floating(v);
+            if video::floating(v) { "stuck" } else { "ok" }
+        }
+        Ok(()) => "no",
+        Err(gfx::GfxError::Unsupported(_)) => "unsupported",
+        Err(_) => "error",
+    };
     match last {
         Ok(s) if !s.problem.is_empty() => say(&format!("video:problem={}", s.problem)),
         Ok(s) => say(&format!(
-            "video:ready={} duration={} size={}x{} moved={} frames={frames} volume={}",
+            "video:ready={} duration={} size={}x{} moved={} frames={frames} volume={} rate={} float={float}",
             if s.ready { "yes" } else { "no" },
             s.duration_millis,
             s.width,
             s.height,
             if first.is_some_and(|f| s.position_millis > f + 1000) { "yes" } else { "no" },
             if volume { "ok" } else { "no" },
+            // At 2x the clock moves about twice the 33 ms a turn the loop
+            // waits; anything over 1.5x is the rate working.
+            match (fast, fast_last) {
+                (Some((at, from)), Some((to, until))) if rate_ok && until > from + 5 => {
+                    let real = u64::from(until - from) * 33;
+                    let moved = to.saturating_sub(at);
+                    if moved * 2 > real * 3 { "ok" } else { "slow" }
+                }
+                _ => "no",
+            },
         )),
         Err(e) => say(&format!("video:problem={e:?}")),
     }

@@ -15285,11 +15285,13 @@ fn an_app_plays_a_video_from_its_assets() {
     // Every computer plays it: AVFoundation on a Mac, the portable player
     // on Windows and Linux (K-1348), whose length is the longer of the
     // picture and the AAC sound, which ends on a whole packet (4000-4030).
+    // It takes a volume (K-1351), plays twice as fast from its first second
+    // (K-1357), and floats in a window of its own while it plays (K-1358).
     let plays = |out: &str| {
         out.lines().any(|l| {
             l.starts_with("video:ready=yes duration=40")
                 && l.contains(" size=320x180 moved=yes")
-                && l.ends_with(" volume=ok")
+                && l.ends_with(" volume=ok rate=ok float=ok")
         })
     };
     let played = run(&app("with", true));

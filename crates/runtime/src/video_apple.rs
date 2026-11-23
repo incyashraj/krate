@@ -34,6 +34,11 @@ struct Player {
     item: Retained<AVPlayerItem>,
     output: Retained<AVPlayerItemVideoOutput>,
     looping: bool,
+    /// How fast it plays when it plays (K-1357). AVPlayer's own rate is 0
+    /// while paused, so the asked rate is kept here; the item's default
+    /// time-pitch algorithm (time domain since macOS 12 and iOS 15) keeps
+    /// the pitch.
+    rate: f32,
 }
 
 thread_local! {
@@ -176,6 +181,7 @@ pub(crate) fn open(source: Source) -> Result<u64, String> {
                 item,
                 output,
                 looping: false,
+                rate: 1.0,
             }
         };
         PLAYERS.with(|players| players.borrow_mut().insert(video, player));
@@ -198,7 +204,8 @@ pub(crate) fn control(video: u64, control: Control) -> Result<(), String> {
                                 zero(),
                             );
                         }
-                        player.player.play();
+                        // setRate is play at that rate.
+                        player.player.setRate(player.rate);
                     }
                     Control::Pause => player.player.pause(),
                     Control::Seek(millis) => player
@@ -207,6 +214,12 @@ pub(crate) fn control(video: u64, control: Control) -> Result<(), String> {
                     Control::Looping(looping) => player.looping = looping,
                     Control::Muted(muted) => player.player.setMuted(muted),
                     Control::Volume(volume) => player.player.setVolume(volume.clamp(0.0, 1.0)),
+                    Control::Rate(rate) => {
+                        player.rate = rate.clamp(0.25, 4.0);
+                        if player.player.timeControlStatus() != AVPlayerTimeControlStatus::Paused {
+                            player.player.setRate(player.rate);
+                        }
+                    }
                 }
             }
         })

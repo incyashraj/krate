@@ -1630,6 +1630,40 @@ pub mod gfx {
             crate::bindings::krate::gfx::video::set_volume(video, volume)
         }
 
+        /// How fast it plays: 1.0 as recorded (the default), 0.5 half speed, 2.0
+        /// twice as fast, from 0.25 to 4.0; outside that it is clamped. The sound
+        /// keeps its pitch on every system. `position-millis` moves at this rate,
+        /// and a paused video keeps the rate for when it plays.
+        pub fn set_rate(video: u64, rate: f32) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::video::set_rate(video, rate)
+        }
+
+        /// Float it in a small window of its own, kept above every other window
+        /// (picture in picture), so it keeps playing while the person works in
+        /// another app. It plays on as it was; the app's own `draw` still works.
+        /// A Mac, Windows and Linux open a Krate window that shows only the
+        /// picture, at the picture's shape, which the person moves, resizes and
+        /// closes like any window. A browser tab uses the browser's own picture
+        /// in picture, which most browsers allow only from a tap or a click. An
+        /// iPhone and an Android phone answer `unsupported` for now. Call it from
+        /// a button the person pressed.
+        pub fn start_floating(video: u64) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::video::start_floating(video)
+        }
+
+        /// Bring a floating video back: its window closes.
+        pub fn stop_floating(video: u64) {
+            crate::bindings::krate::gfx::video::stop_floating(video)
+        }
+
+        /// True while it floats. When the person closes the floating window it
+        /// turns false -- on a computer the app is also sent `redraw-requested`,
+        /// so a waiting app wakes -- and the app shows the video in its own
+        /// layout again.
+        pub fn floating(video: u64) -> bool {
+            crate::bindings::krate::gfx::video::floating(video)
+        }
+
         /// Where it is and what it is doing.
         pub fn state(video: u64) -> Result<VideoState, GfxError> {
             crate::bindings::krate::gfx::video::state(video)

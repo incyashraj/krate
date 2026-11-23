@@ -89,6 +89,8 @@ mod real {
         krate: WindowId,
         title: String,
         size: WindowSize,
+        /// Above every other window (K-1358).
+        on_top: bool,
     }
 
     struct TrackedWindow {
@@ -263,7 +265,7 @@ mod real {
         fn drain_pending_creates(&mut self, event_loop: &ActiveEventLoop) {
             for pending in self.pending_creates.drain(..) {
                 let attributes = WindowAttributes::default()
-                    .with_title(pending.title)
+                    .with_title(pending.title.clone())
                     // Out of screenshots and screen sharing when the
                     // organisation says so for this app (G17); Windows
                     // honours it, X11 cannot.
@@ -300,7 +302,13 @@ mod real {
                     // `show` still works and is still the way to reveal a
                     // window deliberately; it is simply no longer required to
                     // see anything at all.
-                    .with_visible(true);
+                    .with_visible(true)
+                    // A floating video stays above every other window (K-1358).
+                    .with_window_level(if pending.on_top {
+                        winit::window::WindowLevel::AlwaysOnTop
+                    } else {
+                        winit::window::WindowLevel::Normal
+                    });
                 if let Ok(window) = event_loop.create_window(attributes) {
                     // Windows will happily create a window BIGGER THAN THE
                     // SCREEN. A chess app asked for 1280x840 logical on a
@@ -1063,12 +1071,14 @@ mod real {
         krate: WindowId,
         title: &str,
         size: WindowSize,
+        on_top: bool,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         with_host(|host| {
             host.app.pending_creates.push(PendingCreate {
                 krate,
                 title: title.to_string(),
                 size,
+                on_top,
             });
             pump(host);
 
@@ -1392,6 +1402,7 @@ mod stub {
         _krate: WindowId,
         _title: &str,
         _size: WindowSize,
+        _on_top: bool,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         unsupported()
     }

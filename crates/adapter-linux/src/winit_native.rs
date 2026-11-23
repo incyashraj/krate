@@ -86,6 +86,8 @@ mod real {
         krate: WindowId,
         title: String,
         size: WindowSize,
+        /// Above every other window (K-1358).
+        on_top: bool,
     }
 
     struct TrackedWindow {
@@ -253,6 +255,10 @@ mod real {
                 }
                 if let Some(icon) = window_icon_from_env() {
                     attributes = attributes.with_window_icon(Some(icon));
+                }
+                if pending.on_top {
+                    attributes =
+                        attributes.with_window_level(winit::window::WindowLevel::AlwaysOnTop);
                 }
                 if let Ok(window) = event_loop.create_window(attributes) {
                     // A window bigger than the screen can be created without
@@ -1056,12 +1062,14 @@ mod real {
         krate: WindowId,
         title: &str,
         size: WindowSize,
+        on_top: bool,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         with_host(|host| {
             host.app.pending_creates.push(PendingCreate {
                 krate,
                 title: title.to_string(),
                 size,
+                on_top,
             });
             pump(host);
 
@@ -1415,6 +1423,7 @@ mod stub {
         _krate: WindowId,
         _title: &str,
         _size: WindowSize,
+        _on_top: bool,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         unsupported()
     }

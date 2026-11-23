@@ -429,7 +429,7 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
         let id = WindowAdapter::create_window(&self.headless, options.clone())?;
         let (raw_handle, snapshot) =
-            winit_native::create_native_window(id, &options.title, options.size)?;
+            winit_native::create_native_window(id, &options.title, options.size, options.on_top)?;
         self.attach_winit_session(id, raw_handle, snapshot)?;
         Ok(id)
     }

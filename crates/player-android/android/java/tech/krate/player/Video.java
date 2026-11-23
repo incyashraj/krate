@@ -35,6 +35,8 @@ final class Video {
         boolean muted;
         /** How loud, 0 to 1 (K-1351); muted wins. */
         float volume = 1f;
+        /** How fast, 0.25 to 4 (K-1357); applied whenever it plays. */
+        float rate = 1f;
         long seekWanted = -1;
         String problem = "";
         byte[] latest;
@@ -144,6 +146,7 @@ final class Video {
                     }
                     if (play) {
                         mp.start();
+                        applyRate(mp, p);
                     }
                     Log.i(KrateActivity.TAG, "video: ready, " + mp.getDuration() + " ms, "
                             + p.width + "x" + p.height);
@@ -211,6 +214,10 @@ final class Video {
                         case 3:
                             p.looping = value != 0;
                             break;
+                        case 6:
+                            // Thousandths, 250 to 4000.
+                            p.rate = Math.max(0.25f, Math.min(4f, value / 1000f));
+                            break;
                         case 5:
                             // Thousandths, 0 to 1000.
                             p.volume = Math.max(0f, Math.min(1f, value / 1000f));
@@ -233,6 +240,7 @@ final class Video {
                                 p.ended = false;
                             }
                             p.media.start();
+                            applyRate(p.media, p);
                             break;
                         case 1:
                             p.media.pause();
@@ -249,6 +257,13 @@ final class Video {
                             }
                             p.media.setLooping(value != 0);
                             break;
+                        case 6:
+                            // Setting a speed starts a paused player, so a
+                            // paused one keeps it for its next start.
+                            if (p.media.isPlaying()) {
+                                applyRate(p.media, p);
+                            }
+                            break;
                         default:
                             float v;
                             synchronized (p) {
@@ -263,6 +278,19 @@ final class Video {
             }
         });
         return null;
+    }
+
+    /** Play at the asked rate with the pitch kept (K-1357). */
+    private static void applyRate(MediaPlayer mp, Player p) {
+        float rate;
+        synchronized (p) {
+            rate = p.rate;
+        }
+        try {
+            mp.setPlaybackParams(mp.getPlaybackParams().setSpeed(rate).setPitch(1f));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            Log.w(KrateActivity.TAG, "video: rate " + rate + " refused: " + e);
+        }
     }
 
     /** {position, duration, width, height, ready, playing, ended}; null for no such video. */

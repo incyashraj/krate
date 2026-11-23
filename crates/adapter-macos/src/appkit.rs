@@ -3146,6 +3146,10 @@ mod platform {
         // Without this AppKit sends no movement at all, only presses: an app
         // could never know where the pointer is until it clicked (IC-909).
         window.setAcceptsMouseMovedEvents(true);
+        // A floating video stays above every other window (K-1358).
+        if options.on_top {
+            window.setLevel(3); // NSFloatingWindowLevel
+        }
         window
     }
 

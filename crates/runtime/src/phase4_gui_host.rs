@@ -533,6 +533,53 @@ impl crate::phase4_gui_bindings::krate::gfx::video::Host for Phase3GuiHost {
         Ok(self.control_video(video, crate::video::Control::Volume(volume.clamp(0.0, 1.0))))
     }
 
+    fn start_floating(
+        &mut self,
+        video: u64,
+    ) -> wasmtime::Result<Result<(), gfx3::types::GfxError>> {
+        if !self.videos.borrow().owns(video) {
+            return Ok(Err(gfx3::types::GfxError::InvalidTarget));
+        }
+        // K-1358: Krate's own always-on-top window on a computer; a phone
+        // has no second window to give it.
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            return Ok(Err(gfx3::types::GfxError::Unsupported(
+                "a video floats in a window of its own on a computer; on a phone it plays in the app"
+                    .to_string(),
+            )));
+        }
+        let (width, height) = self
+            .video_state_now(video)
+            .map(|state| (state.width, state.height))
+            .unwrap_or((0, 0));
+        Ok(self.start_floating(video, width, height))
+    }
+
+    fn stop_floating(&mut self, video: u64) -> wasmtime::Result<()> {
+        if self.videos.borrow().owns(video) {
+            Phase3GuiHost::stop_floating(self, video);
+        }
+        Ok(())
+    }
+
+    fn floating(&mut self, video: u64) -> wasmtime::Result<bool> {
+        Ok(self.videos.borrow().owns(video) && self.is_floating(video))
+    }
+
+    fn set_rate(
+        &mut self,
+        video: u64,
+        rate: f32,
+    ) -> wasmtime::Result<Result<(), gfx3::types::GfxError>> {
+        // K-1357: 0.25 to 4.0, clamped; a rate that is not a number is not one.
+        if !rate.is_finite() {
+            return Ok(Err(gfx3::types::GfxError::Unsupported(
+                "a rate is a number from 0.25 to 4.0".to_string(),
+            )));
+        }
+        Ok(self.control_video(video, crate::video::Control::Rate(rate.clamp(0.25, 4.0))))
+    }
+
     fn state(
         &mut self,
         video: u64,
@@ -579,6 +626,9 @@ impl crate::phase4_gui_bindings::krate::gfx::video::Host for Phase3GuiHost {
     }
 
     fn close(&mut self, video: u64) -> wasmtime::Result<()> {
+        if self.videos.borrow().owns(video) {
+            Phase3GuiHost::stop_floating(self, video);
+        }
         if self.videos.borrow_mut().remove(video) {
             crate::video::close(video);
             self.video_frames.borrow_mut().remove(&video);
