@@ -14,6 +14,7 @@ mod disk;
 mod editor;
 mod look;
 mod media;
+mod pdftext;
 mod views;
 mod widgets;
 mod windows;
@@ -119,6 +120,8 @@ enum Drag {
     },
     /// Dragging a player's scrubber, in a group.
     Scrub(usize),
+    /// Selecting a PDF's text, in a group.
+    PdfSel(usize),
     /// A board card being carried to another column.
     Card {
         row: usize,
@@ -3555,6 +3558,7 @@ impl Ui {
             }
             Drag::Graph { .. } | Drag::Slider(_) | Drag::Canvas { .. } => self.view_drag(px, py),
             Drag::Scrub(p) => self.file_drag(p, px),
+            Drag::PdfSel(p) => self.pdf_drag(p, px, py),
             Drag::None => {}
         }
     }
@@ -4375,6 +4379,19 @@ impl krate::Guest for Component {
                 }
             }
         }
+        // `pdfsel=<page>,<from>,<to>`: words selected in the PDF tab, for a
+        // headless picture (a check task cannot drag across them).
+        if let Some(v) = arg(&raw, "pdfsel") {
+            let n: Vec<usize> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            if let (Some((_, path)), [p, a, b]) = (ui.pdf_in_focus(), n.as_slice()) {
+                ui.files.sel = Some(pdftext::Sel {
+                    path,
+                    a: (*p as u32, *a),
+                    b: (*p as u32, *b),
+                    shown: true,
+                });
+            }
+        }
         // `view=<name>`: a base tab shows its view of that name.
         if let Some(name) = arg(&raw, "view") {
             if let Some(View::Base(b)) = ui.app.view_mut() {
@@ -4498,11 +4515,24 @@ impl krate::Guest for Component {
                         if k.key == "Space" {
                             ui.drop_text = Some(' ');
                         }
+                        // The letter of a Cmd chord comes as text too: drop it.
+                        let m = mods(k.modifiers);
+                        if m.primary && k.key.chars().count() == 1 {
+                            ui.drop_text = k.key.chars().next().map(|c| c.to_ascii_lowercase());
+                        }
                         ui.after_input();
                         changed = true;
                     }
-                    types::Event::TextInput(s) if ui.files.page_edit.is_some() => {
-                        ui.file_text(&s);
+                    types::Event::TextInput(s)
+                        if ui.files.page_edit.is_some() || ui.files.find.is_some() =>
+                    {
+                        let drop = ui.drop_text.take();
+                        let chord = drop.is_some_and(|d| {
+                            s.chars().count() == 1 && s.to_lowercase().starts_with(d)
+                        });
+                        if !chord {
+                            ui.file_text(&s);
+                        }
                         changed = true;
                     }
                     types::Event::Key(k) => {

@@ -55,6 +55,12 @@ pub enum FileCtl {
     Full,
     /// An item of the player's three-dots menu.
     MenuItem(u8),
+    /// A PDF's pages: select text.
+    Pages,
+    /// The PDF find bar's buttons.
+    FindPrev,
+    FindNext,
+    FindClose,
 }
 
 /// The player's three-dots menu, as Chromium lists it in the notes app: a
@@ -95,6 +101,8 @@ struct Doc {
     thumb_scroll: f32,
     /// How far across a page wider than the view is scrolled.
     across: f32,
+    /// Each page's words, read when first needed (src/guest/pdftext.rs).
+    words: Vec<Option<Vec<super::pdftext::Word>>>,
 }
 
 struct Page {
@@ -136,6 +144,14 @@ pub struct Files {
     /// The three-dots menu open on a player: its group ([`FULL`] for the
     /// full-screen one).
     pub menu: Option<usize>,
+    /// A PDF's selected text and its find bar (src/guest/pdftext.rs).
+    pub sel: Option<super::pdftext::Sel>,
+    pub find: Option<super::pdftext::Find>,
+    /// The PDF pages drawn this frame: group, page, box, pixels a point.
+    pub drawn: Vec<(usize, u32, Rect, f32)>,
+    /// When and where the last press on a PDF's pages was.
+    pub last_press: (u64, f32, f32),
+    pub selecting: bool,
 }
 
 pub use crate::popout::is_sound;
@@ -279,6 +295,7 @@ impl Files {
             }
             Ok(d)
         });
+        let n_pages = sizes.len();
         self.docs.push(Doc {
             path: String::from(path),
             generation,
@@ -288,8 +305,39 @@ impl Files {
             used: now,
             thumb_scroll: 0.0,
             across: 0.0,
+            words: alloc::vec![None; n_pages],
         });
         self.docs.len() - 1
+    }
+
+    pub(super) fn doc_index(&self, path: &str) -> Option<usize> {
+        self.docs.iter().position(|d| d.path == path)
+    }
+
+    pub(super) fn words_of(
+        &self,
+        d: usize,
+        page: u32,
+    ) -> Option<&Option<Vec<super::pdftext::Word>>> {
+        self.docs.get(d)?.words.get(page as usize)
+    }
+
+    pub(super) fn set_words(&mut self, d: usize, page: u32, w: Vec<super::pdftext::Word>) {
+        if let Some(slot) = self
+            .docs
+            .get_mut(d)
+            .and_then(|x| x.words.get_mut(page as usize))
+        {
+            *slot = Some(w);
+        }
+    }
+
+    pub(super) fn doc_handle(&self, d: usize) -> Option<u64> {
+        self.docs.get(d)?.doc.as_ref().ok().copied()
+    }
+
+    pub(super) fn page_count(&self, d: usize) -> usize {
+        self.docs.get(d).map_or(0, |x| x.sizes.len())
     }
 
     fn forget_doc(&mut self, d: Doc) {
@@ -352,6 +400,7 @@ impl Ui {
 
     /// Before a frame: close players whose tab is gone.
     pub(super) fn files_sweep(&mut self) {
+        self.files.drawn.clear();
         self.files.frame += 1;
         self.files.pending = false;
         let open: Vec<String> = self
@@ -495,12 +544,15 @@ impl Ui {
 
         // The pages' area, and the thumbnails beside it.
         let side_w = if thumbs { 140.0 * k } else { 0.0 };
-        let body = r(
+        let full = r(
             a.x + side_w,
             bar.bottom() + 1.0,
             a.w - side_w,
             a.bottom() - bar.bottom() - 1.0,
         );
+        // The find bar sits on top of the pages, pushing them down.
+        let fh = self.draw_pdf_findbar(pane, path, full);
+        let body = r(full.x, full.y + fh, full.w, full.h - fh);
         self.view_areas.push((pane, r(a.x, body.y, a.w, body.h)));
         let px = px_per_pt(zoom, &sizes, body.w, body.h);
         let border = 4.0 * scale_of(px);
@@ -521,6 +573,12 @@ impl Ui {
         if let Some(n) = goto {
             let n = (n.max(1).min(count.max(1)) - 1) as usize;
             scroll = tops.get(n).map_or(0.0, |t| t - border);
+        }
+        // The current find match, brought a third of the way down.
+        if let Some((page, ypt)) = self.pdf_find_reveal(path) {
+            if let Some(top) = tops.get(page as usize) {
+                scroll = top + ypt * px - body.h * 0.3;
+            }
         }
         scroll = scroll.clamp(0.0, (total - body.h).max(0.0));
         self.files.docs[di].shown_px = px;
@@ -622,11 +680,12 @@ impl Ui {
             if let Some(img) = self.page_image(path, page, scale, false, &mut drew_one, di) {
                 let _ = canvas_images::draw(self.c, img, look::g(rc));
             }
+            self.pdf_marks(pane, path, page, rc, px);
             self.said.text(rc, &format!("Page {} of {}", i + 1, count));
         }
         let _ = canvas2d::clear_clip(self.c);
         if focused {
-            self.hit(body, Zone::Pane(pane));
+            self.hit(body, Zone::File(pane, FileCtl::Pages));
         }
 
         // The thumbnails.
@@ -1345,6 +1404,10 @@ impl Ui {
             FileCtl::PageBox => {
                 self.files.page_edit = Some((pane, String::new()));
             }
+            FileCtl::Pages => self.pdf_press(pane, &path, px, py),
+            FileCtl::FindPrev => self.pdf_find_step(true),
+            FileCtl::FindNext => self.pdf_find_step(false),
+            FileCtl::FindClose => self.files.find = None,
             FileCtl::Thumb(page) => {
                 if let Some(View::File(f)) = self.app.pane_view_mut(pane) {
                     f.goto = Some(page + 1);
@@ -1628,7 +1691,37 @@ impl Ui {
 
     /// A key while a PDF or player tab is in front. True when it was used.
     pub(super) fn file_key(&mut self, key: &str, m: crate::app::Mods) -> bool {
-        if self.app.overlay.is_some() || m.primary || m.ctrl || m.alt {
+        if self.app.overlay.is_some() {
+            return false;
+        }
+        // A PDF: Cmd+C copies the selected text, Cmd+F finds, and the find
+        // bar takes Enter, Escape and Backspace.
+        if let Some((pane, path)) = self.pdf_in_focus() {
+            if m.primary && !m.alt {
+                match key.to_ascii_lowercase().as_str() {
+                    "c" if self.files.sel.as_ref().is_some_and(|s| s.path == path) => {
+                        return self.pdf_copy();
+                    }
+                    "f" => {
+                        self.pdf_find_open(pane, &path);
+                        return true;
+                    }
+                    "g" => {
+                        self.pdf_find_step(m.shift);
+                        return self.files.find.is_some();
+                    }
+                    _ => {}
+                }
+            }
+            if !m.primary && self.pdf_find_key(key, m.shift) {
+                return true;
+            }
+            if key == "Escape" && self.files.sel.is_some() {
+                self.files.sel = None;
+                return true;
+            }
+        }
+        if m.primary || m.ctrl || m.alt {
             return false;
         }
         // The full-screen player: Escape leaves it, Space plays or pauses.
@@ -1717,6 +1810,9 @@ impl Ui {
 
     /// Typed text while the page number box is open.
     pub(super) fn file_text(&mut self, s: &str) -> bool {
+        if self.files.page_edit.is_none() {
+            return self.pdf_find_text(s);
+        }
         let Some((_, edit)) = self.files.page_edit.as_mut() else {
             return false;
         };
