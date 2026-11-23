@@ -700,7 +700,12 @@ async function allowedToBuild(token, device) {
     const res = await fetch(`${HUB}/me`, { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) return { ok: false, message: "That sign-in has expired. Sign in once more." };
     const me = await res.json();
-    if (me.plan && me.plan.active) return { ok: true, account: me.user.login || me.user.email };
+    // The desk's override. There are no paid plans (F-322), and /me stopped
+    // sending `plan` when they went, so this read nothing: "Lift free limits"
+    // lifted the hub's wall and never this one, and the founder's own
+    // account met the one-app wall here (2026-11-23). `limits_lifted` is
+    // what /me says now; `plan` stays for an older hub.
+    if (me.limits_lifted || (me.plan && me.plan.active)) return { ok: true, account: me.user.login || me.user.email };
 
     // Both keys, so a new account on the same machine does not reset the
     // allowance. The hub answers with the higher of the two.
@@ -752,7 +757,9 @@ async function allowedToBuild(token, device) {
       return { ok: true, account: me.user.login || me.user.email, byok: true };
     }
 
-    const BROWSER_FREE_BUILDS = 1;
+    // One, or the number of apps the desk gave this person (/me free_apps);
+    // the hub's case ledger holds the same number and keeps the money's end.
+    const BROWSER_FREE_BUILDS = Math.max(1, Math.floor(Number(me.free_apps) || 1));
     if (made >= BROWSER_FREE_BUILDS) {
       return {
         ok: false,
