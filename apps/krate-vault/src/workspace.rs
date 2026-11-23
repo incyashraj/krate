@@ -1354,10 +1354,10 @@ impl App {
         let (x, y) = (c.cam.0 - w * 0.5, c.cam.1 - hh * 0.5);
         let id = c.canvas.add(kind, x, y, w, hh, body, seed);
         c.selected = Some(id.clone());
-        if kind == CardKind::Text {
-            c.editing = Some((id, Input::default()));
-        }
         self.canvas_changed(before);
+        if kind == CardKind::Text {
+            self.canvas_live_start(&id);
+        }
     }
 
     pub(crate) fn canvas_add_note(&mut self, path: &str) {
@@ -1387,8 +1387,86 @@ impl App {
         self.canvas_changed(before);
     }
 
-    /// Finish typing into a text card.
+    /// Start editing a card in place, with the note editor: a text card's
+    /// Markdown, or a note card's note itself.
+    pub fn canvas_live_start(&mut self, id: &str) {
+        let Some(c) = self.canvas_mut() else {
+            return;
+        };
+        let Some(n) = c.canvas.card(id).cloned() else {
+            return;
+        };
+        let doc = match n.kind {
+            CardKind::Text => {
+                let mut path = String::from(CARD_DOC);
+                path.push_str(id);
+                Some(crate::editor::Doc::new(
+                    &path,
+                    "",
+                    n.text.as_deref().unwrap_or(""),
+                ))
+            }
+            CardKind::File => n.file.as_deref().and_then(|f| self.load(f)),
+            _ => None,
+        };
+        let Some(mut doc) = doc else {
+            return;
+        };
+        doc.mode = crate::editor::Mode::Live;
+        // The caret at the end, as a new card starts.
+        let last = doc.buf.line_count().saturating_sub(1);
+        doc.cur = crate::buffer::Pos::new(last, doc.buf.line(last).len());
+        if let Some(c) = self.canvas_mut() {
+            c.selected = Some(String::from(id));
+            c.editing = Some((String::from(id), Input::default()));
+        }
+        if let Some(t) = self.tab_mut() {
+            t.doc = Some(doc);
+        }
+        self.focus = Focus::Editor;
+    }
+
+    /// Finish editing a card: a text card keeps what was typed, a note
+    /// card's note is saved.
     pub fn canvas_commit(&mut self) {
+        let live = self.tab_mut().and_then(|t| t.doc.take());
+        if let Some(doc) = live {
+            if let Some(c) = self.canvas_mut() {
+                c.editing = None;
+            }
+            match doc.path.strip_prefix(CARD_DOC) {
+                Some(id) => {
+                    let id = String::from(id);
+                    let text = doc.text();
+                    let Some(c) = self.canvas_mut() else {
+                        return;
+                    };
+                    let before = c.canvas.to_text();
+                    let changed = match c.canvas.card_mut(&id) {
+                        Some(n) if n.text.as_deref() != Some(text.as_str()) => {
+                            n.text = Some(text);
+                            true
+                        }
+                        _ => false,
+                    };
+                    if changed {
+                        self.canvas_changed(before);
+                    }
+                }
+                None => {
+                    if doc.modified() {
+                        let text = doc.text();
+                        if let Some(v) = self.vault.as_mut() {
+                            match crate::app::write_note(v, &doc.path, &text) {
+                                Ok(()) => v.index_text(&doc.path, &text),
+                                Err(why) => self.say(&why),
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
         let Some(c) = self.canvas_mut() else {
             return;
         };
@@ -1481,6 +1559,10 @@ impl App {
 
     /// Typed text while a canvas card is being edited.
     pub(crate) fn canvas_text(&mut self, s: &str) -> bool {
+        // A card edited with the note editor takes text as a note does.
+        if self.doc().is_some() {
+            return false;
+        }
         match self.canvas_mut().and_then(|c| c.editing.as_mut()) {
             Some((_, inp)) => {
                 inp.cut_selection();
@@ -2313,6 +2395,9 @@ impl PageOf for Option<&Overlay> {
         }
     }
 }
+
+/// The made-up path of a text card being edited with the note editor.
+pub const CARD_DOC: &str = "\u{1}card/";
 
 #[cfg(test)]
 mod tests {

@@ -995,63 +995,81 @@ impl Ui {
                     if is_sel { (2.0 * z).max(1.5) } else { 1.0 },
                     if is_sel { t.accent } else { border },
                 );
-                // What the card shows.
+                // What the card shows: a text or note card through the
+                // note editor (src/guest/carddoc.rs), the others as lines.
                 let pad = 24.0 * z;
-                let lines: Vec<String> = match n.kind {
-                    CardKind::Text => {
-                        let body = match &editing {
-                            Some((id, inp)) if *id == n.id => inp.text.clone(),
-                            _ => n.text.clone().unwrap_or_default(),
-                        };
-                        body.split('\n').map(String::from).collect()
-                    }
-                    CardKind::File => {
-                        let f = n.file.clone().unwrap_or_default();
-                        let ls = 14.0 * z * k;
-                        let name = String::from(crate::app::strip_ext(crate::vfs::file_name(&f)));
-                        text(self.c, &name, x0, y0 - ls * 0.6, ls, 400, t.faint);
-                        let mut v = alloc::vec![{
-                            let mut s = String::from("# ");
-                            s.push_str(&name);
-                            s
-                        }];
-                        v.extend(
-                            self.graph_img
-                                .notes
-                                .get(&f)
-                                .map(|(_, l)| l.clone())
-                                .unwrap_or_default(),
-                        );
-                        v
-                    }
-                    CardKind::Link => {
-                        // The page's title above the card, as the notes app
-                        // labels it, and its title, description and site in it.
-                        let u = n.url.clone().unwrap_or_default();
-                        let ls = 14.0 * z * k;
-                        match self.app.previews.get(&u) {
-                            Some(Some(Ok(p))) => {
-                                fit(self.c, &p.title, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
-                                let mut head = String::from("## ");
-                                head.push_str(&p.title);
-                                alloc::vec![
-                                    head,
-                                    p.description.clone(),
-                                    String::new(),
-                                    p.site.clone()
-                                ]
-                            }
-                            Some(Some(Err(why))) => {
-                                fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
-                                alloc::vec![u.clone(), why.clone()]
-                            }
-                            _ => {
-                                fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
-                                alloc::vec![u.clone(), String::from("Loading\u{2026}")]
+                let rendered = matches!(n.kind, CardKind::Text | CardKind::File)
+                    && self.draw_card_doc(n, rc, a, z, focused);
+                if rendered && n.kind == CardKind::File {
+                    let f = n.file.clone().unwrap_or_default();
+                    let ls = 14.0 * z * k;
+                    let name = String::from(crate::app::strip_ext(crate::vfs::file_name(&f)));
+                    text(self.c, &name, x0, y0 - ls * 0.6, ls, 400, t.faint);
+                }
+                let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+                let lines: Vec<String> = if rendered {
+                    alloc::vec![match n.kind {
+                        CardKind::File => n.file.clone().unwrap_or_default(),
+                        _ => n.text.clone().unwrap_or_default(),
+                    }]
+                } else {
+                    match n.kind {
+                        CardKind::Text => {
+                            let body = match &editing {
+                                Some((id, inp)) if *id == n.id => inp.text.clone(),
+                                _ => n.text.clone().unwrap_or_default(),
+                            };
+                            body.split('\n').map(String::from).collect()
+                        }
+                        CardKind::File => {
+                            let f = n.file.clone().unwrap_or_default();
+                            let ls = 14.0 * z * k;
+                            let name =
+                                String::from(crate::app::strip_ext(crate::vfs::file_name(&f)));
+                            text(self.c, &name, x0, y0 - ls * 0.6, ls, 400, t.faint);
+                            let mut v = alloc::vec![{
+                                let mut s = String::from("# ");
+                                s.push_str(&name);
+                                s
+                            }];
+                            v.extend(
+                                self.graph_img
+                                    .notes
+                                    .get(&f)
+                                    .map(|(_, l)| l.clone())
+                                    .unwrap_or_default(),
+                            );
+                            v
+                        }
+                        CardKind::Link => {
+                            // The page's title above the card, as the notes app
+                            // labels it, and its title, description and site in it.
+                            let u = n.url.clone().unwrap_or_default();
+                            let ls = 14.0 * z * k;
+                            match self.app.previews.get(&u) {
+                                Some(Some(Ok(p))) => {
+                                    fit(self.c, &p.title, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                    let mut head = String::from("## ");
+                                    head.push_str(&p.title);
+                                    alloc::vec![
+                                        head,
+                                        p.description.clone(),
+                                        String::new(),
+                                        p.site.clone()
+                                    ]
+                                }
+                                Some(Some(Err(why))) => {
+                                    fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                    alloc::vec![u.clone(), why.clone()]
+                                }
+                                _ => {
+                                    fit(self.c, &u, x0, y0 - ls * 0.6, ls, 400, t.faint, w);
+                                    alloc::vec![u.clone(), String::from("Loading\u{2026}")]
+                                }
                             }
                         }
+                        CardKind::Group => Vec::new(),
                     }
-                    CardKind::Group => Vec::new(),
                 };
                 let _ = canvas2d::set_clip(
                     self.c,
@@ -1061,7 +1079,7 @@ impl Ui {
                     (rc.bottom().min(a.bottom()) - rc.y.max(a.y)).max(0.0),
                 );
                 let mut ty = y0 + pad * 0.75;
-                for line in &lines {
+                for line in lines.iter().filter(|_| !rendered) {
                     if ty > rc.bottom() {
                         break;
                     }
@@ -1088,7 +1106,7 @@ impl Ui {
                     }
                     ty += size * 0.45;
                 }
-                if editing.as_ref().is_some_and(|(id, _)| *id == n.id) {
+                if !rendered && editing.as_ref().is_some_and(|(id, _)| *id == n.id) {
                     // The caret at the end of the text being typed.
                     let last = lines.last().cloned().unwrap_or_default();
                     let lw = width(self.c, &crate::md::plain(&last, 0), fs, 400);
@@ -2721,16 +2739,11 @@ impl Ui {
             Some((id, kind, text, file)) => {
                 c.selected = Some(id.clone());
                 if double {
-                    match kind {
-                        CardKind::Text => {
-                            c.editing = Some((id, Input::with(&text.unwrap_or_default())));
-                        }
-                        CardKind::File => {
-                            if let Some(f) = file {
-                                self.app.open_file(&f, true);
-                            }
-                        }
-                        _ => {}
+                    // In place, with the note editor, as the notes app edits
+                    // a card.
+                    let _ = (text, file);
+                    if matches!(kind, CardKind::Text | CardKind::File) {
+                        self.app.canvas_live_start(&id);
                     }
                     return;
                 }
@@ -2751,8 +2764,8 @@ impl Ui {
                         c.canvas
                             .add(CardKind::Text, wx - 125.0, wy - 30.0, 250.0, 60.0, "", seed);
                     c.selected = Some(id.clone());
-                    c.editing = Some((id, Input::default()));
                     self.app.canvas_changed(before);
+                    self.app.canvas_live_start(&id);
                     return;
                 }
                 self.drag = Drag::Canvas {

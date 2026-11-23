@@ -10,6 +10,7 @@
 
 mod basemenus;
 mod boards;
+mod carddoc;
 mod disk;
 mod editor;
 mod look;
@@ -195,6 +196,9 @@ struct Ui {
     base_pop: Option<Rect>,
     /// A board's columns as drawn, each with its group.
     board_cols: Vec<(Rect, usize)>,
+    /// Canvas cards' text drawn with the note editor, by card: the vault
+    /// generation, the text and its document (src/guest/carddoc.rs).
+    card_docs: alloc::collections::BTreeMap<String, (u64, String, crate::editor::Doc)>,
 }
 
 fn ms() -> u64 {
@@ -4222,6 +4226,7 @@ impl krate::Guest for Component {
             base_anchors: Vec::new(),
             base_pop: None,
             board_cols: Vec::new(),
+            card_docs: alloc::collections::BTreeMap::new(),
             unseen: false,
             hover_point: None,
             block_count: None,
@@ -4391,6 +4396,11 @@ impl krate::Guest for Component {
                     shown: true,
                 });
             }
+        }
+        // `cardedit=<id>`: a canvas card being edited in place, as a double
+        // press starts it (a check task cannot double-click: K-1362).
+        if let Some(id) = arg(&raw, "cardedit") {
+            ui.app.canvas_live_start(id);
         }
         // `view=<name>`: a base tab shows its view of that name.
         if let Some(name) = arg(&raw, "view") {

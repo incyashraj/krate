@@ -1715,7 +1715,7 @@ impl App {
         }
     }
 
-    fn load(&mut self, path: &str) -> Option<Doc> {
+    pub(crate) fn load(&mut self, path: &str) -> Option<Doc> {
         // A note open in another tab is read from there, unsaved text and all.
         let held = self.open_text(path);
         let reading = self.settings.default_view_reading();
@@ -2170,7 +2170,14 @@ impl App {
                     Err(why) => self.status = Some((why, now + 4_000)),
                 }
             }
-            return true;
+            // A note being edited in a card is saved as a note is.
+            let live_note = self.tabs[i]
+                .doc
+                .as_ref()
+                .is_some_and(|d| !d.path.starts_with(crate::workspace::CARD_DOC));
+            if !live_note {
+                return true;
+            }
         }
         let Some(doc) = self.tabs.get_mut(i).and_then(|t| t.doc.as_mut()) else {
             return false;
@@ -3516,12 +3523,21 @@ impl App {
         if matches!(self.overlay, Some(Overlay::Ask(_))) {
             return self.ask_key(key, m);
         }
-        // A canvas has the keyboard while one is showing.
+        // A canvas has the keyboard while one is showing; a card being
+        // edited has it as a note does (Escape leaves it).
         if self.overlay.is_none()
             && self.focus == Focus::Editor
             && matches!(self.view(), Some(View::Canvas(_)))
         {
-            return self.canvas_key(key, m);
+            let live = self.doc().is_some()
+                && matches!(self.view(), Some(View::Canvas(c)) if c.editing.is_some());
+            if !live {
+                return self.canvas_key(key, m);
+            }
+            if key == "Escape" {
+                self.canvas_commit();
+                return true;
+            }
         }
         // An overlay has the keyboard.
         if let Some(ov) = self.overlay.as_mut() {
