@@ -11746,8 +11746,10 @@ async function inboxAnswer() {
   const id = inbox.open;
   const field = $("inboxReply");
   const text = field.value.trim();
-  if (!id || !text) return;
   const send = $("inboxReplySend");
+  // Cmd+Enter reaches here while a send is still going; the button's
+  // disabled state alone stopped only the click, so an answer could go twice.
+  if (!id || !text || send.disabled) return;
   send.disabled = true;
   $("inboxThreadNote").textContent = "";
   try {
