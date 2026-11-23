@@ -342,6 +342,8 @@ pub struct Phase3GuiHost {
     /// the first drawn frame is the one captured.
     screenshot: Option<(std::path::PathBuf, f32)>,
     screenshot_taken: std::cell::Cell<bool>,
+    /// Whether any canvas or scene has presented a frame yet (K-1360).
+    drawn_present: std::cell::Cell<bool>,
     /// `KRATE_SHOOT_AFTER_MS` holds the capture back this long, so the shot is
     /// the app after it has lived a while rather than its first frame. A
     /// camera feed, a fetched image, an animation -- none of them exist in
@@ -745,6 +747,7 @@ impl Phase3GuiHost {
             print_pages: Vec::new(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
+            drawn_present: std::cell::Cell::new(false),
             shoot_after: std::env::var("KRATE_SHOOT_AFTER_MS")
                 .ok()
                 .and_then(|value| value.trim().parse::<u64>().ok())
@@ -946,6 +949,20 @@ impl Phase3GuiHost {
             return;
         };
         if !self.shoot_delay_elapsed() {
+            return;
+        }
+        // A window that draws on a canvas is not "drawn" until the canvas
+        // has presented: shooting at the first wait before that captured a
+        // blank sheet -- a video app that presents only once its clip plays
+        // (K-1360). The shot waits for the first present; closing the window
+        // still takes it if the app never draws.
+        if !self.drawn_present.get()
+            && self
+                .canvases
+                .borrow()
+                .values()
+                .any(|(w, _, _)| *w == window)
+        {
             return;
         }
         self.maybe_take_screenshot_for(window);
@@ -5133,6 +5150,7 @@ impl Phase3GuiHost {
         // A presented canvas is a real drawn frame -- the right moment to
         // capture a 2D game or drawing, which may never call wait.
         if result.is_ok() {
+            self.drawn_present.set(true);
             self.maybe_take_screenshot();
         }
         // The measured frame is done with; the next draw op begins another.
@@ -8190,6 +8208,7 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         // that steers with key-held and never calls wait still gets shot with
         // its scene on screen, not the blank frame before the first present.
         if result.is_ok() {
+            self.drawn_present.set(true);
             self.maybe_take_screenshot();
         }
         // The measured frame is done with; the next draw op begins another.
