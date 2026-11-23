@@ -1704,7 +1704,8 @@ const COMMANDS = {
     // A key pasted before signing in now has an account to live in.
     await flushStash();
     const u = bridge.me.user || {};
-    return { signed_in: true, login: u.login, name: u.name, avatar_url: u.avatar_url, email: u.email };
+    // free_apps: one, unless the desk gave this person more (a counted grant).
+    return { signed_in: true, login: u.login, name: u.name, avatar_url: u.avatar_url, email: u.email, free_apps: Number(bridge.me.free_apps) || 1 };
   },
 
   /* ---- your own AI ------------------------------------------------------

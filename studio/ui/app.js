@@ -3046,6 +3046,11 @@ function cardAsks(asks) {
  * six call sites, and it is the same number the worker enforces. If they
  * ever disagree again, the worker wins and this is what changes. */
 const FREE_MAKES = 1;
+/// The allowance this account actually has: one, or what the desk granted
+/// (the hub's /me says free_apps; the wall itself is the hub's).
+function freeMakes() {
+  return Math.max(FREE_MAKES, Number(state.account && state.account.free_apps) || 0);
+}
 function monthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -3131,7 +3136,7 @@ function machineSpentIt() {
   if (typeof machine !== "number" || !Number.isFinite(machine) || machine <= 0) {
     return false;
   }
-  return machine >= FREE_MAKES && makesOwn() === 0;
+  return machine >= freeMakes() && makesOwn() === 0;
 }
 /* What this person has made under their own account, as far as the screen
  * can tell: the count that is NOT explained by the machine. */
@@ -3160,7 +3165,7 @@ function machineNote() {
 function renderFreeCount() {
   if (tauri) return;
   const tag = $("planUsed");
-  if (tag) tag.textContent = makesThisMonth() >= FREE_MAKES ? "used" : "free";
+  if (tag) tag.textContent = makesThisMonth() >= freeMakes() ? "used" : "free";
   const note = $("planNote");
   if (note && machineSpentIt()) {
     note.textContent = `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`;

@@ -56,9 +56,12 @@ const makesOwn = build("makesOwn", {
   makesThisMonth: () => makesThisMonth(),
   machineShare: () => machineShare(),
 });
+// The account's allowance: one, or what the desk granted (state.account).
+const freeMakes = build("freeMakes", { state, FREE_MAKES });
 const machineSpentIt = build("machineSpentIt", {
   state,
   FREE_MAKES,
+  freeMakes: () => freeMakes(),
   makesOwn: () => makesOwn(),
   makesThisMonth: () => makesThisMonth(),
 });
@@ -137,5 +140,16 @@ assert.equal(
 );
 set({ n: 3, machine: 3 });
 assert.match(machineNote(), /already made 3 apps/, "and several read as several");
+
+// ---- a desk grant of more apps moves the line -----------------------------
+state.account = { free_apps: 5 };
+set({ n: 1, machine: 1 });
+assert.equal(freeMakes(), 5, "the account's granted allowance is read");
+assert.equal(machineSpentIt(), false, "one machine-made app is not the wall for someone with five");
+set({ n: 5, machine: 5 });
+assert.equal(machineSpentIt(), true, "five is");
+state.account = { free_apps: "lots" };
+assert.equal(freeMakes(), 1, "junk is one, never more");
+delete state.account;
 
 console.log("ok  a wall the person did not walk into says why, and no other wall does");

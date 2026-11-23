@@ -6980,7 +6980,10 @@ async function caseOpen(request, env) {
   const made = await consumedCount(env, user, device, byId);
   const edits = editCount(byId);
   const spent = isEdit ? edits : made;
-  const limit = isEdit ? EDIT_LIMIT_FREE : CASE_LIMIT_FREE;
+  // A desk grant of N apps raises both allowances to N (each app keeps its
+  // one free change); it never lowers them.
+  const granted = grantedApps(user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null);
+  const limit = Math.max(isEdit ? EDIT_LIMIT_FREE : CASE_LIMIT_FREE, granted);
   if (spent >= limit) {
     const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
     if (!entitlementActive(ent)) {
@@ -7020,7 +7023,8 @@ async function caseOpen(request, env) {
       if (user) {
         const log = JSON.parse((await env.APPS.get(`spend:${user.id}`)) || "[]");
         const ours = log.filter((r) => r.paid_by !== "own").reduce((t, r) => t + (r.usd || 0), 0);
-        const ceiling = Number(env.FREE_SPEND_CEILING_USD || 6);
+        // Per app: a grant of five apps is five apps' worth of building.
+        const ceiling = Number(env.FREE_SPEND_CEILING_USD || 6) * Math.max(1, granted);
         if (ours >= ceiling) {
           return json({
             wall: true, spend: true, edit: isEdit,
@@ -7170,7 +7174,8 @@ async function caseList(request, env) {
   // listing yet, and reporting a number the wall disagrees with would read
   // as the allowance resetting.
   const n = await consumedCount(env, user, device, byId);
-  return json({ n, limit: CASE_LIMIT_FREE, cases });
+  const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
+  return json({ n, limit: Math.max(CASE_LIMIT_FREE, grantedApps(ent)), cases });
 }
 
 async function planCount(request, env, increment) {
@@ -7754,6 +7759,8 @@ async function meProfile(request, env) {
     // Whether Krate's free limits are lifted on this account (the desk's
     // override). There is no plan to buy (F-322).
     limits_lifted: entitlementActive(ent),
+    // How many free apps this account has: one, unless the desk gave more.
+    free_apps: Math.max(CASE_LIMIT_FREE, grantedApps(ent)),
     referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
   });
 }
@@ -7918,6 +7925,15 @@ async function referralClaim(request, env) {
   // Krate's own AI key -- a paid plan given away, and a way round the spend
   // limits. There is no plan (F-322), so a referral is a count.
   return json({ ok: true, counted: true });
+}
+
+/// The desk's counted grant: this person may make `apps` apps on Krate's
+/// key instead of one, each with its free change, and the spend ceiling
+/// scales with it (2026-11-23: five apps for an early user whose first two
+/// builds failed on our side). Unlike the "comp" override it is a number,
+/// so the founder's money has an end. 0 when there is none.
+function grantedApps(ent) {
+  return ent && ent.plan === "apps" && Number.isInteger(ent.apps) && ent.apps > 0 ? ent.apps : 0;
 }
 
 function entitlementActive(ent) {
@@ -8104,7 +8120,13 @@ async function adminApi(request, pathname, env) {
     // The support override: lift the free limits on Krate's AI key for one
     // person (a friend testing, someone a failure of ours cost), or put
     // them back. Nothing is sold (F-322); the record keeps its old name.
-    if (body.lifted) {
+    // `apps`: give this person N free apps (2 to 50) rather than lift every
+    // limit -- a counted grant, so it has an end.
+    const apps = Number(body.apps);
+    if (body.apps != null) {
+      if (!Number.isInteger(apps) || apps < 2 || apps > 50) return text("apps is a whole number from 2 to 50", 400);
+      await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "apps", apps, at: Date.now(), by: admin.login }));
+    } else if (body.lifted) {
       await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "comp", status: "active", until: 0, at: Date.now(), by: admin.login }));
     } else {
       await env.APPS.delete(`ent:${body.id}`);
@@ -8536,11 +8558,13 @@ async function show(tab){
       for(const x of users){
         const d=document.createElement("div");d.className="card row";
         d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
-        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}\${x.active?'<span class="pill active">limits lifted</span>':''}
+        \${x.mail_news===false?'<span class="pill">unsubscribed</span>':''}\${x.active?'<span class="pill active">limits lifted</span>':''}\${x.ent&&x.ent.plan==="apps"?'<span class="pill active">'+x.ent.apps+' free apps</span>':''}
+        <button class="ghost" data-a="apps">\${x.ent&&x.ent.plan==="apps"?"Change free apps":"Give free apps"}</button>
         <button class="ghost" data-a="limits">\${x.active?"Restore free limits":"Lift free limits"}</button>
         <button class="ghost" data-a="out">Sign out everywhere</button>
         <button class="ghost" data-a="del">Delete account</button>\`;
         d.querySelector('[data-a=limits]').onclick=async()=>{await api("user/limits",{method:"POST",body:JSON.stringify({id:x.id,lifted:!x.active})});load();};
+        d.querySelector('[data-a=apps]').onclick=async()=>{const n=prompt("How many free apps for "+(x.name||x.login||x.email)+"? (2 to 50; each keeps its free change)",String((x.ent&&x.ent.apps)||5));if(n===null)return;const r=await api("user/limits",{method:"POST",body:JSON.stringify({id:x.id,apps:Number(n)})});if(r&&r.ok)load();};
         d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
         d.querySelector('[data-a=del]').onclick=async()=>{
           const call=(r,b)=>fetch(HUB+"/admin/api/"+r,{method:"POST",headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json"},body:JSON.stringify(b)}).then(async res=>({status:res.status,body:await res.json().catch(()=>({}))}));
