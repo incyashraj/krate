@@ -1919,11 +1919,14 @@ fn main() -> ExitCode {
     // app's output -- a script, a test, the Studio -- read Krate's log as
     // the app's words (K-884). The GPU stack's own driver chatter is quiet
     // unless KRATE_LOG asks for it: it is about the machine, not the app,
-    // and nothing a person running an app can act on.
+    // and nothing a person running an app can act on. The same for the
+    // portable video player's demuxer, which notes every MP4 box it skips.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG").unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error")
+                tracing_subscriber::EnvFilter::new(
+                    "warn,wgpu_hal=error,wgpu_core=error,naga=error,symphonia_format_isomp4=error,symphonia_core=error",
+                )
             }),
         )
         .with_writer(std::io::stderr)

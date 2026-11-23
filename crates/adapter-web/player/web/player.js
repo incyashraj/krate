@@ -23,6 +23,7 @@ import { SharedStore, SharedFail } from './shared-store.js';
 import { SecretStore, SecretFail } from './secret-store.js';
 import { pageSenses, primeSpeech } from './senses.js';
 import { pageDevices, pagePrint, browserHas } from './devices.js';
+import { pageVideo } from './media.js';
 // The browser as an organisation's device (window.KrateSigning): the same
 // file the console uses on krate.tech, served here beside the Player.
 import './org-device.js';
@@ -130,7 +131,6 @@ const WHAT = {
   'krate:gfx/canvas2d': 'drawing its own screen',
   'krate:gfx/canvas-images': 'drawing pictures',
   'krate:gfx/scene3d': '3D drawing',
-  'krate:gfx/video': 'video',
   'krate:gpu/gpu': 'your graphics card',
   'krate:speech/transcription': 'speech',
   'krate:fs/files': 'your files',
@@ -1029,7 +1029,7 @@ async function openChecked(buf, { told, validatorModule, playerModule, me }) {
   // An organisation's app, signed and marked for it, opened by a signed-in
   // member: its team data, as on a computer (store.org).
   const org = { slug: (!FILE && sig === 'valid' && j.org_mark) || null, appId: app.id, digest: HASH, session: me, validatorModule };
-  await start({ meta, modules, glue: new TextDecoder().decode(glue), granted, storeKey, playerModule, world: app.world, name, org });
+  await start({ meta, modules, glue: new TextDecoder().decode(glue), granted, storeKey, playerModule, world: app.world, name, org, bundle });
 }
 
 // ------------------------------------------------------------- team data
@@ -1127,7 +1127,7 @@ async function loadKv(d, store) {
 }
 
 // ------------------------------------------------------------- running
-async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org }) {
+async function start({ meta, modules, glue, granted, storeKey, playerModule, world, name, org, bundle }) {
   const gui = /\/gui@/.test(world || '');
   const keeps = ['store.kv', 'store.sql', 'store.shared', 'store.secret'].some((c) => granted.includes(c));
   const d = gui || keeps ? await db().catch(() => null) : null;
@@ -1401,10 +1401,13 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
   const devices = pageSenses({ name, report, probe: params.get('probe') === '1', phone: PHONE, sheet, withTap });
   // Serial and USB devices the person picks (IC-992, devices.js).
   const picked = pageDevices({ name, report, granted, sheet, withTap });
+  // Video and sound files the app plays (krate:gfx/video, K-1348, media.js).
+  const media = pageVideo({ bundle, report });
 
   const bridge = pageBridge(bridgeMem, {
     ...devices.handlers,
     ...picked.handlers,
+    ...media.handlers,
     // Printing what the window shows (krate:ui/print, IC-992).
     ...pagePrint({ name, report }),
     'http.fetch': doFetch,
@@ -1693,6 +1696,7 @@ async function start({ meta, modules, glue, granted, storeKey, playerModule, wor
     audio.close();
     devices.close();
     picked.close();
+    media.close();
   }
 
   // ---- input, in logical pixels, to the app's ring

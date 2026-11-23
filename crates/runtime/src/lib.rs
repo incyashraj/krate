@@ -77,6 +77,9 @@ mod video;
 mod video_android;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod video_apple;
+/// Video and sound on computers with no native player for them (K-1348).
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod video_portable;
 pub use krate_adapter_common::canvas_list;
 pub mod chosen_files;
 pub mod dead_space;

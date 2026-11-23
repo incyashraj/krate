@@ -206,6 +206,7 @@ pub(crate) fn control(video: u64, control: Control) -> Result<(), String> {
                         .seekToTime_toleranceBefore_toleranceAfter(at(millis), zero(), zero()),
                     Control::Looping(looping) => player.looping = looping,
                     Control::Muted(muted) => player.player.setMuted(muted),
+                    Control::Volume(volume) => player.player.setVolume(volume.clamp(0.0, 1.0)),
                 }
             }
         })

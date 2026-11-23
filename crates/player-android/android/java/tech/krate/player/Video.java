@@ -33,6 +33,8 @@ final class Video {
         /** What the app asked for before the player was ready: applied once it is. */
         boolean playWanted;
         boolean muted;
+        /** How loud, 0 to 1 (K-1351); muted wins. */
+        float volume = 1f;
         long seekWanted = -1;
         String problem = "";
         byte[] latest;
@@ -134,7 +136,7 @@ final class Video {
                         play = p.playWanted;
                         seek = p.seekWanted;
                         mp.setLooping(p.looping);
-                        float v = p.muted ? 0f : 1f;
+                        float v = p.muted ? 0f : p.volume;
                         mp.setVolume(v, v);
                     }
                     if (seek >= 0) {
@@ -209,6 +211,10 @@ final class Video {
                         case 3:
                             p.looping = value != 0;
                             break;
+                        case 5:
+                            // Thousandths, 0 to 1000.
+                            p.volume = Math.max(0f, Math.min(1f, value / 1000f));
+                            break;
                         default:
                             p.muted = value != 0;
                             break;
@@ -244,7 +250,10 @@ final class Video {
                             p.media.setLooping(value != 0);
                             break;
                         default:
-                            float v = value != 0 ? 0f : 1f;
+                            float v;
+                            synchronized (p) {
+                                v = p.muted ? 0f : p.volume;
+                            }
                             p.media.setVolume(v, v);
                             break;
                     }

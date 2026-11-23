@@ -691,12 +691,14 @@ in the app's own folder it may read, or an \
 `video::draw(canvas, v, rect)`; the platform decodes it and plays its \
 sound, so never decode frames yourself. Build the controls as ordinary \
 buttons calling `play`, `pause`, `seek(v, ms)`, `set_looping`, \
-`set_muted`, and read `state(v)` each frame for `position_millis`, \
+`set_muted`, `set_volume(v, 0.0..=1.0)` (a volume slider; muting wins), \
+and read `state(v)` each frame for `position_millis`, \
 `duration_millis`, `ready` (draw \"Loading\" until true), `ended` and \
 the picture's `width`/`height` -- fit the rect to that shape. A \
-non-empty `problem` says why it cannot play: show it. A computer other \
-than a Mac answers `Err(Platform)` for now: say so. A sound file (mp3, \
-m4a, wav) opens and plays through the same calls with no picture.\n\n\
+non-empty `problem` says why it cannot play: show it. Every system \
+plays H.264 video in .mp4/.mov/.m4v and mp3, m4a, wav, flac and ogg \
+sound (a Mac, a phone and a browser tab also play HEVC and WebM); a \
+sound file opens and plays through the same calls with no picture.\n\n\
 Turned text -- a tab title up its spine, a chart's axis label: \
 `krate::gfx::canvas_text::draw_turned(canvas, text, at, size, ink, style, 1)` \
 turns it a quarter clockwise (3: anticlockwise), as sharp as level text; \

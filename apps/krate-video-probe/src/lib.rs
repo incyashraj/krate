@@ -6,7 +6,8 @@
 //                                          plays three seconds headless,
 //                                          then one line and exit:
 //                                          `video:ready=yes duration=8000
-//                                          size=960x540 moved=yes frames=N`
+//                                          size=960x540 moved=yes frames=N
+//                                          volume=ok`
 //                                          or `video:problem=<why>`
 #![no_std]
 extern crate alloc;
@@ -207,6 +208,8 @@ fn quick(canvas: u64, source: &str) -> i32 {
         }
     };
     let _ = video::set_muted(v, true);
+    // K-1351: a volume is taken, and one that is not a number is refused.
+    let volume = video::set_volume(v, 0.5).is_ok() && video::set_volume(v, f32::NAN).is_err();
     let _ = video::play(v);
     let mut frames = 0u32;
     let mut first = None;
@@ -233,12 +236,13 @@ fn quick(canvas: u64, source: &str) -> i32 {
     match last {
         Ok(s) if !s.problem.is_empty() => say(&format!("video:problem={}", s.problem)),
         Ok(s) => say(&format!(
-            "video:ready={} duration={} size={}x{} moved={} frames={frames}",
+            "video:ready={} duration={} size={}x{} moved={} frames={frames} volume={}",
             if s.ready { "yes" } else { "no" },
             s.duration_millis,
             s.width,
             s.height,
             if first.is_some_and(|f| s.position_millis > f + 1000) { "yes" } else { "no" },
+            if volume { "ok" } else { "no" },
         )),
         Err(e) => say(&format!("video:problem={e:?}")),
     }

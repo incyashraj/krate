@@ -1003,6 +1003,7 @@ takes this path, so any of them is a model for the wiring.
 - `video::seek: func(video: u64, millis: u64) -> result<_, gfx-error>`
 - `video::set-looping: func(video: u64, looping: bool) -> result<_, gfx-error>`
 - `video::set-muted: func(video: u64, muted: bool) -> result<_, gfx-error>`
+- `video::set-volume: func(video: u64, volume: f32) -> result<_, gfx-error>`
 - `video::state: func(video: u64) -> result<video-state, gfx-error>`
 - `video::draw: func(canvas: u64, video: u64, area: rect) -> result<_, gfx-error>`
 - `video::draw-round: func(canvas: u64, video: u64, area: rect, radii: corner-radii) -> result<_, gfx-error>`

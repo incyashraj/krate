@@ -829,6 +829,82 @@ export function buildImports(ctx) {
     drawRound: (c, image, a, r) => g(ui.c_draw_kept(c, image, geo(a, r))),
     forget: (c, image) => ui.c_forget(c, image),
   };
+  // Video and sound files (krate:gfx/video, K-1348): the browser's own
+  // <video> plays them on the page (media.js); the app draws the newest
+  // picture by handle, kept once per canvas as a kept image, so only a new
+  // picture crosses the bridge. Sources are judged here as on a computer
+  // (phase4_gui_host.rs): a path inside the app's assets, or an address the
+  // app may reach with net.connect.
+  const VIDEO_PICKED = "A video in a folder you picked plays in Krate on a computer; in a browser tab an app plays its own clips and web addresses.";
+  const videos = new Map(); // id -> { frame: { seq, width, height, rgba } | null, kept: Map(canvas -> { image, seq }) }
+  const videoOf = (v) => {
+    const entry = videos.get(String(v));
+    if (!entry) throw new HostError({ tag: 'invalid-target' });
+    return entry;
+  };
+  const videoCall = (op, args) => {
+    const answer = bridge.call(op, args);
+    if (answer.json.err) throw new HostError(answer.json.err);
+    return answer;
+  };
+  const videoControl = (v, kind, value) => {
+    videoOf(v);
+    videoCall('video.control', { id: String(v), kind, value });
+  };
+  const drawVideo = (c, v, geometry) => {
+    const entry = videoOf(v);
+    const { json, body } = videoCall('video.frame', { id: String(v) });
+    if (json.ok) {
+      entry.frame = { seq: (entry.frame ? entry.frame.seq : 0) + 1, width: json.ok.width, height: json.ok.height, rgba: new Uint8Array(body) };
+    }
+    if (!entry.frame) return;
+    const key = String(c);
+    let kept = entry.kept.get(key);
+    if (!kept || kept.seq !== entry.frame.seq) {
+      if (kept) ui.c_forget(c, kept.image);
+      kept = { image: BigInt(unwrap(ui.c_keep(c, entry.frame.width, entry.frame.height, entry.frame.rgba))), seq: entry.frame.seq, canvas: c };
+      entry.kept.set(key, kept);
+    }
+    g(ui.c_draw_kept(c, kept.image, geometry));
+  };
+  impl['krate:gfx/video'] = {
+    open(source) {
+      source = String(source);
+      if (/^https?:\/\//i.test(source)) {
+        try { judged(source, [], null); } catch { throw new HostError({ tag: 'permission-denied' }); }
+      } else if (source.startsWith('picked/')) {
+        throw new HostError({ tag: 'unsupported', val: VIDEO_PICKED }, VIDEO_PICKED);
+      } else if (!source || source.startsWith('/') || source.includes('\\') || source.split('/').some((p) => !p || p === '.' || p === '..')) {
+        throw new HostError({ tag: 'unsupported', val: `${source} is not a path inside the app's assets` });
+      }
+      const id = String(videoCall('video.open', { source }).json.ok);
+      videos.set(id, { frame: null, kept: new Map() });
+      return BigInt(id);
+    },
+    play: (v) => videoControl(v, 'play'),
+    pause: (v) => videoControl(v, 'pause'),
+    seek: (v, millis) => videoControl(v, 'seek', Number(millis)),
+    setLooping: (v, looping) => videoControl(v, 'looping', !!looping),
+    setMuted: (v, muted) => videoControl(v, 'muted', !!muted),
+    setVolume(v, volume) {
+      if (!Number.isFinite(volume)) throw new HostError({ tag: 'unsupported', val: 'a volume is a number from 0.0 to 1.0' });
+      videoControl(v, 'volume', Math.min(1, Math.max(0, volume)));
+    },
+    state(v) {
+      videoOf(v);
+      const s = videoCall('video.state', { id: String(v) }).json.ok;
+      return { ...s, positionMillis: BigInt(s.positionMillis), durationMillis: BigInt(s.durationMillis) };
+    },
+    draw: (c, v, a) => drawVideo(c, v, geo(a)),
+    drawRound: (c, v, a, r) => drawVideo(c, v, geo(a, r)),
+    close(v) {
+      const entry = videos.get(String(v));
+      if (!entry) return;
+      videos.delete(String(v));
+      for (const kept of entry.kept.values()) ui.c_forget(kept.canvas, kept.image);
+      bridge.call('video.close', { id: String(v) });
+    },
+  };
   Object.assign(impl, senses({ allows, bridge, present: () => ctx.present(), facts: ctx.senses || {} }));
   // Serial and USB devices the person picks (IC-992), through the
   // browser's Web Serial and WebUSB where it has them.

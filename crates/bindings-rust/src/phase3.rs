@@ -1465,9 +1465,11 @@ pub mod gfx {
         /// file in the app's own folder it may read ("vault/clip.mp4" with
         /// `fs.read:./vault/**`), or
         /// an `https://` address the app was granted `net.connect` to. A sound
-        /// file (mp3, m4a, wav) plays the same way, with no picture: its width
-        /// and height stay 0. Loading continues after this returns: read `state`
-        /// for `ready`.
+        /// file (mp3, m4a, wav, flac, ogg) plays the same way, with no picture:
+        /// its width and height stay 0. Every system plays H.264 video in MP4,
+        /// MOV or M4V and those sounds; a Mac, a phone and a browser tab also
+        /// play what their own player does (HEVC, VP9 in WebM). Loading
+        /// continues after this returns: read `state` for `ready`.
         pub fn open(source: &str) -> Result<u64, GfxError> {
             crate::bindings::krate::gfx::video::open(source)
         }
@@ -1495,6 +1497,13 @@ pub mod gfx {
         /// Silence it, or let it be heard.
         pub fn set_muted(video: u64, muted: bool) -> Result<(), GfxError> {
             crate::bindings::krate::gfx::video::set_muted(video, muted)
+        }
+
+        /// How loud it plays, from 0.0 (silent) to 1.0 (as recorded, the
+        /// default); outside that it is clamped. Muting silences it whatever the
+        /// volume, and unmuting brings this volume back.
+        pub fn set_volume(video: u64, volume: f32) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::video::set_volume(video, volume)
         }
 
         /// Where it is and what it is doing.

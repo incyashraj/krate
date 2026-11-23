@@ -22,6 +22,8 @@ pub(crate) fn control(video: u64, control: Control) -> Result<(), String> {
         Control::Seek(millis) => (2, millis.min(i64::MAX as u64) as i64),
         Control::Looping(on) => (3, i64::from(on)),
         Control::Muted(on) => (4, i64::from(on)),
+        // Thousandths: the Java side takes a whole number (K-1351).
+        Control::Volume(volume) => (5, (volume.clamp(0.0, 1.0) * 1000.0).round() as i64),
     };
     android::control(video, kind, value)
 }

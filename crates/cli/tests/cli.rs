@@ -15193,10 +15193,11 @@ fn sdk_reference_lists_functions_capabilities_and_leaks() {
 ///
 /// `video-probe.wasm` is apps/krate-video-probe built ("Clip");
 /// `video-sample.mp4` is a 4 s, 320x180 H.264 clip with sound. Packed with
-/// the clip, a Mac plays it headless: it loads, reports its own length and
-/// size, and its clock moves while the app draws it. Packed without the
-/// clip, the app is told the file is not there instead of being shown
-/// black. Another system says it cannot play video yet.
+/// the clip, every computer plays it headless: it loads, reports its own
+/// length and size, and its clock moves while the app draws it -- a Mac
+/// through AVFoundation and again through the portable player, Windows and
+/// Linux through the portable player (K-1348). Packed without the clip, the
+/// app is told the file is not there instead of being shown black.
 #[test]
 fn an_app_plays_a_video_from_its_assets() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -15251,8 +15252,12 @@ fn an_app_plays_a_video_from_its_assets() {
     // window, and the app was gone before it printed its line -- an empty
     // stdout and a clean exit (K-1128). The probe bounds itself, so the
     // budget here is only a ceiling.
-    let run = |bundle: &std::path::Path| -> String {
-        let out = krate()
+    let run_with = |bundle: &std::path::Path, portable: bool| -> String {
+        let mut command = krate();
+        if portable {
+            command.env("KRATE_VIDEO_PORTABLE", "1");
+        }
+        let out = command
             .env("KRATE_HEADLESS_SECS", "30")
             .arg("run")
             .arg("--headless")
@@ -15269,6 +15274,7 @@ fn an_app_plays_a_video_from_its_assets() {
         );
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
+    let run = |bundle: &std::path::Path| run_with(bundle, false);
 
     let missing = run(&app("without", false));
     assert!(
@@ -15276,18 +15282,27 @@ fn an_app_plays_a_video_from_its_assets() {
         "a clip the app does not carry is named, not shown black: {missing}"
     );
 
+    // Every computer plays it: AVFoundation on a Mac, the portable player
+    // on Windows and Linux (K-1348), whose length is the longer of the
+    // picture and the AAC sound, which ends on a whole packet (4000-4030).
+    let plays = |out: &str| {
+        out.lines().any(|l| {
+            l.starts_with("video:ready=yes duration=40")
+                && l.contains(" size=320x180 moved=yes")
+                && l.ends_with(" volume=ok")
+        })
+    };
     let played = run(&app("with", true));
+    assert!(
+        plays(&played),
+        "the clip loads, knows its length and size, and plays: {played}"
+    );
     if cfg!(target_os = "macos") {
+        // The portable player, forced on the Mac, plays it the same way.
+        let portable = run_with(&app("portable", true), true);
         assert!(
-            played
-                .lines()
-                .any(|l| l.starts_with("video:ready=yes duration=4000 size=320x180 moved=yes")),
-            "a Mac loads the clip, knows its length and size, and plays it: {played}"
-        );
-    } else {
-        assert!(
-            played.contains("video playback is not on this system yet"),
-            "another system says it cannot play video yet: {played}"
+            plays(&portable),
+            "the portable player plays it too: {portable}"
         );
     }
 }

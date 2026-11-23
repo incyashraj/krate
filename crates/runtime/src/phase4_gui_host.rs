@@ -519,6 +519,20 @@ impl crate::phase4_gui_bindings::krate::gfx::video::Host for Phase3GuiHost {
         Ok(self.control_video(video, crate::video::Control::Muted(muted)))
     }
 
+    fn set_volume(
+        &mut self,
+        video: u64,
+        volume: f32,
+    ) -> wasmtime::Result<Result<(), gfx3::types::GfxError>> {
+        // K-1351: 0 to 1, clamped; a volume that is not a number is not one.
+        if !volume.is_finite() {
+            return Ok(Err(gfx3::types::GfxError::Unsupported(
+                "a volume is a number from 0.0 to 1.0".to_string(),
+            )));
+        }
+        Ok(self.control_video(video, crate::video::Control::Volume(volume.clamp(0.0, 1.0))))
+    }
+
     fn state(
         &mut self,
         video: u64,
