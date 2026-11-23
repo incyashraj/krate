@@ -293,8 +293,12 @@ impl Ui {
                 400,
                 t.muted,
             );
-            self.said
-                .text(r(cx, ny - 12.0 * k, 80.0 * k, 24.0 * k), "New");
+            let nb = r(cx + 8.0 * k, ny - 14.0 * k, 80.0 * k, 28.0 * k);
+            if focused {
+                self.button(nb, "New", Hit::BaseNew(gi));
+            } else {
+                self.said.text(nb, "New");
+            }
         }
         let _ = canvas2d::clear_clip(self.c);
     }

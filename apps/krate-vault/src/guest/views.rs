@@ -289,6 +289,14 @@ impl Ui {
                     }
                     (Kind::Unresolved, _) => look::rgb(t.faint),
                     (Kind::Tag, _) => 0x44CF6E,
+                    // The notes app's --graph-node-attachment: its yellow.
+                    (Kind::Attachment, _) => {
+                        if t.dark {
+                            0xE0DE71
+                        } else {
+                            0xE0AC00
+                        }
+                    }
                     _ => look::rgb(t.muted),
                 };
                 let c = if hover == Some(i) { accent } else { base };
@@ -1403,7 +1411,15 @@ impl Ui {
                     c,
                 );
             }
-            self.said.text(r(x, bar.y, lw + 28.0 * k, bar.h), label);
+            let br = r(x, bar.y + 6.0 * k, lw + 28.0 * k, bar.h - 12.0 * k);
+            if *label == "New" && focused {
+                if self.hovered(&Zone::App(Hit::BaseNew(usize::MAX))) {
+                    round(self.c, br, 4.0 * k, t.hover);
+                }
+                self.button(br, label, Hit::BaseNew(usize::MAX));
+            } else {
+                self.said.text(br, label);
+            }
             x -= 6.0 * k;
         }
         // The table.

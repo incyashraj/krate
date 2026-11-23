@@ -1259,6 +1259,8 @@ pub enum Hit {
     BaseView(usize),
     BaseRow(usize),
     BaseSort(usize),
+    /// A base's "New": from the toolbar (`usize::MAX`) or a board column.
+    BaseNew(usize),
     /// A cell of a base's table: row and column.
     BaseCell(usize, usize),
     AskOk,
@@ -4111,6 +4113,7 @@ impl App {
                 }
             }
             Hit::BaseSort(col) => self.base_sort(col),
+            Hit::BaseNew(group) => self.base_new(group),
             Hit::BaseCell(r, c) => self.edit_base_cell(r, c),
             Hit::AskOk => self.ask_ok(),
             Hit::SettingsReset(i) => self.setting_reset(i),

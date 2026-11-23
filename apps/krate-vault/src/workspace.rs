@@ -1028,6 +1028,42 @@ impl App {
 
     /// A base cell pressed: ask for its new value (the name column opens
     /// the note instead, formulas and file fields are not edited).
+    /// A base's "New": an Untitled note, opened in a new tab; from a board
+    /// column it starts with that column's value of the property the
+    /// board groups by, as the notes app makes it.
+    pub fn base_new(&mut self, group: usize) {
+        let Some(View::Base(b)) = self.view() else {
+            return;
+        };
+        let prop = b
+            .base
+            .views
+            .get(b.view)
+            .and_then(|w| w.group_by.as_ref())
+            .map(|(p, _)| String::from(p.strip_prefix("note.").unwrap_or(p)));
+        let value = b.groups.get(group).map(|(l, _)| l.clone());
+        let text = match (prop, value) {
+            (Some(p), Some(v)) if !v.is_empty() && !p.starts_with("file.") => {
+                set_property_text("", &p, &v)
+            }
+            _ => String::new(),
+        };
+        let made = match self.vault.as_mut() {
+            Some(v) => v.create_file("", "Untitled", ".md", &text),
+            None => return,
+        };
+        match made {
+            Ok(path) => {
+                if let Some(View::Base(b)) = self.view_mut() {
+                    b.generation = 0;
+                }
+                self.reveal(&path);
+                self.open_file(&path, true);
+            }
+            Err(why) => self.say(&why),
+        }
+    }
+
     pub fn edit_base_cell(&mut self, row: usize, col: usize) {
         let Some(View::Base(b)) = self.view() else {
             return;
@@ -2524,6 +2560,38 @@ mod tests {
             t.starts_with("---\nstatus: done\ntags: [work/deep]\n---"),
             "{t}"
         );
+    }
+
+    #[test]
+    fn a_board_column_new_starts_with_its_value() {
+        let mut a = app();
+        a.vault
+            .as_mut()
+            .unwrap()
+            .fs
+            .write(
+                "B.base",
+                "views:\n  - type: kanban\n    name: Board\n    groupBy:\n      property: status\n      direction: ASC\n",
+            )
+            .unwrap();
+        a.vault.as_mut().unwrap().scan();
+        a.open_file("B.base", false);
+        for _ in 0..4 {
+            a.tick(&mut || true);
+        }
+        let groups = match a.view() {
+            Some(View::Base(b)) => b.groups.clone(),
+            _ => panic!("a base tab"),
+        };
+        let open = groups
+            .iter()
+            .position(|(l, _)| l == "open")
+            .expect("an open column");
+        a.base_new(open);
+        let path = a.active_path().unwrap();
+        assert!(path.starts_with("Untitled"), "{path}");
+        let t = a.vault.as_mut().unwrap().fs.read(&path).unwrap();
+        assert!(t.starts_with("---\nstatus: open\n---"), "{t}");
     }
 
     #[test]

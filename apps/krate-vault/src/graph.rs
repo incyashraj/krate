@@ -25,6 +25,8 @@ pub enum Kind {
     /// A link to a note that is not there.
     Unresolved,
     Tag,
+    /// A picture, PDF, sound or other file, when attachments are shown.
+    Attachment,
 }
 
 #[derive(Debug, Clone)]
@@ -281,7 +283,11 @@ impl Graph {
             i
         };
         for n in &v.notes {
-            if !n.path.ends_with(".md") && !n.path.ends_with(".canvas") {
+            let attachment = crate::vault::is_attachment(&n.path);
+            let shown = n.path.ends_with(".md")
+                || n.path.ends_with(".canvas")
+                || (attachment && opt.show_attachments);
+            if !shown {
                 continue;
             }
             let tags = v.meta.get(&n.path).map_or(&empty, |m| &m.tags);
@@ -297,7 +303,11 @@ impl Graph {
                 &mut nodes,
                 &mut ids,
                 n.path.clone(),
-                Kind::Note,
+                if attachment && !n.path.ends_with(".canvas") {
+                    Kind::Attachment
+                } else {
+                    Kind::Note
+                },
                 label,
                 Some(n.path.clone()),
             );
@@ -899,6 +909,30 @@ mod tests {
         assert_eq!(labels, ["A", "C"]);
         let g = Graph::build(&v, &Options::default(), Some(("Projects/C.md", 2)));
         assert_eq!(g.nodes.len(), 4, "C, A, and A's links Home and B");
+    }
+
+    #[test]
+    fn attachments_show_when_asked_in_yellow_kind() {
+        let mut v = mem_vault(
+            "G",
+            &[
+                ("Home.md", "![[photo.png]] and [[Report.pdf]]"),
+                ("photo.png", "png"),
+                ("Report.pdf", "pdf"),
+            ],
+        );
+        v.index_some(&mut || true);
+        let g = Graph::build(&v, &Options::default(), None);
+        assert!(g.find("photo.png").is_none(), "hidden by default");
+        let opt = Options {
+            show_attachments: true,
+            ..Options::default()
+        };
+        let g = Graph::build(&v, &opt, None);
+        let p = g.find("photo.png").expect("shown");
+        assert_eq!(g.nodes[p].kind, Kind::Attachment);
+        assert!(g.find("Report.pdf").is_some());
+        assert!(g.nodes[p].degree > 0, "linked from Home");
     }
 
     #[test]
