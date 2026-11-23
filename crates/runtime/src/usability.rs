@@ -139,6 +139,17 @@ pub struct TaskStep {
     /// game's menu, a canvas -- where there is no labelled control to find.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub click_at: Option<String>,
+    /// Press twice at a point, "x,y" as `click_at` takes it, as fast as a
+    /// person's double click: a word taken in a document, a card opened
+    /// for editing (K-1362).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub double_click_at: Option<String>,
+    /// Press at one point, move to another with the button held and let
+    /// go there, "x0,y0 x1,y1" as fractions of the window: selecting text,
+    /// carrying a card, a tab or a slider (K-1362). The moves arrive as the
+    /// pointer's own move events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drag: Option<String>,
     /// Which button a `click` or `click_at` presses: "primary" (the
     /// default), "secondary" (a right click, for context menus) or
     /// "middle".
@@ -217,6 +228,22 @@ pub struct TaskStep {
     pub expect_requested: Option<String>,
 }
 
+/// Where a `drag` starts and where it lets go, as fractions of the window.
+pub type DragPoints = ((f32, f32), (f32, f32));
+
+/// "x,y" as two fractions of a window, each between 0 and 1.
+fn fraction_point(text: &str) -> Option<(f32, f32)> {
+    let mut parts = text.split(',').map(|p| p.trim().parse::<f32>());
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(x)), Some(Ok(y)), None)
+            if (0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y) =>
+        {
+            Some((x, y))
+        }
+        _ => None,
+    }
+}
+
 /// A `pick` step's name as a path inside the run's scratch folder: plain
 /// names joined by `/`, never absolute, never `..`, at most 200 bytes.
 pub fn pick_name(name: &str) -> Result<std::path::PathBuf, String> {
@@ -240,6 +267,8 @@ impl TaskStep {
         let set = [
             self.click.is_some(),
             self.click_at.is_some(),
+            self.double_click_at.is_some(),
+            self.drag.is_some(),
             self.hold.is_some(),
             self.pad.is_some(),
             self.stick.is_some(),
@@ -262,7 +291,18 @@ impl TaskStep {
         if let Some(Err(why)) = self.click_point() {
             return Err(why);
         }
-        if self.button.is_some() && self.click.is_none() && self.click_at.is_none() {
+        if let Some(Err(why)) = self.double_point() {
+            return Err(why);
+        }
+        if let Some(Err(why)) = self.drag_points() {
+            return Err(why);
+        }
+        if self.button.is_some()
+            && self.click.is_none()
+            && self.click_at.is_none()
+            && self.double_click_at.is_none()
+            && self.drag.is_none()
+        {
             return Err("`button` goes with a `click` or `click_at` step".to_string());
         }
         self.pointer_button()?;
@@ -291,7 +331,7 @@ impl TaskStep {
         }
         match set {
             1 => Ok(()),
-            0 => Err("a step must do one thing: click, click_at, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text, expect_no_text, expect_stored, expect_notified or expect_requested".to_string()),
+            0 => Err("a step must do one thing: click, click_at, double_click_at, drag, hold, pad, stick, look, key, paste, pick, type, wait_ms, shoot, expect_text, expect_no_text, expect_stored, expect_notified or expect_requested".to_string()),
             _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
         }
     }
@@ -302,6 +342,12 @@ impl TaskStep {
         }
         if let Some(at) = &self.click_at {
             return format!("click at {at:?}");
+        }
+        if let Some(at) = &self.double_click_at {
+            return format!("double click at {at:?}");
+        }
+        if let Some(d) = &self.drag {
+            return format!("drag {d:?}");
         }
         if let Some(h) = &self.hold {
             return format!("hold {h:?}");
@@ -390,6 +436,34 @@ impl TaskStep {
                 "button {other:?} is not one of \"primary\", \"secondary\" (a right click) or \"middle\""
             )),
         }
+    }
+
+    /// Where `double_click_at` presses, as fractions of the window.
+    pub fn double_point(&self) -> Option<Result<(f32, f32), String>> {
+        let text = self.double_click_at.as_ref()?;
+        Some(fraction_point(text).ok_or_else(|| {
+            format!(
+                "double_click_at {text:?} is not \"x,y\" with each between 0 and 1 (\"0.5,0.5\" is the middle)"
+            )
+        }))
+    }
+
+    /// Where `drag` starts and ends, as fractions of the window.
+    pub fn drag_points(&self) -> Option<Result<DragPoints, String>> {
+        let text = self.drag.as_ref()?;
+        let mut parts = text.split_whitespace();
+        Some(
+            match (
+                parts.next().and_then(fraction_point),
+                parts.next().and_then(fraction_point),
+                parts.next(),
+            ) {
+                (Some(a), Some(b), None) => Ok((a, b)),
+                _ => Err(format!(
+                    "drag {text:?} is not \"x0,y0 x1,y1\": where it starts and where it lets go, each as fractions between 0 and 1"
+                )),
+            },
+        )
     }
 
     /// Where `click_at` presses, as fractions of the window, or why it cannot.

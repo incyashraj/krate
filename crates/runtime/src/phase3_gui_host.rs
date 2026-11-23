@@ -3155,6 +3155,69 @@ impl Phase3GuiHost {
                     })
                     .is_ok()
             })
+        } else if let Some(Ok((fx, fy))) = step.double_point() {
+            // Two presses at one point with nothing between them: as fast
+            // as a person's double click (K-1362).
+            let Ok(Some(record)) = dispatcher.window(window) else {
+                return;
+            };
+            let (w, h) = (record.size.width as f32, record.size.height as f32);
+            let Ok(viewport) = LayoutViewport::new(w, h) else {
+                return;
+            };
+            let (x, y) = (fx * w, fy * h);
+            if trace {
+                eprintln!("krate-check: task {name:?} step {number}: double-pressing the window at {x:.1},{y:.1}");
+            }
+            [true, false, true, false].iter().all(|&pressed| {
+                dispatcher
+                    .route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                        window,
+                        viewport,
+                        x,
+                        y,
+                        button: Some(press_button),
+                        pressed,
+                        modifiers: Default::default(),
+                    })
+                    .is_ok()
+            })
+        } else if let Some(Ok(((ax, ay), (bx, by)))) = step.drag_points() {
+            // Press, move in steps with the button held, let go (K-1362).
+            let Ok(Some(record)) = dispatcher.window(window) else {
+                return;
+            };
+            let (w, h) = (record.size.width as f32, record.size.height as f32);
+            let Ok(viewport) = LayoutViewport::new(w, h) else {
+                return;
+            };
+            let (x0, y0, x1, y1) = (ax * w, ay * h, bx * w, by * h);
+            if trace {
+                eprintln!("krate-check: task {name:?} step {number}: dragging from {x0:.1},{y0:.1} to {x1:.1},{y1:.1}");
+            }
+            const STEPS: usize = 12;
+            let route = |x: f32,
+                         y: f32,
+                         button: Option<krate_adapter_common::ui::PointerButton>,
+                         pressed: bool| {
+                dispatcher
+                    .route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                        window,
+                        viewport,
+                        x,
+                        y,
+                        button,
+                        pressed,
+                        modifiers: Default::default(),
+                    })
+                    .is_ok()
+            };
+            route(x0, y0, Some(press_button), true)
+                && (1..=STEPS).all(|i| {
+                    let f = i as f32 / STEPS as f32;
+                    route(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, None, false)
+                })
+                && route(x1, y1, Some(press_button), false)
         } else if let Some(Ok((key, _))) = step.held_key() {
             // Pressed now; released when the step has settled (above).
             dispatcher
@@ -9668,6 +9731,8 @@ mod tests {
         match field {
             "click" => s.click = Some(value.to_string()),
             "click_at" => s.click_at = Some(value.to_string()),
+            "double_click_at" => s.double_click_at = Some(value.to_string()),
+            "drag" => s.drag = Some(value.to_string()),
             "paste" => s.paste = Some(value.to_string()),
             "hold" => s.hold = Some(value.to_string()),
             "pad" => s.pad = Some(value.to_string()),
@@ -9924,6 +9989,59 @@ mod tests {
     }
 
     /// An app that draws its own interface (a game) is driven by point and
+    /// K-1362: a task can drag (press, move with the button held, let go
+    /// where it says) and double-click (two presses at once at a point).
+    #[test]
+    fn a_task_drags_and_double_clicks() {
+        let task = crate::usability::Task {
+            name: "carry and open".to_string(),
+            steps: vec![
+                step("drag", "0.1,0.5 0.9,0.5"),
+                step("double_click_at", "0.5,0.25"),
+                step("expect_no_text", "a crash dialog"),
+            ],
+        };
+        let mut host = host_with_labelled_button("Play", task_plan(task));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut events = Vec::new();
+        let report = loop {
+            if let Some(ui::types::Event::Pointer(p)) =
+                ui::events::Host::wait(&mut host, Some(50)).expect("wait call")
+            {
+                events.push((p.button.is_some(), p.pressed, p.x, p.y));
+            }
+            let report = host.usability_report().expect("a plan");
+            if report.task.is_some() || std::time::Instant::now() > deadline {
+                break report;
+            }
+        };
+        assert_eq!(report.task_steps_done, 3, "{report:?}");
+        // The drag: a press at 30, moves with no button, the release at 270
+        // (the window is 300 wide).
+        let first = events.first().expect("events");
+        assert_eq!((first.0, first.1), (true, true), "{events:?}");
+        assert!((first.2 - 30.0).abs() < 1.0, "{events:?}");
+        let moves: Vec<_> = events.iter().filter(|e| !e.0).collect();
+        assert!(moves.len() >= 10, "moves between: {events:?}");
+        assert!(
+            moves.windows(2).all(|w| w[1].2 >= w[0].2),
+            "moving one way: {moves:?}"
+        );
+        let release = events.iter().find(|e| e.0 && !e.1).expect("a release");
+        assert!(
+            (release.2 - 270.0).abs() < 1.0,
+            "let go where it says: {events:?}"
+        );
+        // The double click: two presses and two releases at one point.
+        let tail: Vec<_> = events.iter().filter(|e| e.0).skip(2).collect();
+        assert_eq!(
+            tail.iter().map(|e| e.1).collect::<Vec<_>>(),
+            vec![true, false, true, false],
+            "{events:?}"
+        );
+        assert!(tail.iter().all(|e| (e.2 - 150.0).abs() < 1.0));
+    }
+
     /// by held key: `click_at` presses the window where it is told, and
     /// `hold` keeps a key down for its time before letting it go.
     #[test]
