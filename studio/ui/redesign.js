@@ -845,6 +845,39 @@
     const bs = st.buildingSession;
     return !!plan || !!(bs && st.session && bs.id === st.session.id && !st.buildSettled);
   };
+  /* The mark sits on its turn's first line, by measurement (2026-11-23).
+   *
+   * It was placed at a fixed 2-4px from the top, which is right for one
+   * line height only: beside "Thinking >" (13px in a taller row) the mark
+   * sat about 2px above the words on an iPhone. Now its painted middle
+   * (the iso's drawing spans 6..90 of its 100-unit box, so 48% down) is put
+   * on the middle of the first line's lowercase letters: 58% down the
+   * glyph box, where the eye reads a line's centre. Any font, any size,
+   * any row height. Written only when it moves, so the 400ms repaint costs
+   * nothing once it has settled. */
+  function firstTextRect(el) {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (!n.textContent.trim() || (n.parentElement && n.parentElement.closest(".kr-tav, .kr-kdots")))
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      const box = r.getClientRects()[0];
+      if (box && box.height > 0) return box;
+    }
+    return null;
+  }
+  function alignAvatar(av, el) {
+    const line = firstTextRect(el);
+    if (!line) { av.style.top = ""; return; }
+    const host = av.offsetParent || el;
+    const hostTop = host.getBoundingClientRect().top + (host.clientTop || 0);
+    const size = av.getBoundingClientRect().height || 16;
+    const top = line.top - hostTop + line.height * 0.58 - size * 0.48;
+    const now = parseFloat(av.style.top);
+    if (!(Math.abs(now - top) < 0.25)) av.style.top = top.toFixed(2) + "px";
+  }
   function paintAvatars() {
     if (!thread) return;
     let afterYou = true, last = null;
@@ -854,6 +887,7 @@
         afterYou = false;
         let av = q(":scope > .kr-tav", el);
         if (!av) { av = document.createElement("span"); av.className = "kr-tav"; av.setAttribute("aria-hidden", "true"); av.innerHTML = window.krIso ? window.krIso(16) : ""; el.prepend(av); }
+        alignAvatar(av, el);
         last = av;
       }
     }
@@ -1202,6 +1236,8 @@
   }
   // Built: the change's size on the receipt, and one closing line, as the
   // design ends a build. The words are true of what just happened.
+  // A phone or tablet in a browser tab, where Run opens the app in the tab.
+  const phoneish = () => !window.__TAURI__ && (/Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
   function settledOk(msg, r) {
     const chip = q(".vchip", msg); const st = app(); const res = st && st.session && st.session.result;
     const d = r.revise ? diffOf(buildText.first, buildText.last) : null;
@@ -1210,10 +1246,14 @@
       sp.innerHTML = `<span class="kr-add">+${d.add}</span> <span class="kr-del">−${d.del}</span>`;
       (vm || chip.lastChild).before(sp);
     }
-    if (!res || res.verdict === "off-request") return;
+    // A built app closes like any built app; only a change the engine
+    // refused to apply has nothing new to announce (app.js says so).
+    if (!res || (typeof changeNotApplied === "function" && changeNotApplied(res))) return;
     const name = appName(), size = res.size || "";
     const words = r.revise
       ? "Done. The change is in, and I opened it again to check it still works."
+      : phoneish()
+      ? `It is ready. Press Run to open ${name} right here on this phone, or Share to send it to someone.`
       : `It is ready. ${name} is one ${size ? size + " " : ""}file that opens on macOS, Windows and Linux. Press Run to try it, or Share to send it to someone.`;
     const el = document.createElement("div"); el.className = "msg krate kr-close";
     el.innerHTML = '<span class="body"></span>'; q(".body", el).textContent = words;
@@ -2551,7 +2591,17 @@
     function paintLog() {
       lgQ = 0;
       const text = (lgLog && lgLog.textContent) || "";
-      const lines = text.replace(/\n+$/, "").split("\n").filter((l) => l.trim()).slice(-80);
+      let lines = text.replace(/\n+$/, "").split("\n").filter((l) => l.trim());
+      // A failed build's own words -- on the web, the compiler's output
+      // arrives with the failure, not as log lines -- so "Press Details for
+      // the compiler output" finds it here (2026-11-23: Details showed only
+      // "compiling").
+      const failCard = $("stateFailed"), raw = $("failRaw");
+      if (failCard && !failCard.classList.contains("hidden") && raw && raw.textContent.trim()) {
+        const seen = new Set(lines.map((l) => l.trim()));
+        lines = lines.concat(raw.textContent.split("\n").filter((l) => l.trim() && !seen.has(l.trim())));
+      }
+      lines = lines.slice(-80);
       const key = lines.length + "|" + (lines[lines.length - 1] || "");
       if (key === lgKey) return;
       const atEnd = lg.scrollHeight - lg.scrollTop - lg.clientHeight < 24;
@@ -3524,4 +3574,45 @@
     if (el) mo.observe(el, { attributes: true, attributeFilter: ["class"] });
   }
   sync();
+})();
+
+/* The visible screen, for a phone's fixed views (2026-11-23).
+ *
+ * Safari keeps the layout viewport the same size when the keyboard comes
+ * up and pans a smaller VISUAL viewport over it, so a view fixed to the
+ * layout viewport had its composer under the keyboard. This sets the
+ * view's top and bottom (redesign.css: --vv-top, --vv-bottom) to the
+ * visual viewport's own edges, on every resize and scroll of it. With
+ * nothing on screen but the page both are 0, and the fixed box ends where
+ * Safari's own bottom bar begins. body.kr-kb says the keyboard is up.
+ *
+ * window.krFitViewport(fake) runs it against a stand-in viewport, so the
+ * layout math can be measured in a browser that has no keyboard. */
+(function fitViewport() {
+  const root = document.documentElement;
+  let last = "";
+  function fit(fake) {
+    const vv = fake || window.visualViewport;
+    if (!vv) return;
+    const layoutH = (fake && fake.layoutHeight) || window.innerHeight;
+    const top = Math.max(0, Math.round(vv.offsetTop || 0));
+    const bottom = Math.max(0, Math.round(layoutH - (vv.offsetTop || 0) - vv.height));
+    const key = top + "/" + bottom;
+    if (key === last) return;
+    last = key;
+    root.style.setProperty("--vv-top", top + "px");
+    root.style.setProperty("--vv-bottom", bottom + "px");
+    // A keyboard, not a sliver of rounding: anything over 120px is one.
+    const kb = bottom > 120, was = document.body.classList.contains("kr-kb");
+    document.body.classList.toggle("kr-kb", kb);
+    // The moment it comes up, the thread keeps its newest line in view.
+    const thread = document.getElementById("thread");
+    if (thread && kb && !was) thread.scrollTop = thread.scrollHeight;
+  }
+  window.krFitViewport = (fake) => { last = ""; fit(fake); };
+  if (!window.visualViewport) return;
+  window.visualViewport.addEventListener("resize", () => fit());
+  window.visualViewport.addEventListener("scroll", () => fit());
+  window.addEventListener("orientationchange", () => setTimeout(() => fit(), 250));
+  fit();
 })();

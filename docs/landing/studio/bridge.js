@@ -856,6 +856,9 @@ function rememberHasKrate() {
 function thisSystem() {
   const ua = navigator.userAgent || "";
   if (/Android|iPhone|iPad|iPod/.test(ua)) return "phone";
+  // An iPad says "Macintosh" (Safari asks for the desktop site); its touch
+  // points give it away, as the Player itself checks.
+  if (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1) return "phone";
   if (/Windows/.test(ua)) return "windows";
   if (/Linux|X11/.test(ua) && !/Mac/.test(ua)) return "linux";
   if (/Mac/.test(ua)) return "mac";
@@ -935,6 +938,80 @@ function currentWebApp(path, version) {
   }
   return { url, name: base };
 }
+
+/* Run, on a phone (2026-11-23).
+ *
+ * A person on an iPhone pressed Run on her finished app and nothing useful
+ * happened. Run asked "Open it here?" in a sheet with that one answer, and
+ * the answer opened an empty tab first -- the pop-up rule wants a new tab
+ * opened inside the tap -- then put the app online from the tab left
+ * behind. On a phone that tab is backgrounded the moment the new one
+ * opens, and Safari pauses a background tab's work: the new tab sat on
+ * about:blank. Nothing a person can do with that.
+ *
+ * So on a phone Run does it in place: one tap, a line saying it is getting
+ * ready, the app put online unlisted (the same bytes always get the same
+ * address, and nobody is mailed), and then this tab goes to the Player.
+ * The way back is the browser's Back, which lands on this session with the
+ * app showing (krate_return below). An app already put online opens at
+ * once: its address is remembered per file. */
+const RUN_URLS_KEY = "krate.run.urls.v1";
+const RETURN_KEY = "krate_return";
+function savedRunUrl(fileUrl) {
+  try { return (JSON.parse(localStorage.getItem(RUN_URLS_KEY) || "{}") || {})[fileUrl] || ""; } catch (e) { return ""; }
+}
+function saveRunUrl(fileUrl, runUrl) {
+  try {
+    const all = JSON.parse(localStorage.getItem(RUN_URLS_KEY) || "{}") || {};
+    all[fileUrl] = runUrl;
+    // The newest forty: an address per version is plenty to remember.
+    const keys = Object.keys(all);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 40))) delete all[k];
+    localStorage.setItem(RUN_URLS_KEY, JSON.stringify(all));
+  } catch (e) {}
+}
+async function runOnPhone(app) {
+  let run = savedRunUrl(app.url);
+  if (!run) {
+    if (typeof toastish === "function") toastish("Opening your app…");
+    let out;
+    try {
+      out = await publishWebApp({ path: app.url, name: app.name.replace(/\.krate$/, ""), unlisted: true, quiet: true }, bridge.token);
+    } catch (err) {
+      return refuse(`It could not be opened here just now: ${String((err && err.message) || err).replace(/[.\s]+$/, "")}. Try Run again in a moment.`);
+    }
+    const hash = String((out && (out.full_url || out.url)) || "").split("/").pop().split("?")[0];
+    if (!/^[0-9a-f]{64}$/.test(hash)) return refuse("It could not be opened here just now. Try Run again in a moment.");
+    run = `${HUB}/run/${hash}?via=studio`;
+    saveRunUrl(app.url, run);
+  }
+  // Coming back with Back reopens this session on its app.
+  try {
+    const st = typeof state === "object" && state && state.session;
+    if (st && st.id) sessionStorage.setItem(RETURN_KEY, JSON.stringify({ session: st.id, at: Date.now() }));
+  } catch (e) {}
+  location.assign(run);
+  return "opened";
+}
+/* Back from the Player: the session it was run from, on its app. Safari
+ * usually restores the page itself (back-forward cache); when it reloads
+ * instead, this puts the person where they were. */
+(function backFromRun() {
+  let rec = null;
+  try { rec = JSON.parse(sessionStorage.getItem(RETURN_KEY) || "null"); sessionStorage.removeItem(RETURN_KEY); } catch (e) {}
+  if (!rec || !rec.session || Date.now() - (rec.at || 0) > 6 * 3600 * 1000) return;
+  let tries = 0;
+  const wait = setInterval(() => {
+    if (++tries > 100) { clearInterval(wait); return; }
+    if (typeof window.openSession !== "function") return;
+    clearInterval(wait);
+    const session = localSessions().find((x) => x && x.id === rec.session);
+    if (!session) return;
+    try { window.openSession(session); } catch (e) { return; }
+    const appSide = document.querySelector('#viewSession .mob-switch [data-mob="app"]');
+    if (appSide) setTimeout(() => appSide.click(), 50);
+  }, 100);
+})();
 
 /* Publish an app the build service holds: the same door `krate publish`
  * uses, fed the same way. The hub wants the bundle bytes as the body and
@@ -2238,6 +2315,8 @@ const COMMANDS = {
   async open_app({ path, version } = {}) {
     const app = currentWebApp(path, version);
     if (!app) return refuse("A browser cannot open the app itself. Download the file. It opens on your Mac, Windows or Linux.");
+    // A phone or a tablet runs it here, in the Player, with one tap.
+    if (thisSystem() === "phone") return runOnPhone(app);
     if (!hasKrateAlready()) {
       askFirstRun(app);
       // Not a refusal: the sheet is now asking, and a red line under the
@@ -3328,6 +3407,13 @@ function speakWeb() {
   // entry and no answer. Offering it would be a dead end dressed as help.
   const switchAi = document.getElementById("switchAiBtn");
   if (switchAi) switchAi.remove();
+  // The report sheet's promise, true of a tab: the account is whatever
+  // they signed in with (GitHub, Google or an email), and a tab reads
+  // nothing of the device at all -- "this computer" read wrong on a phone.
+  const repFine = document.querySelector("#reportSheet .rep-fine");
+  if (repFine) {
+    repFine.textContent = "Your account name goes with it so we can reply. Nothing else is read: no other apps, no files you did not attach, no keys. You can open the file yourself first.";
+  }
   // Studio checks GitHub for a newer desktop release and offers the
   // download; in a tab there is nothing to update, and "Update to v0.3.0"
   // on a website is a lie about a file that does not exist here. The check

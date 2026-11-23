@@ -95,6 +95,53 @@ const fn = bridge.slice(
 assert.match(fn, /pointer: coarse/, "the touch rewrite checks for touch");
 assert.match(fn, /max-width: 860px/, "the touch rewrite is scoped to a phone too");
 
+// A built app is announced as built (founder rule, 2026-11-23). The
+// engine's request verdict stays in our records; no string a person can
+// see says something "may be missing" or "is not what you asked for".
+// Comments may name the old words (they explain why they are gone), so
+// only code lines are read.
+{
+  const codeOf = (path) => readFileSync(path, "utf8").split("\n")
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+  for (const path of ["studio/ui/app.js", "studio/ui/redesign.js", "docs/landing/studio/bridge.js", "cloud/builder/src/server.js", "studio/ui/index.html"]) {
+    const code = codeOf(path);
+    for (const words of [/may be missing/i, /not what you asked for/i, /Worth checking/]) {
+      assert.ok(!words.test(code), `${path} shows a person ${words}`);
+    }
+  }
+  // The builder hands the page no verdict for a built app.
+  const server = readFileSync("cloud/builder/src/server.js", "utf8");
+  assert.match(server, /verdict_detail: job\.result\.verdict === "ported" \? job\.result\.verdict_detail \|\| null : null/,
+    "the status hands the page a port's note and nothing else");
+}
+
+// Phones (2026-11-23, an iPhone in Safari).
+{
+  const css = readFileSync("studio/ui/redesign.css", "utf8");
+  // The App side's bar must contain its own drag layer (style.css
+  // .titlebar::before, absolute inset 0): a static bar let it cover the
+  // whole screen, so Chat, Run, Share and Back could not be pressed.
+  const appBar = /#viewSession\[data-mob="app"\] \.panel-bar \{\s*position: (\w+)/.exec(css);
+  assert.ok(appBar, "the phone App side styles its bar");
+  assert.notEqual(appBar[1], "static", "the phone App bar is never static");
+  // Each view is fixed to what the screen shows, moved by the visual
+  // viewport, so the composer sits above Safari's bar and the keyboard.
+  assert.match(css, /\.view \{\s*position: fixed; left: 0; right: 0;\s*top: var\(--vv-top, 0px\); bottom: var\(--vv-bottom, 0px\);/,
+    "a phone's views follow the visual viewport");
+  const rjs = readFileSync("studio/ui/redesign.js", "utf8");
+  assert.match(rjs, /visualViewport\.addEventListener\("resize"/, "the views follow the keyboard");
+  assert.match(rjs, /function alignAvatar\(/, "the mark is set on its first line by measurement");
+  // Run on a phone: no blank tab opened ahead of the work.
+  const run = bridge.slice(bridge.indexOf("async function runOnPhone"), bridge.indexOf("function backFromRun"));
+  assert.ok(run.length > 100, "runOnPhone exists");
+  assert.ok(!/window\.open/.test(run), "a phone's Run never opens a tab it cannot fill");
+  assert.match(run, /location\.assign\(run\)/, "a phone's Run goes to the Player in this tab");
+  assert.match(bridge, /if \(thisSystem\(\) === "phone"\) return runOnPhone\(app\);/, "open_app sends a phone there");
+}
+
+console.log("ok  a built app is shown as built: no verdict words reach the screen");
+console.log("ok  phone layout: App bar contains its drag layer, views follow the visual viewport");
+console.log("ok  Run on a phone goes to the Player in the same tab");
 console.log("ok  the web rewrites Studio's desktop wording");
 console.log("ok  every rewrite still matches a real string in the UI");
 console.log("ok  the touch rewrites shorten real strings, on phones only");
