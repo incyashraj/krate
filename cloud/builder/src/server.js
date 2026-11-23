@@ -1092,7 +1092,10 @@ async function startBuild({ request, token, account, device, revise = null, shap
           ? revise.name
           : job.port
           ? prettyName((job.port.name || request.replace(/^Port /, "")).replace(/[-_]+/g, " "))
-          : prettyName(engineName ? engineName.replace(/[-_]+/g, " ") : request),
+          // The name the person agreed in the plan comes first: a period
+          // tracker agreed as "Cycle Log" arrived as "Track.krate", from
+          // the first word of "an app to track my cycle" (2026-11-23).
+          : agreedName(request) || prettyName(engineName ? engineName.replace(/[-_]+/g, " ") : request),
         size: prettySize(info.size),
         asks,
         shot: job.shot,
@@ -1114,6 +1117,9 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // the disk does not have.
       await persistResultBytes(job);
       await persistJob(job);
+      // Kept for a build that worked too: a finished build can still cost
+      // 15 rounds (2026-11-23), and only its log says why.
+      await keepFailedLog(job.id, log);
       await audit({ action: "done", account, job: job.id, ...(job.spend ? { usd: job.spend.usd, rounds: job.spend.rounds } : {}) });
       // Only a build that produced a file the engine accepted counts
       // against the allowance: "made" is the one outcome that consumes the
@@ -1844,6 +1850,15 @@ function plainFailure(tail) {
     return "That took longer than we allow. Try a smaller first version.";
   }
   return "That one didn't come together. Your words are still here.";
+}
+
+/// The app's name as Studio's plan agreed it, carried in the request as
+/// `(The app is called "Cycle Log".)`; "" when there is none. Same file-name
+/// rules as prettyName: no characters Windows refuses, at most 40 long.
+function agreedName(request) {
+  const m = /\(The app is called "([^"\n]{1,80})"\.\)/.exec(String(request));
+  if (!m) return "";
+  return m[1].replace(/[\\/*<>|:?"]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 40).trim();
 }
 
 function prettyName(request) {
