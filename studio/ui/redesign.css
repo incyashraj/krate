@@ -1631,28 +1631,37 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
 /* Start a project: the engine's starters, each with its real first frame. */
 #homeIdePane { padding: 14px 16px 16px; }
 #homeIdePane .kr-idehead { min-height: 0; margin-bottom: 12px; }
-.kr-starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.kr-starters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kr-starters[aria-busy] { min-height: 150px; }
 .kr-starter { position: relative; min-width: 0; border-radius: 16px; animation: krRv .6s var(--ease) both; animation-delay: calc(var(--k, 0) * 60ms + 120ms); transition: opacity .3s var(--ease); }
 .kr-st-go { display: block; width: 100%; border: 0; padding: 0; background: none; cursor: pointer; text-align: left; color: inherit; font: inherit; border-radius: 14px; }
 .kr-st-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .kr-starter .th { position: relative; display: block; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--surface-2); box-shadow: var(--sh-1); transition: transform .45s var(--ease), box-shadow .3s; }
 .kr-starter .th img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
 .kr-st-go:hover .th { transform: translateY(-3px); box-shadow: var(--sh-2); }
-.kr-starter b { display: block; margin: 9px 2px 0; font: 500 13.5px var(--sans); color: var(--ink); }
+.kr-starter b { display: block; margin: 9px 2px 0; font: 500 13.5px var(--sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kr-starter small { display: block; margin: 1px 2px 0; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* The command-line tool's picture is its real output, drawn as text. */
-.kr-starter .th.term { background: var(--surface-2); }
-.kr-starter .th.term code { position: absolute; inset: 0; padding: 10px 12px; font: 400 10.5px/1.5 var(--mono); color: var(--ink-2); white-space: nowrap; overflow: hidden; }
-.kr-starter .th.term i { display: block; margin: -2px 0 5px; font-style: normal; color: var(--ink-3); }
+/* A picture of an app sits in a small window of the page's own colours, so a
+   dark app on a light page (or the other way round) reads as a screenshot,
+   not a hole. Light and dark pictures where the app draws both. */
+.kr-win { display: flex !important; flex-direction: column; background: var(--surface) !important; }
+.kr-win .bar { flex: none; display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--line); }
+.kr-win .bar i { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.kr-win .bar em { flex: 1; min-width: 0; margin-right: 26px; font: 500 10px var(--sans); font-style: normal; color: var(--ink-3); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kr-win .pic { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.kr-win .pic img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.kr-win .pic img.dk { display: none; }
+body:not(.light) .kr-win .pic img.lt { display: none; }
+body:not(.light) .kr-win .pic img.dk { display: block; }
 /* Naming a starter: the card's caption becomes the name and Create. */
-.kr-starters.choosing .kr-starter:not(.naming) { opacity: .45; }
+.kr-starters.choosing .kr-starter:not(.naming) { opacity: .6; }
 .kr-starters.choosing .kr-starter:not(.naming):hover { opacity: .8; }
 .kr-starter.naming .th { box-shadow: 0 0 0 2px var(--accent); transform: none; }
 .kr-starter.naming .kr-st-go b, .kr-starter.naming .kr-st-go small { display: none; }
 .kr-st-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; animation: krItIn .35s var(--ease) both; }
-.kr-st-name input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 0; outline: 0; border-radius: 9px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); font: 400 13.5px var(--sans); color: var(--ink); }
+.kr-st-name input { flex: 1 1 100%; min-width: 0; height: 32px; padding: 0 10px; border: 0; outline: 0; border-radius: 9px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-strong); font: 400 13.5px var(--sans); color: var(--ink); }
 .kr-st-name input:focus { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 60%, transparent); }
-.kr-st-name .kr-mk { height: 32px; padding: 0 12px; border: 0; border-radius: 999px; cursor: pointer; font: 500 13px var(--sans); background: var(--btn); color: var(--btn-ink); }
+.kr-st-name .kr-mk { flex: 1; height: 32px; padding: 0 12px; border: 0; border-radius: 999px; cursor: pointer; font: 500 13px var(--sans); background: var(--btn); color: var(--btn-ink); }
 .kr-st-name .kr-cx { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; display: grid; place-items: center; cursor: pointer; background: none; color: var(--ink-3); }
 .kr-st-name .kr-cx:hover { background: var(--hover); color: var(--ink); }
 .kr-st-line { flex: 1 0 100%; margin: 2px 2px 0; font-size: 12px; line-height: 1.45; color: var(--ink-3); }
@@ -1679,7 +1688,7 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
 .kr-pj-empty { grid-column: 1 / -1; margin: 0; padding: 18px; border-radius: 14px; text-align: center; font-size: 13px; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--line); }
 .kr-pj-more { grid-column: 1 / -1; justify-self: center; height: 30px; padding: 0 14px; border: 0; border-radius: 999px; cursor: pointer; font: 500 12.5px var(--sans); color: var(--ink-2); background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .kr-pj-more:hover { background: var(--hover); color: var(--ink); }
-@media (max-width: 860px) { .kr-projs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .kr-projs { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kr-starters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .kr-projs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* A narrow window: each starter becomes a row, its picture beside its words. */
 @media (max-width: 640px) {
@@ -1689,7 +1698,6 @@ body.macos .side-brandrow .side-toggle, body.macos.light .side-brandrow .side-to
   .kr-starter b { margin: 0; align-self: end; }
   .kr-starter small { align-self: start; }
   .kr-starter.naming .kr-st-go b, .kr-starter.naming .kr-st-go small { display: block; }
-  .kr-starter .th.term code { padding: 7px 9px; font-size: 8.5px; }
 }
 
 /* ---- the IDE -------------------------------------------------------------- */

@@ -1385,8 +1385,10 @@
   function projectCard(p, i, pics) {
     const pic = pics[p.path];
     const initial = (String(p.name).match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase();
-    const th = pic ? `<img src="${esc(pic.src)}" alt="">` : `<span class="kr-pj-none" style="--t:var(--${tint(p.name)})"><i>${esc(initial)}</i></span>`;
-    return `<button type="button" class="kr-pj" style="--k:${Math.min(i, 11)}" data-path="${esc(p.path)}" data-name="${esc(p.name)}" title="${esc(short(p.path))}"><span class="th">${th}</span><b>${esc(p.name)}</b><small><span class="pth">${esc(where(p.path))}</span>${p.updated ? `<span class="when">${esc(ago(p.updated))}</span>` : ""}</small></button>`;
+    // A picture sits in the same small window as the starters' pictures.
+    const th = pic ? `<span class="th kr-win"><span class="bar" aria-hidden="true"><i></i><i></i><i></i><em>${esc(p.name)}</em></span><span class="pic"><img src="${esc(pic.src)}" alt=""></span></span>`
+      : `<span class="th"><span class="kr-pj-none" style="--t:var(--${tint(p.name)})"><i>${esc(initial)}</i></span></span>`;
+    return `<button type="button" class="kr-pj" style="--k:${Math.min(i, 11)}" data-path="${esc(p.path)}" data-name="${esc(p.name)}" title="${esc(short(p.path))}">${th}<b>${esc(p.name)}</b><small><span class="pth">${esc(where(p.path))}</span>${p.updated ? `<span class="when">${esc(ago(p.updated))}</span>` : ""}</small></button>`;
   }
   function paintProjects() {
     const box = $("homeIdeRows"); if (!box) return;
@@ -1444,6 +1446,35 @@
     for (let n = 2; ; n++) if (!taken.has(kebab(`${base} ${n}`))) return `${base} ${n}`;
   }
   const starters = $("homeIdeStarters");
+  // The starters: Krate's own reference apps as text (starters.json, from
+  // scripts/build-ide-starters.py). Each rides on a built-in engine kind:
+  // ide_new makes that, then ide_write puts the app's files over it.
+  let STARTERS = [];
+  const starterById = (id) => STARTERS.find((s) => s.id === id);
+  function paintStarters() {
+    starters.removeAttribute("aria-busy");
+    starters.innerHTML = STARTERS.map((s, i) => `<div class="kr-starter" data-id="${esc(s.id)}" data-kind="${esc(s.kind)}" data-name="${esc(s.name)}" style="--k:${i}"><button type="button" class="kr-st-go" aria-label="Start ${esc(s.title.toLowerCase())}: ${esc(s.blurb.toLowerCase())}"><span class="th kr-win"><span class="bar" aria-hidden="true"><i></i><i></i><i></i><em>${esc(s.name)}</em></span><span class="pic"><img class="lt" src="starters/${esc(s.id)}-light.jpg" alt=""><img class="dk" src="starters/${esc(s.id)}-dark.jpg" alt=""></span></span><b>${esc(s.title)}</b><small>${esc(s.blurb)}</small></button></div>`).join("");
+  }
+  let startersAsked = null;
+  function loadStarters() {
+    if (!startersAsked) startersAsked = fetch("starters/starters.json").then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => { STARTERS = (d && Array.isArray(d.starters) ? d.starters : []).filter((s) => s && s.id && s.kind && s.files && s.caps); paintStarters(); })
+      .catch(() => { startersAsked = null; starters.removeAttribute("aria-busy"); starters.innerHTML = '<p class="kr-pj-empty">The starters did not load. Open a folder below, or try the IDE tab again.</p>'; });
+    return startersAsked;
+  }
+  // The project's own manifest up to its capabilities (the id, entry and
+  // name ide_new wrote), then the starter's. Same rule as manifest() in
+  // scripts/build-ide-starters.py, which proves every starter builds.
+  function starterManifest(base, caps) {
+    const at = base.indexOf("[[capabilities]]");
+    return (at < 0 ? base : base.slice(0, at)).replace(/\s+$/, "") + "\n\n" + caps;
+  }
+  async function applyStarter(p, s, say) {
+    say(`Writing ${s.title.replace(/^An? /, "the ").toLowerCase()}…`);
+    const base = await call("ide_read", { path: p.path, rel: "manifest.toml" });
+    await call("ide_write", { path: p.path, rel: "manifest.toml", text: starterManifest(base, s.caps) });
+    for (const [rel, text] of Object.entries(s.files)) await call("ide_write", { path: p.path, rel, text });
+  }
   function closeNaming(card) {
     if (!card || card.classList.contains("busy")) return;
     const f = card.querySelector(".kr-st-name"); if (f) f.remove();
@@ -1475,6 +1506,15 @@
       try { off = await tauri.event.listen("ide-line", (ev) => { const l = ev.payload && ev.payload.line; if (l && l.trim()) line.textContent = l.trim().slice(0, 140); }); } catch (err) { off = null; }
       try {
         const p = await call("ide_new", { name, kind: card.dataset.kind });
+        const s = starterById(card.dataset.id);
+        if (s) {
+          try { await applyStarter(p, s, (t) => { line.textContent = t; }); }
+          catch (err) {
+            // The project exists as the plain starter; say so and let it open.
+            await loadProjects();
+            throw Object.assign(new Error(`${p.name} was made, but its code could not be written: ${err}`), { made: p });
+          }
+        }
         card.classList.remove("busy"); starters.classList.remove("making");
         closeNaming(card);
         await loadProjects();
@@ -1482,9 +1522,9 @@
       } catch (err) {
         card.classList.remove("busy"); starters.classList.remove("making");
         f.querySelectorAll("button, input").forEach((x) => (x.disabled = false));
-        line.textContent = String(err); line.classList.add("bad");
+        line.textContent = String(err && err.message ? err.message : err); line.classList.add("bad");
         // The name is taken by a project that is right here: offer it.
-        const same = projects.find((p) => kebab(p.path.split(/[\\/]/).filter(Boolean).pop() || "") === kebab(name));
+        const same = (err && err.made) || projects.find((p) => kebab(p.path.split(/[\\/]/).filter(Boolean).pop() || "") === kebab(name));
         if (same) {
           const b = document.createElement("button"); b.type = "button"; b.className = "kr-st-open"; b.textContent = `Open ${same.name}`;
           b.addEventListener("click", () => { closeNaming(card); openProject(same); });
@@ -1507,7 +1547,7 @@
     if (e.detail !== "ide") return;
     hint(""); $("homeIdeFind").value = ""; showAll = false;
     starters.querySelectorAll(".kr-starter.naming").forEach(closeNaming);
-    loadProjects(); paintAgent();
+    loadStarters(); loadProjects(); paintAgent();
   });
   // Closing the window: anything not saved is already kept as a draft, and
   // comes back the next time the project opens.
