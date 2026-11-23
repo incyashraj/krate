@@ -1086,7 +1086,7 @@ body:not(.light) .kr-pop { background: #1c1c1f; }
 #viewHome .home-title .rw .w.on { transition-delay: .12s; }
 #viewHome .home-title .rw .w.out { transform: translateY(-.42em); }
 /* the typed word: text, then a caret that blinks while it waits */
-#viewHome .home-title .rw.kr-typed { display: inline-block; width: auto; transition: none; white-space: nowrap; }
+#viewHome .home-title .rw.kr-typed { display: inline-block; width: auto; transition: none; white-space: nowrap; text-align: left; }
 #viewHome .home-title .rw.kr-typed .tw { color: color-mix(in srgb, var(--accent) 42%, var(--ink)); transition: color .3s var(--ease); }
 #viewHome .home-title .rw.kr-typed[data-i="1"] .tw { color: color-mix(in srgb, var(--violet) 46%, var(--ink)); }
 #viewHome .home-title .rw.kr-typed .tq { color: var(--ink); }
