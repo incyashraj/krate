@@ -10,3 +10,19 @@
 
 pub mod layered;
 pub mod layout;
+
+pub mod common;
+pub mod core;
+pub mod detect;
+pub mod errors;
+pub mod flowchart;
+pub mod js;
+pub mod preprocess;
+pub mod render;
+pub mod svg;
+pub mod text;
+pub mod util;
+
+pub mod obsidian;
+#[cfg(test)]
+mod oracle;
