@@ -98,6 +98,11 @@ pub struct Text {
     /// SVG text is set in a serif face unless its font-family names a
     /// sans-serif or monospace one.
     pub serif: bool,
+    /// The angle it is turned by, in degrees (clockwise, as SVG's rotate).
+    pub turn: f32,
+    /// A `<tspan>` with no place of its own: it goes on where the run
+    /// before it ends.
+    pub follows: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,6 +113,8 @@ pub struct Shape {
     pub stroke: Paint,
     pub width: f32,
     pub even_odd: bool,
+    /// `stroke-dasharray`, in document units; empty for a solid line.
+    pub dash: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -734,6 +741,7 @@ struct Style {
     marker_start: Option<String>,
     marker_mid: Option<String>,
     marker_end: Option<String>,
+    dash: Vec<f32>,
     // Not inherited: read afresh for each element.
     own_op: f32,
     clip: Option<String>,
@@ -984,6 +992,18 @@ fn set_prop(s: &mut Style, k: &str, v: &str) {
         "fill-rule" => s.even_odd = v.trim() == "evenodd",
         "clip-rule" => s.clip_even_odd = v.trim() == "evenodd",
         "font-size" => s.font = num(v).unwrap_or(s.font),
+        "stroke-dasharray" => {
+            let mut d = numbers(v);
+            // An odd list is repeated, as SVG says.
+            if d.len() % 2 == 1 {
+                d.extend(d.clone());
+            }
+            s.dash = if d.iter().all(|x| *x <= 0.0) {
+                Vec::new()
+            } else {
+                d
+            };
+        }
         // The CSS shorthand: its size is the token in px, its family the rest.
         "font" => {
             for tok in v.split_whitespace() {
@@ -1829,10 +1849,23 @@ fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: 
             return;
         }
         "text" | "tspan" => {
-            let text = unescape(n.text.trim());
-            if !text.is_empty() {
+            let follows = n.name == "tspan" && nattr(n, "x").is_none() && nattr(n, "y").is_none();
+            // Spaces at a run's end belong to it: a tspan may follow it.
+            let raw = unescape(n.text);
+            let text = if follows {
+                raw
+            } else {
+                let t = raw.trim_start();
+                let mut out = String::from(t.trim_end());
+                if t.len() > out.len() && !out.is_empty() {
+                    out.push(' ');
+                }
+                out
+            };
+            if !text.trim().is_empty() {
                 let p = st.tf.apply((g("x"), g("y")));
                 let c = color(&st.fill).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+                let [a, b, ..] = st.tf.0;
                 texts.push(Text {
                     x: p.0,
                     y: p.1,
@@ -1842,6 +1875,8 @@ fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: 
                     anchor: st.anchor,
                     bold: st.bold,
                     serif: st.serif,
+                    turn: b.atan2(a).to_degrees(),
+                    follows,
                 });
             }
             return;
@@ -1874,6 +1909,7 @@ fn shape(cx: &Cx<'_, '_>, n: &Node<'_>, st: &Style, out: &mut Vec<Item>, texts: 
         stroke,
         width: st.width * st.tf.scale(),
         even_odd: st.even_odd,
+        dash: st.dash.iter().map(|d| d * st.tf.scale()).collect(),
     }));
     if matches!(n.name, "path" | "line" | "polyline" | "polygon") {
         markers(cx, n, st, out);
@@ -2209,6 +2245,7 @@ pub fn parse_with(
         marker_start: None,
         marker_mid: None,
         marker_end: None,
+        dash: Vec::new(),
         own_op: 1.0,
         clip: None,
         mask: None,
@@ -2392,6 +2429,57 @@ fn coverage(polys: &[Vec<Pt>], w: usize, h: usize, even_odd: bool) -> Vec<f32> {
     cov
 }
 
+/// A line cut into its dashes: on, off, on, ... along each polyline.
+fn dash_polys(polys: &[(Vec<Pt>, bool)], pat: &[f32]) -> Vec<(Vec<Pt>, bool)> {
+    let mut out = Vec::new();
+    if pat.iter().sum::<f32>() <= 0.0 {
+        return polys.to_vec();
+    }
+    for (p, closed) in polys {
+        let mut pts = p.clone();
+        if *closed {
+            if let Some(f) = pts.first().copied() {
+                if pts.last() != Some(&f) {
+                    pts.push(f);
+                }
+            }
+        }
+        let (mut i, mut left, mut on) = (0usize, pat[0], true);
+        let mut cur: Vec<Pt> = pts.first().copied().into_iter().collect();
+        for w in pts.windows(2) {
+            let (mut a, b) = (w[0], w[1]);
+            let mut seg = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+            while seg > 1e-6 {
+                let step = left.min(seg);
+                let t = step / seg;
+                let q = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+                if on {
+                    cur.push(q);
+                }
+                a = q;
+                seg -= step;
+                left -= step;
+                if left <= 1e-6 {
+                    if on && cur.len() > 1 {
+                        out.push((core::mem::take(&mut cur), false));
+                    }
+                    on = !on;
+                    i = (i + 1) % pat.len();
+                    left = pat[i];
+                    cur.clear();
+                    if on {
+                        cur.push(a);
+                    }
+                }
+            }
+        }
+        if on && cur.len() > 1 {
+            out.push((cur, false));
+        }
+    }
+    out
+}
+
 /// The outline of a stroke: a quad per segment and a round end at every
 /// point (round joins and caps, as Lucide draws).
 fn stroke_polys(polys: &[(Vec<Pt>, bool)], width: f32) -> Vec<Vec<Pt>> {
@@ -2453,7 +2541,16 @@ fn draw_shape(sh: &Shape, px: &mut [f32], wu: usize, hu: usize, sx: f32, sy: f32
         layers.push((coverage(&fills, wu, hu, sh.even_odd), scale_paint(&sh.fill)));
     }
     if sh.stroke != Paint::None && sh.width > 0.0 {
-        let outline = stroke_polys(&polys, sh.width * (sx + sy) * 0.5);
+        let k = (sx + sy) * 0.5;
+        let dashed;
+        let lines = if sh.dash.is_empty() {
+            &polys
+        } else {
+            let pat: Vec<f32> = sh.dash.iter().map(|d| d * k).collect();
+            dashed = dash_polys(&polys, &pat);
+            &dashed
+        };
+        let outline = stroke_polys(lines, sh.width * k);
         layers.push((coverage(&outline, wu, hu, false), scale_paint(&sh.stroke)));
     }
     for (cov, paint) in layers {
@@ -3255,5 +3352,14 @@ mod tests {
         let (la, sa) = (px(&a, 40, 20, 5), px(&b, 40, 20, 5));
         assert!(la[0] > 160 && la[2] > 160, "linear: {la:?}");
         assert!(sa[0] < 150 && sa[2] < 150, "sRGB: {sa:?}");
+    }
+
+    #[test]
+    fn dashed_strokes_leave_gaps() {
+        let svg = parse(r##"<svg width="40" height="10"><line x1="0" y1="5" x2="40" y2="5" stroke="#000" stroke-width="2" stroke-dasharray="4 4"/></svg>"##).unwrap();
+        let (rgba, _) = rasterise(&svg, 40, 10);
+        assert!(px(&rgba, 40, 2, 5)[3] > 200, "a dash");
+        assert!(px(&rgba, 40, 6, 5)[3] < 60, "a gap");
+        assert!(px(&rgba, 40, 10, 5)[3] > 200, "the next dash");
     }
 }

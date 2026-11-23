@@ -1095,10 +1095,6 @@ fn math_block(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> 
     )
 }
 
-/// The Mermaid kinds Vault draws through its port of Pele, as Obsidian
-/// does (src/pele/); the others are still drawn by src/charts.rs.
-const PELE_KINDS: &[&str] = &["flowchart"];
-
 /// A diagram Pele draws: its SVG in Obsidian's colours, read into a
 /// picture once and kept (the few newest).
 fn pele_picture(
@@ -1109,9 +1105,36 @@ fn pele_picture(
     sz: &Sizes,
     line: usize,
 ) -> Option<Rc<Lay>> {
+    // As Obsidian puts a note's diagram in place (Pele's mount.ts, with
+    // its default options): drawn at its own size, and drawn again for the
+    // column's width when it is wider and the width can change it.
     let measure = super::diagram::CanvasMeasure { c };
-    let opts = crate::pele::render::obsidian_options(&measure, "x", "sans-serif");
-    let svg = crate::pele::render::render_with(src, &opts).ok()?.svg;
+    let base = crate::pele::render::RenderOptions {
+        measurer: Some(&measure),
+        id_prefix: Some(String::from("pele-1-1")),
+        font_family: Some(String::from("sans-serif")),
+        // Gantt's today line, from the clock (Pele reads it the same way).
+        now: Some(krate::time::now_millis() as f64),
+        ..crate::pele::render::RenderOptions::default()
+    };
+    let natural = crate::pele::render::render_with(src, &base).ok()?;
+    let room = f64::from(width);
+    let svg = if room > 0.0 && room < natural.width {
+        let narrow = |w: f64| {
+            let o = crate::pele::render::RenderOptions {
+                max_width: Some(w),
+                ..base.clone()
+            };
+            crate::pele::render::render_with(src, &o).ok()
+        };
+        let adapts = narrow(1.0).is_some_and(|r| r.svg != natural.svg);
+        match adapts.then(|| narrow(room)).flatten() {
+            Some(r) => r.svg,
+            None => natural.svg,
+        }
+    } else {
+        natural.svg
+    };
     let t = if env.dark { &look::DARK } else { &look::LIGHT };
     let themed = super::diagram::themed(&svg, t);
     let mut key: u64 = 0xcbf2_9ce4_8422_2325;
@@ -1159,7 +1182,9 @@ fn diagram(c: u64, env: &mut Env, doc: &Doc, span: Span, width: f32, sz: &Sizes)
         src.push_str(doc.line(n));
         src.push('\n');
     }
-    if crate::charts::kind(&src).is_some_and(|k| PELE_KINDS.contains(&k)) {
+    // Every kind Obsidian draws goes through the port of Pele (src/pele/);
+    // src/charts.rs is left for what Pele does not read.
+    if crate::pele::core::supports(&src) {
         if let Some(l) = pele_picture(c, env, &src, width, sz, span.first) {
             return l;
         }
@@ -2855,22 +2880,33 @@ fn draw_ready(c: u64, handle: u64, texts: &[crate::svg::Text], px_w: u32, rc: Re
     let _ = krate::gfx::canvas_images::draw_round(c, handle, look::g(rc), look::radii(radius));
     // An SVG's text, drawn at the picture's scale.
     let k = w / (px_w as f32).max(1.0);
-    for tx in texts {
+    // Where the last level run ended, for a tspan that follows it.
+    let mut run_end: Option<(f32, f32)> = None;
+    let style_of = |tx: &crate::svg::Text| krate::gfx::types::TextStyle {
+        weight: if tx.bold { 700 } else { 400 },
+        italic: false,
+        letter_spacing: 0.0,
+        family: if tx.serif {
+            krate::gfx::types::FontFamily::Serif
+        } else {
+            krate::gfx::types::FontFamily::Sans
+        },
+    };
+    for (i, tx) in texts.iter().enumerate() {
         let size = tx.size * k;
-        let st = krate::gfx::types::TextStyle {
-            weight: if tx.bold { 700 } else { 400 },
-            italic: false,
-            letter_spacing: 0.0,
-            family: if tx.serif {
-                krate::gfx::types::FontFamily::Serif
-            } else {
-                krate::gfx::types::FontFamily::Sans
-            },
-        };
+        let st = style_of(tx);
         let tw = look::width_styled(c, &tx.text, size, st);
+        // A run is anchored by its whole length, the tspans that follow
+        // it included.
+        let whole = tw
+            + texts[i + 1..]
+                .iter()
+                .take_while(|t| t.follows)
+                .map(|t| look::width_styled(c, &t.text, t.size * k, style_of(t)))
+                .sum::<f32>();
         let dx = match tx.anchor {
-            1 => tw * 0.5,
-            2 => tw,
+            1 => whole * 0.5,
+            2 => whole,
             _ => 0.0,
         };
         let col = krate::gfx::types::Color {
@@ -2879,7 +2915,52 @@ fn draw_ready(c: u64, handle: u64, texts: &[crate::svg::Text], px_w: u32, rc: Re
             b: tx.color[2],
             a: tx.color[3],
         };
-        look::text_styled(c, &tx.text, x + tx.x * k - dx, y + tx.y * k, size, st, col);
+        // Turned text: by quarters, as Krate turns it; an eighth (gitGraph's
+        // commit ids) is drawn a quarter, reading up.
+        let turn = tx.turn.rem_euclid(360.0);
+        let quarter = if !(1.0..=359.0).contains(&turn) {
+            0
+        } else if (turn - 180.0).abs() < 1.0 {
+            2
+        } else if turn < 180.0 {
+            1
+        } else {
+            3
+        };
+        let (px, py) = (x + tx.x * k, y + tx.y * k);
+        if quarter != 0 {
+            // The run along the turned line, its anchor at (px, py).
+            let along = match tx.anchor {
+                1 => tw * 0.5,
+                2 => tw,
+                _ => 0.0,
+            };
+            let lh = size * 1.25;
+            let at = match quarter {
+                // Reading up: the run rises from its start.
+                3 => krate::gfx::types::Point {
+                    x: px - size * 0.95,
+                    y: py - (tw - along),
+                },
+                1 => krate::gfx::types::Point {
+                    x: px - size * 0.3,
+                    y: py - along,
+                },
+                _ => krate::gfx::types::Point {
+                    x: px - (tw - along),
+                    y: py - lh * 0.3,
+                },
+            };
+            let _ = krate::gfx::canvas_text::draw_turned(c, &tx.text, at, size, col, st, quarter);
+            run_end = None;
+            continue;
+        }
+        let (start, base) = match (tx.follows, run_end) {
+            (true, Some(e)) => e,
+            _ => (px - dx, py),
+        };
+        look::text_styled(c, &tx.text, start, base, size, st, col);
+        run_end = Some((start + tw, base));
     }
 }
 
