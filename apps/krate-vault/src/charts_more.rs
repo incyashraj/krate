@@ -115,7 +115,11 @@ pub fn git(src: &str, width: Measure, size: f32) -> Option<Chart> {
     // Measured on Obsidian's: 36 px between commits, 72 between branches,
     // 6 px dots, the branch names in coloured boxes at the left.
     let step = size * 2.7;
-    let lane_gap = size * 5.6;
+    // Room under each lane for the turned ids (merge commits have none).
+    let id_room = (0..commits.len())
+        .map(|i| width(&alloc::format!("{i}-0000000"), size * 0.75))
+        .fold(0.0, f32::max);
+    let lane_gap = (size * 5.6).max(id_room + size * 2.2);
     let label_w = lanes.iter().map(|b| width(b, size)).fold(0.0, f32::max) + size;
     let x0 = label_w + size * 1.5;
     let cx = |i: usize| x0 + i as f32 * step;
@@ -201,22 +205,48 @@ pub fn git(src: &str, width: Measure, size: f32) -> Option<Chart> {
                 stroke: Role::None,
             });
         }
-        // Mermaid writes a made-up id for each commit, turned on its side;
-        // Krate cannot turn text (K-1341), so only ids and tags written in
-        // the diagram are shown, under the dot.
-        let mut lbl = c.id.clone();
-        if !c.tag.is_empty() {
-            if !lbl.is_empty() {
-                lbl.push(' ');
+        // Each commit's id under its dot, read upward (Mermaid turns it an
+        // eighth; Krate turns text by quarters). Mermaid makes up an id from
+        // the commit's number and a random hash; here the hash is fixed.
+        let id = if c.id.is_empty() {
+            let mut h: u32 = 0x811c_9dc5;
+            for b in (i as u32).to_le_bytes() {
+                h = (h ^ u32::from(b)).wrapping_mul(0x0100_0193);
             }
-            lbl.push_str(&c.tag);
+            alloc::format!("{i}-{:07x}", h & 0x0fff_ffff)
+        } else {
+            c.id.clone()
+        };
+        let lsize = size * 0.75;
+        let lw = width(&id, lsize);
+        if !(c.merge && c.id.is_empty()) {
+            items.push(Item::Turned {
+                x,
+                y: y + r + size * 0.5 + lw * 0.5,
+                s: id,
+                size: lsize,
+                turns: 3,
+                role: Role::Text,
+            });
         }
-        if !lbl.is_empty() {
+        if !c.tag.is_empty() {
+            // A tag: a label over the dot.
+            let tw = width(&c.tag, lsize) + size * 0.8;
+            items.push(Item::Box {
+                x: x - tw * 0.5,
+                y: y - r - size * 1.9,
+                w: tw,
+                h: size * 1.3,
+                r: 2.0,
+                fill: Role::Node,
+                stroke: Role::Line,
+                dashed: false,
+            });
             items.push(text(
                 x,
-                y + size * 1.6,
-                &lbl,
-                size * 0.75,
+                y - r - size * 0.9,
+                &c.tag,
+                lsize,
                 1,
                 false,
                 Role::Text,
@@ -232,7 +262,7 @@ pub fn git(src: &str, width: Measure, size: f32) -> Option<Chart> {
 
 // ---- quadrantChart --------------------------------------------------------------------------
 
-pub fn quadrant(src: &str, width: Measure, size: f32) -> Option<Chart> {
+pub fn quadrant(src: &str, _width: Measure, size: f32) -> Option<Chart> {
     let mut title = String::new();
     let mut xa = (String::new(), String::new());
     let mut ya = (String::new(), String::new());
@@ -274,11 +304,7 @@ pub fn quadrant(src: &str, width: Measure, size: f32) -> Option<Chart> {
     // the top of each, axis names outside.
     let (q, qh) = (size * 13.3, size * 12.3);
     let gap = size * 0.2;
-    let left = size * 1.2
-        + [&ya.0, &ya.1]
-            .iter()
-            .map(|s| width(s, size * 0.8))
-            .fold(0.0, f32::max);
+    let left = size * 2.0;
     let top = if title.is_empty() {
         size * 0.5
     } else {
@@ -338,8 +364,8 @@ pub fn quadrant(src: &str, width: Measure, size: f32) -> Option<Chart> {
             Role::Text,
         ));
     }
-    // Axis names: x under each half, y beside each half (Mermaid turns
-    // these on their side; Krate cannot turn text, K-1341).
+    // Axis names: x under each half, y beside each half read upward, as
+    // Mermaid turns them.
     let by = top + total_h + size * 1.5;
     items.push(text(
         left + q * 0.5,
@@ -359,24 +385,16 @@ pub fn quadrant(src: &str, width: Measure, size: f32) -> Option<Chart> {
         false,
         Role::Text,
     ));
-    items.push(text(
-        left - size * 0.5,
-        top + qh * 0.5,
-        &ya.1,
-        size * 0.8,
-        2,
-        false,
-        Role::Text,
-    ));
-    items.push(text(
-        left - size * 0.5,
-        top + qh * 1.5 + gap,
-        &ya.0,
-        size * 0.8,
-        2,
-        false,
-        Role::Text,
-    ));
+    for (name, cy) in [(&ya.1, top + qh * 0.5), (&ya.0, top + qh * 1.5 + gap)] {
+        items.push(Item::Turned {
+            x: left - size * 1.0,
+            y: cy,
+            s: name.clone(),
+            size: size * 0.8,
+            turns: 3,
+            role: Role::Text,
+        });
+    }
     Some(Chart {
         w: left + total + size,
         h: by + size,
@@ -527,16 +545,15 @@ pub fn xy(src: &str, width: Measure, size: f32) -> Option<Chart> {
         Head::None,
     ));
     if !y_name.is_empty() {
-        // Mermaid turns this on its side; Krate cannot turn text (K-1341).
-        items.push(text(
-            size * 0.2,
-            top + ph * 0.5,
-            &y_name,
-            size * 0.8,
-            0,
-            false,
-            Role::Text,
-        ));
+        // Read upward, as Mermaid turns it.
+        items.push(Item::Turned {
+            x: size * 0.7,
+            y: top + ph * 0.5,
+            s: y_name.clone(),
+            size: size * 0.8,
+            turns: 3,
+            role: Role::Text,
+        });
     }
     let slot = pw / n as f32;
     for (k, c) in cats.iter().enumerate() {
@@ -595,6 +612,12 @@ pub fn xy(src: &str, width: Measure, size: f32) -> Option<Chart> {
 }
 
 // ---- sankey-beta ----------------------------------------------------------------------------
+
+/// Sankey's node colours in Obsidian's order: blue, orange, green, red,
+/// cyan, yellow, then the rest of the series.
+fn hue(i: usize) -> u8 {
+    [0u8, 1, 2, 3, 5, 6, 4, 7, 8, 9, 10, 11][i % 12]
+}
 
 pub fn sankey(src: &str, width: Measure, size: f32) -> Option<Chart> {
     let mut names: Vec<String> = Vec::new();
@@ -738,10 +761,14 @@ pub fn sankey(src: &str, width: Measure, size: f32) -> Option<Chart> {
         if let Some(f) = pts.first().copied() {
             pts.push(f);
         }
-        items.push(Item::Poly {
+        // Coloured from the source's colour to the target's, as Mermaid's
+        // gradient links are.
+        items.push(Item::Band {
             pts,
-            fill: Role::Band(a as u8),
-            stroke: Role::None,
+            from: Role::Band(hue(a)),
+            to: Role::Band(hue(b)),
+            x0,
+            x1,
         });
     }
     for i in 0..n {
@@ -752,7 +779,7 @@ pub fn sankey(src: &str, width: Measure, size: f32) -> Option<Chart> {
             node_w,
             h.max(1.0),
             0.0,
-            Role::Series(i as u8),
+            Role::Series(hue(i)),
         ));
         if let Some(Item::Box { stroke, .. }) = items.last_mut() {
             *stroke = Role::None;
@@ -1208,7 +1235,7 @@ mod tests {
         c.items
             .iter()
             .filter_map(|i| match i {
-                Item::Text { s, .. } => Some(s.clone()),
+                Item::Text { s, .. } | Item::Turned { s, .. } => Some(s.clone()),
                 _ => None,
             })
             .collect()

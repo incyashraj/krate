@@ -447,7 +447,12 @@ fn load_image(v: &mut crate::vault::Vault, target: &str, folder: &str, c: u64) -
         if !v.fs.exists(&p) {
             continue;
         }
-        return match v.fs.read_bytes(&p).and_then(|b| crate::image::decode(&b)) {
+        // An SVG shown as a picture does not load the files its <image>s
+        // name -- Obsidian shows it in an <img>, where the browser blocks
+        // them (measured: screens/parity/svg-more.png); data: pictures
+        // show in both. `image::decode_with` can read them when wanted.
+        let got = v.fs.read_bytes(&p).and_then(|b| crate::image::decode(&b));
+        return match got {
             Ok(pic) => keep(c, pic),
             Err(why) => Img::Failed(why),
         };
@@ -2183,6 +2188,51 @@ pub fn draw_chart(c: u64, d: &crate::charts::Chart, ox: f32, oy: f32, t: &Theme)
                     let _ = canvas2d::stroke_circle(c, p, *rad, 1.2, col);
                 }
             }
+            Item::Turned {
+                x,
+                y,
+                s,
+                size,
+                turns,
+                role: rl,
+            } => {
+                let col = role(*rl, t, false).unwrap_or(t.text);
+                let w = look::width(c, s, *size, 400);
+                let h = *size * 1.25;
+                let (bw, bh) = if turns % 2 == 1 { (h, w) } else { (w, h) };
+                let _ = krate::gfx::canvas_text::draw_turned(
+                    c,
+                    s,
+                    krate::gfx::types::Point {
+                        x: ox + x - bw * 0.5,
+                        y: oy + y - bh * 0.5,
+                    },
+                    *size,
+                    col,
+                    look::style(400, false, false),
+                    *turns,
+                );
+            }
+            Item::Band {
+                pts,
+                from,
+                to,
+                x0,
+                x1,
+            } => {
+                let abs: Vec<(f32, f32)> = pts.iter().map(|(x, y)| (ox + x, oy + y)).collect();
+                if let (Some(a), Some(b)) = (role(*from, t, true), role(*to, t, true)) {
+                    fill_poly_with(c, &abs, |x| {
+                        let f = ((x - ox - x0) / (x1 - x0).max(1e-3)).clamp(0.0, 1.0);
+                        krate::gfx::types::Color {
+                            r: a.r + (b.r - a.r) * f,
+                            g: a.g + (b.g - a.g) * f,
+                            b: a.b + (b.b - a.b) * f,
+                            a: a.a + (b.a - a.a) * f,
+                        }
+                    });
+                }
+            }
             Item::Poly {
                 pts,
                 fill: f,
@@ -2703,6 +2753,12 @@ fn download(env: &Env, win: u64, app: &mut crate::app::App, key: &str) {
 
 /// Fill a closed outline a pixel row at a time (even-odd).
 fn fill_poly(c: u64, pts: &[(f32, f32)], col: Rgba) {
+    fill_poly_with(c, pts, |_| col);
+}
+
+/// Fill a closed outline, the colour a function of x (drawn in 3 px
+/// slices where it changes).
+fn fill_poly_with(c: u64, pts: &[(f32, f32)], colour: impl Fn(f32) -> Rgba) {
     let (top, bot) = pts
         .iter()
         .fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
@@ -2722,7 +2778,12 @@ fn fill_poly(c: u64, pts: &[(f32, f32)], col: Rgba) {
             .collect();
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
         for pair in xs.chunks_exact(2) {
-            fill(c, r(pair[0], y, pair[1] - pair[0], 1.0), col);
+            let mut x = pair[0];
+            while x < pair[1] {
+                let nx = (x + 3.0).min(pair[1]);
+                fill(c, r(x, y, nx - x, 1.0), colour((x + nx) * 0.5));
+                x = nx;
+            }
         }
         y += 1.0;
     }

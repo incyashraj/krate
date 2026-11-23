@@ -75,6 +75,25 @@ pub enum Item {
         fill: Role,
         stroke: Role,
     },
+    /// Text turned by quarters (1 reads top to bottom, 3 bottom to top),
+    /// centred on (x, y).
+    Turned {
+        x: f32,
+        y: f32,
+        s: String,
+        size: f32,
+        turns: u8,
+        role: Role,
+    },
+    /// A band filled with a gradient from one colour at x0 to another at x1
+    /// (sankey's flows).
+    Band {
+        pts: Vec<(f32, f32)>,
+        from: Role,
+        to: Role,
+        x0: f32,
+        x1: f32,
+    },
     /// A closed outline, filled.
     Poly {
         pts: Vec<(f32, f32)>,
@@ -907,7 +926,7 @@ pub(crate) fn graph_chart(
                         size * 0.85,
                         1,
                         false,
-                        Role::Muted,
+                        Role::Text,
                     ));
                 }
                 items.push(text(
@@ -1812,6 +1831,34 @@ fn timeline(src: &str, width: &dyn Fn(&str, f32) -> f32, size: f32) -> Option<Ch
 
 fn shift_item(i: Item, dx: f32, dy: f32) -> Item {
     match i {
+        Item::Turned {
+            x,
+            y,
+            s,
+            size,
+            turns,
+            role,
+        } => Item::Turned {
+            x: x + dx,
+            y: y + dy,
+            s,
+            size,
+            turns,
+            role,
+        },
+        Item::Band {
+            pts,
+            from,
+            to,
+            x0,
+            x1,
+        } => Item::Band {
+            pts: pts.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(),
+            from,
+            to,
+            x0: x0 + dx,
+            x1: x1 + dx,
+        },
         Item::Poly { pts, fill, stroke } => Item::Poly {
             pts: pts.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(),
             fill,
