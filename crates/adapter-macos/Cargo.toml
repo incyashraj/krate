@@ -22,4 +22,4 @@ objc2 = "0.6.4"
 block2 = "0.6.2"
 dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "objc2"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAccessibilityElement", "NSAlert", "NSAnimationContext", "NSApplication", "NSButton", "NSButtonCell", "NSCell", "NSColor", "NSControl", "NSCursor", "NSEvent", "NSFont", "NSGraphics", "NSGraphicsContext", "NSBitmapImageRep", "NSImage", "NSImageRep", "NSImageView", "NSImageCell", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSPanel", "NSSavePanel", "NSText", "NSResponder", "NSRunningApplication", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSDictionary", "NSGeometry", "NSURL", "NSNotification", "NSObject", "NSRunLoop", "NSString", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSDate", "NSDictionary", "NSGeometry", "NSURL", "NSNotification", "NSObject", "NSRunLoop", "NSString", "objc2-core-foundation"] }

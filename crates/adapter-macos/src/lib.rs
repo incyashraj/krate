@@ -6,6 +6,8 @@
 #[cfg(target_os = "macos")]
 mod accessibility;
 #[cfg(target_os = "macos")]
+mod app_view;
+#[cfg(target_os = "macos")]
 mod appearance;
 mod appkit;
 #[cfg(target_os = "macos")]
@@ -949,6 +951,35 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
         web_page::close(page);
     }
 
+    /// A web app filling the window (IC-1004).
+    #[cfg(target_os = "macos")]
+    fn open_app_view(
+        &self,
+        window: WindowId,
+        view: u64,
+        folder: std::path::PathBuf,
+        start: &str,
+        preload: &str,
+        granted: &[(String, String)],
+    ) -> Result<(), String> {
+        let handle = self
+            .native_window(window)
+            .ok()
+            .flatten()
+            .ok_or("the app's window is not on screen")?;
+        app_view::open(handle.raw_handle, view, folder, start, preload, granted)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn app_view_post(&self, view: u64, message: &str) -> Result<(), String> {
+        app_view::post(view, message)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn close_app_view(&self, view: u64) {
+        app_view::close(view)
+    }
+
     /// The app's menus in the Mac's own menu bar (IC-1002).
     #[cfg(target_os = "macos")]
     fn set_menu_bar(
@@ -1036,6 +1067,12 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
     #[cfg(target_os = "macos")]
     fn tray_remove(&self, id: u64) {
         tray::remove(id)
+    }
+
+    /// Wait in AppKit's run loop, not a blind sleep (IC-1004).
+    #[cfg(target_os = "macos")]
+    fn park_for_events(&self, max: std::time::Duration) -> bool {
+        tray::park(max)
     }
 
     /// The Mac's events with no window open (a tray app).

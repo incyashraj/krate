@@ -2544,6 +2544,30 @@ mod platform {
     /// (Cmd-Option-H, Cmd-Control-F, Cmd-Control-Q). Cmd-S, Cmd-C, Cmd-X,
     /// Cmd-V, Cmd-A, Cmd-Z are the app's: in a window it draws there is
     /// nothing else to answer them.
+    /// Whether a responder is a web view or a view inside one.
+    fn inside_web_view(responder: &objc2_app_kit::NSResponder) -> bool {
+        let Some(web) = objc2::runtime::AnyClass::get(c"WKWebView") else {
+            return false;
+        };
+        if responder.isKindOfClass(web) {
+            return true;
+        }
+        let Some(view) = responder.downcast_ref::<NSView>() else {
+            return false;
+        };
+        // SAFETY: an NSView's superview, on the main thread the pump runs on.
+        let mut at = unsafe { view.superview() };
+        for _ in 0..16 {
+            match at {
+                Some(v) if v.isKindOfClass(web) => return true,
+                // SAFETY: as above.
+                Some(v) => at = unsafe { v.superview() },
+                None => return false,
+            }
+        }
+        false
+    }
+
     fn command_chord_is_the_apps(characters: Option<&str>, control: bool, option: bool) -> bool {
         if control || option {
             return false;
@@ -2913,11 +2937,19 @@ mod platform {
                 _ => return false,
             };
 
-            let editing_text = self
-                .window
-                .firstResponder()
+            let responder = self.window.firstResponder();
+            let editing_text = responder
+                .as_ref()
                 .is_some_and(|responder| responder.isKindOfClass(NSText::class()));
             if editing_text {
+                return false;
+            }
+            // A web page in the window (IC-927, IC-1004) has the keyboard:
+            // its text fields, its shortcuts and its own key handling are the
+            // page's, as in any browser. Kept here, every key a person typed
+            // into a wrapped web app went to Krate's game-key samples and
+            // the page's field stayed empty.
+            if responder.as_deref().is_some_and(inside_web_view) {
                 return false;
             }
 

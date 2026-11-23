@@ -1700,3 +1700,42 @@ interface tray {
   /// ends.
   remove: func(tray: u64);
 }
+
+/// A web app inside a Krate app (IC-1004): the app's own web files -- a
+/// built Vite, React or plain HTML folder in its assets -- shown full-window
+/// in the system's web view, with a message channel both ways.
+///
+/// The files are served from a private address (`krate-app://app/...`),
+/// never from the disk or the network, and only from inside the folder
+/// named. What the page itself may reach is limited by the same grants as
+/// the app: its connections, pictures and fonts go only to hosts the app
+/// was granted `net.connect` to, and a link elsewhere does not open in the
+/// app. Everything else -- files, the store, the clipboard, the camera --
+/// the page asks the app for over the channel, and the app's own code calls
+/// Krate, so the permission wall stands between the page and the computer.
+///
+/// The page calls `window.krate.post(text)`; the app gets an `action`
+/// event with the view's id and reads the text with `receive`. The app
+/// calls `post(view, text)`; the page's `window.krate.onmessage` gets a
+/// `MessageEvent` whose `data` is the text. Messages are text up to 1 MB.
+/// The page keeps no cookies or storage of its own between runs: what it
+/// keeps, it keeps through the app (a `localStorage` the app fills in
+/// `preload` and saves as the page changes it, for an unmodified web app).
+interface app-view {
+  use types.{ui-error};
+
+  /// Show the web app whose files are under `folder` in the app's assets
+  /// (`web` for `assets/web/`), starting at `start` in it (`index.html`),
+  /// filling the window and following its size. `preload` is JSON the page
+  /// can read as `window.krate.preload` before its own scripts run -- or
+  /// empty; a `localStorage` object in it becomes the page's localStorage,
+  /// each change sent back as a message. The view's id; its messages arrive
+  /// as `action` events with that id.
+  open: func(window: u64, folder: string, start: string, preload: string) -> result<u64, ui-error>;
+  /// Send the page a message.
+  post: func(view: u64, message: string) -> result<_, ui-error>;
+  /// The messages the page sent since the last call, oldest first.
+  receive: func(view: u64) -> list<string>;
+  /// Take the view away.
+  close: func(view: u64);
+}

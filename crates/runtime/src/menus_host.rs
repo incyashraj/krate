@@ -289,6 +289,8 @@ impl Phase3GuiHost {
 
     /// Turn what the person chose in a menu into events for the app.
     pub(crate) fn drain_menu_signals(&self) {
+        // A web app's page has written to the app (IC-1004).
+        self.tell_waiting_views();
         for signal in krate_adapter_common::menus::take_signals() {
             match signal {
                 MenuSignal::Chosen(id) => self.menu_chosen(id),

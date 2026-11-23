@@ -838,6 +838,15 @@ export function buildImports(ctx) {
   // the app keeps its window.
   const noTray = 'A browser tab has no tray. Open the app in Krate on a computer to keep an icon in the menu bar.';
   const trayRefused = () => { throw new HostError({ tag: 'unsupported', val: noTray }); };
+  // A web app inside the app (IC-1004): not in a tab yet (K-1361); it opens
+  // in Krate on a Mac or Windows.
+  const noAppView = 'This web app opens in Krate on a computer; a browser tab cannot show it inside the app yet.';
+  impl['krate:ui/app-view'] = {
+    open: () => { throw new HostError({ tag: 'unsupported', val: noAppView }); },
+    post: () => { throw new HostError({ tag: 'invalid-widget' }); },
+    receive: () => [],
+    close() {},
+  };
   impl['krate:ui/tray'] = {
     available: () => false,
     show: trayRefused, setIcon: trayRefused, setTooltip: trayRefused, setTitle: trayRefused,

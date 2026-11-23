@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Web Shell</title>
+<style>body{font:15px -apple-system,system-ui,sans-serif;margin:32px;background:#111;color:#eee}button{font:inherit;padding:8px 14px}</style>
+</head><body>
+<h1>Web Shell</h1>
+<p>Clicks so far (kept by Krate): <b id="n">0</b></p>
+<button id="b">Count</button>
+<p id="net"></p>
+<script>
+const n = document.getElementById('n');
+n.textContent = localStorage.getItem('clicks') || '0';
+document.getElementById('b').onclick = () => {
+  const v = String(Number(localStorage.getItem('clicks') || 0) + 1);
+  localStorage.setItem('clicks', v);
+  n.textContent = v;
+};
+fetch('https://example.com/').then(() => { document.getElementById('net').textContent = 'example.com: reached'; })
+  .catch(() => { document.getElementById('net').textContent = 'example.com: blocked (not granted)'; });
+krate.onmessage = (e) => { document.title = 'from app: ' + e.data; };
+</script>
+</body></html>

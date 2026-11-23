@@ -1,0 +1,16 @@
+[app]
+id = "dev.krate.web-shell"
+name = "Web Shell"
+version = "0.1.0"
+entry = "target/wasm32-wasip1/release/krate_web_shell.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "The window the web app fills"
+required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Keep what the web app saves"
+required = true

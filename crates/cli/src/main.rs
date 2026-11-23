@@ -46,6 +46,7 @@ mod trace;
 mod tui;
 mod usage;
 mod wasi_sdk;
+mod web_wrap;
 #[cfg(windows)]
 mod winproc;
 
@@ -1299,6 +1300,30 @@ enum Command {
         /// stderr instead.
         #[arg(long)]
         json: bool,
+
+        /// Wrap a BUILT web app (a Vite, React or plain HTML dist/ folder) as
+        /// a Krate app, with --to: it runs full-window in the system's web
+        /// view, its localStorage kept in the app's own Krate store, and it
+        /// reaches only the hosts named with --allow (IC-1004).
+        #[arg(long)]
+        web: bool,
+
+        /// With --web: the app's name (default: the project folder's).
+        #[arg(long, requires = "web")]
+        name: Option<String>,
+
+        /// With --web: a host the page talks to (api.example.com, or
+        /// host:port). Repeatable; nothing else is reachable.
+        #[arg(long, value_name = "HOST", requires = "web")]
+        allow: Vec<String>,
+
+        /// With --web: the window's size in points, WIDTHxHEIGHT.
+        #[arg(long, value_name = "WxH", requires = "web")]
+        size: Option<String>,
+
+        /// With --web: the first page, inside the folder (default index.html).
+        #[arg(long, value_name = "PAGE", requires = "web")]
+        start: Option<String>,
     },
 
     /// Show the organisation policy in force on this computer, or check
@@ -2522,7 +2547,33 @@ fn run() -> Result<u8> {
             no_install,
             oracle,
             json,
+            web,
+            name,
+            allow,
+            size,
+            start,
         } => {
+            if web {
+                let Some(to) = to else {
+                    anyhow::bail!(
+                        "say where to write the app: krate port {} --web --to app.krate",
+                        source.display()
+                    );
+                };
+                let out = web_wrap::wrap(&web_wrap::WebWrap {
+                    folder: source,
+                    to,
+                    name,
+                    allow,
+                    size,
+                    start,
+                })?;
+                if let maker_key::Signed::Now { public } = maker_key::sign_if_unsigned(&out)? {
+                    println!("signed it as you ({}...)", &public[..12]);
+                }
+                println!("run it: krate run {}", out.display());
+                return Ok(0);
+            }
             if author_cmd.is_some() {
                 fleet::ai_build(Some("author-cmd"))?;
             } else if agent.is_some() {

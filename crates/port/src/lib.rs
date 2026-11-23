@@ -1247,8 +1247,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Drawing with the GPU is granted to every Krate app; running compute work on it is `gfx.gpu:compute` and has to be asked for, because it is a general-purpose processor the app can keep busy.",
         Some("gfx.gpu:compute"),
     );
-    // A system menu bar. Declared in the WIT but not implemented on any host
-    // yet, so this is a heads-up rather than a mapping.
+    // A system menu bar: krate:ui/menus (IC-1002) maps it.
     detect_pattern(
         analysis,
         "menu-bar",
@@ -1265,7 +1264,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "System menu bar",
-        "Krate declares `ui.menu` but no host implements it yet, because the three systems disagree about where a menu bar lives. Move these actions into the window -- buttons or a list -- or the port will lose them.",
+        "Krate has real menus (krate:ui/menus, no permission): a Mac's top menu bar with its App, Edit and Window menus kept, a bar in the window on Windows, submenus, checkmarks, radio groups, shortcuts, the standard items and right-click menus, each choice an action event. Linux and phones draw no bar yet, so keep the commands reachable in the window too.",
         Some("ui.menu"),
     );
     // Rust crates that wrap a C library. These do not compile to wasm at all --
@@ -1628,13 +1627,16 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
             "tray_icon",
             "nsstatusitem",
             "notifyicon",
+            "new tray(",
+            "statusnotifieritem",
+            "qsystemtrayicon",
         ],
         path,
         text,
-        Severity::Blocker,
+        Severity::Change,
         "System tray or menu bar integration",
-        "Krate does not yet provide a three-host tray capability.",
-        None,
+        "Krate has a tray icon (ui.tray): a picture the app draws, a tooltip, a menu, clicks, and a title beside it on a Mac -- a Mac's menu bar, Windows' notification area, Linux's StatusNotifier. While it shows, the app may run with no window open; removing the last icon with no window ends it.",
+        Some("ui.tray"),
     );
     detect_pattern(
         analysis,
@@ -2104,10 +2106,10 @@ fn framework_label(framework: &str) -> &str {
 fn framework_advice(framework: &str) -> &str {
     match framework {
         "electron" | "tauri" => {
-            "Reuse portable application logic where possible, then replace the privileged native bridge with declared Krate capabilities. A restricted web UI profile is planned."
+            "The web UI runs as it is: build it and wrap the built folder with `krate port dist/ --web --to app.krate` -- it runs in the system web view, reaching only the hosts named with --allow. Replace the privileged native bridge (Node, Rust commands) with messages to the app's Krate code over window.krate."
         }
         "react" | "vite" | "nextjs" => {
-            "The UI may fit the planned restricted web profile. Local and server behavior must be mapped separately."
+            "Build it (`npm run build`) and wrap the built folder: `krate port dist/ --web --to app.krate`. It runs full-window in the system web view, its localStorage kept in Krate's store; name the APIs it calls with --allow. Server behaviour must be mapped separately."
         }
         "appkit" | "swiftui" | "wpf" | "winui" | "qt" | "gtk" => {
             "This native UI must be translated to Krate's certified widget profile. Unsupported widgets and platform integrations need explicit replacements."

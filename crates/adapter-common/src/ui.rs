@@ -2303,6 +2303,30 @@ pub trait UiAdapter: WindowAdapter {
     /// Take a web page away.
     fn close_web_page(&self, _page: u64) {}
 
+    /// Fill a window with the app's own web files (IC-1004), served from
+    /// `folder` through the private scheme with the granted hosts' policy;
+    /// `view` is the id the runtime chose. What the page posts is pushed to
+    /// [`crate::appview::push_message`].
+    fn open_app_view(
+        &self,
+        _window: WindowId,
+        _view: u64,
+        _folder: std::path::PathBuf,
+        _start: &str,
+        _preload: &str,
+        _granted: &[(String, String)],
+    ) -> Result<(), String> {
+        Err("this device cannot show a web app inside Krate yet".to_string())
+    }
+
+    /// Hand a page a message from the app.
+    fn app_view_post(&self, _view: u64, _message: &str) -> Result<(), String> {
+        Err("no such view".to_string())
+    }
+
+    /// Take a web app's view away.
+    fn close_app_view(&self, _view: u64) {}
+
     /// Set a window's menu bar (IC-1002): a Mac's top bar, a bar in the
     /// window elsewhere. `app` names the app in the standard items. What
     /// the person chooses is pushed as a [`crate::menus::MenuSignal`].

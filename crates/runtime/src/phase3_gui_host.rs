@@ -234,6 +234,8 @@ pub struct Phase3GuiHost {
     next_web_page: std::cell::Cell<u64>,
     /// The menus this run set (IC-1002) and its tray icons (IC-1003).
     pub(crate) shell: std::cell::RefCell<crate::menus_host::Shell>,
+    /// The web apps this run shows (IC-1004).
+    pub(crate) views: std::cell::RefCell<crate::app_view_host::Views>,
     /// The person chose Quit in one of the app's menus: the next look for
     /// input ends the app.
     pub(crate) quit_asked: std::cell::Cell<bool>,
@@ -689,6 +691,7 @@ impl Phase3GuiHost {
             web_pages: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_web_page: std::cell::Cell::new(1),
             shell: std::cell::RefCell::new(Default::default()),
+            views: std::cell::RefCell::new(Default::default()),
             quit_asked: std::cell::Cell::new(false),
             requested_sizes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases_that_asked: std::cell::RefCell::new(std::collections::BTreeSet::new()),
@@ -1411,7 +1414,7 @@ impl Phase3GuiHost {
 
     /// The hosts a web page may go to (IC-927): each `net.connect` (or
     /// `net.fetch`) grant's host and port.
-    fn web_page_hosts(&self) -> Vec<(String, String)> {
+    pub(crate) fn web_page_hosts(&self) -> Vec<(String, String)> {
         self.runtime
             .guard()
             .policy()

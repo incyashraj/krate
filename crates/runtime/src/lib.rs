@@ -110,6 +110,9 @@ pub mod phase4_gui_host;
 // Menus and tray icons for the running app (IC-1002, IC-1003).
 #[cfg(feature = "phase2-bindings")]
 mod menus_host;
+// A web app inside a Krate app (IC-1004).
+#[cfg(feature = "phase2-bindings")]
+mod app_view_host;
 mod print_host;
 #[cfg(feature = "phase2-bindings")]
 mod spelling;
@@ -1850,6 +1853,9 @@ impl Runtime {
         link_gui!(ui4::menus);
         // Phase 4 only: a tray icon, behind `ui.tray` (IC-1003).
         link_gui!(ui4::tray);
+        // Phase 4 only: a web app's own files in the system's web view, with
+        // a message channel to the app (IC-1004).
+        link_gui!(ui4::app_view);
         // Phase 4 only: notifications replaced and taken back by id (IC-271).
         link_gui!(ui4::notifications);
         // Phase 4 only: signing in through the system sheet (IC-923).

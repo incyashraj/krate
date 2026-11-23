@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: accessibility, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, menus, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tray, tree, unlock, web_page, window.
+/// `krate:ui`: accessibility, app_view, appearance, bluetooth, clipboard, dialog, events, haptics, image, launcher, location, menu, menus, motion, notifications, notify, photos, pointer, print, reminders, screen, share, sign_in, spelling, text_entry, touch, trash, tray, tree, unlock, web_page, window.
 pub mod ui {
     /// `krate:ui/accessibility`.
     pub mod accessibility {
@@ -25,6 +25,36 @@ pub mod ui {
         /// only matters to one (it must still describe its screen either way).
         pub fn screen_reader_on() -> bool {
             crate::bindings::krate::ui::accessibility::screen_reader_on()
+        }
+    }
+    /// `krate:ui/app_view`.
+    pub mod app_view {
+        pub use crate::bindings::krate::ui::app_view::UiError;
+
+        /// Show the web app whose files are under `folder` in the app's assets
+        /// (`web` for `assets/web/`), starting at `start` in it (`index.html`),
+        /// filling the window and following its size. `preload` is JSON the page
+        /// can read as `window.krate.preload` before its own scripts run -- or
+        /// empty; a `localStorage` object in it becomes the page's localStorage,
+        /// each change sent back as a message. The view's id; its messages arrive
+        /// as `action` events with that id.
+        pub fn open(window: u64, folder: &str, start: &str, preload: &str) -> Result<u64, UiError> {
+            crate::bindings::krate::ui::app_view::open(window, folder, start, preload)
+        }
+
+        /// Send the page a message.
+        pub fn post(view: u64, message: &str) -> Result<(), UiError> {
+            crate::bindings::krate::ui::app_view::post(view, message)
+        }
+
+        /// The messages the page sent since the last call, oldest first.
+        pub fn receive(view: u64) -> alloc::vec::Vec<alloc::string::String> {
+            crate::bindings::krate::ui::app_view::receive(view)
+        }
+
+        /// Take the view away.
+        pub fn close(view: u64) {
+            crate::bindings::krate::ui::app_view::close(view)
         }
     }
     /// `krate:ui/appearance`.

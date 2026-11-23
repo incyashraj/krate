@@ -131,6 +131,7 @@ fn home(iface: &str) -> (&'static str, &'static str) {
         "ui/spelling",
         "ui/menus",
         "ui/tray",
+        "ui/app-view",
         "gpu/types",
         "gpu/gpu",
         "audio/playback-queue",

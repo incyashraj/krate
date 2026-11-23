@@ -62,6 +62,9 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-future = "0.3"
+# A web app inside a Krate app (IC-1004): WebView2, on the same windows
+# 0.62 as everything above. MIT.
+webview2-com = "0.39.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"

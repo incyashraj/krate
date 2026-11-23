@@ -1111,6 +1111,10 @@ takes this path, so any of them is a model for the wiring.
 - `tray::set-menu: func(tray: u64, items: list<item>) -> result<_, ui-error>`
 - `tray::on-click: func(tray: u64, left: u64, right: u64) -> result<_, ui-error>`
 - `tray::remove: func(tray: u64)`
+- `app-view::open: func(window: u64, folder: string, start: string, preload: string) -> result<u64, ui-error>`
+- `app-view::post: func(view: u64, message: string) -> result<_, ui-error>`
+- `app-view::receive: func(view: u64) -> list<string>`
+- `app-view::close: func(view: u64)`
 
 ## `audio`
 

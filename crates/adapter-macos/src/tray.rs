@@ -233,6 +233,32 @@ pub(crate) fn remove(tray: u64) {
     }
 }
 
+/// Wait inside AppKit's own run loop until an event arrives or `max`
+/// passes, leaving the event queued for the pump. A blind sleep there kept
+/// the run loop stopped: a web view's process could not answer until the
+/// next pump, so a key typed into a wrapped web app showed a quarter of a
+/// second late (IC-1004), and every click waited out the rest of the nap.
+pub(crate) fn park(max: std::time::Duration) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    autoreleasepool(|_| {
+        let until = objc2_foundation::NSDate::dateWithTimeIntervalSinceNow(max.as_secs_f64());
+        // SAFETY: main thread; the event is peeked, not taken, so the pump
+        // still sees it.
+        let _ = unsafe {
+            app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                NSEventMask::Any,
+                Some(&until),
+                NSDefaultRunLoopMode,
+                false,
+            )
+        };
+    });
+    true
+}
+
 /// Dispatch the Mac's events with no window open, so a tray icon's clicks
 /// and menu reach the app.
 pub(crate) fn pump() {

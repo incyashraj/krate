@@ -56,6 +56,10 @@ mod menus;
 #[cfg(windows)]
 mod tray;
 
+/// A web app filling the window, in WebView2 (IC-1004).
+#[cfg(windows)]
+mod app_view;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -551,6 +555,31 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
     ) -> Result<(), String> {
         let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
         menus::set_bar(hwnd, bar)
+    }
+
+    /// A web app filling the window, in WebView2 (IC-1004).
+    #[cfg(windows)]
+    fn open_app_view(
+        &self,
+        window: WindowId,
+        view: u64,
+        folder: std::path::PathBuf,
+        start: &str,
+        preload: &str,
+        granted: &[(String, String)],
+    ) -> Result<(), String> {
+        let hwnd = winit_native::native_hwnd(window).ok_or("the app's window is not on screen")?;
+        app_view::open(hwnd, view, folder, start, preload, granted)
+    }
+
+    #[cfg(windows)]
+    fn app_view_post(&self, view: u64, message: &str) -> Result<(), String> {
+        app_view::post(view, message)
+    }
+
+    #[cfg(windows)]
+    fn close_app_view(&self, view: u64) {
+        app_view::close(view)
     }
 
     /// An icon in the notification area (IC-1003).

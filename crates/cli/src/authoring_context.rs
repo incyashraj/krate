@@ -756,6 +756,22 @@ closes. `tray::available()` is false on a phone and in a browser tab: \
 there, keep the window. On Linux the icon needs a StatusNotifier host \
 (KDE, XFCE, Cinnamon; GNOME with its AppIndicator extension), otherwise \
 `show` says why.\n\n\
+An existing web app (a built Vite, React or plain HTML folder): the \
+person does not need to rewrite it -- `krate port dist/ --web --name \
+\"Notes\" --to notes.krate [--allow api.example.com]` wraps the BUILT \
+folder as a signed .krate, its localStorage kept in the app's Krate store. \
+To make one yourself, put the files under `assets/web/` and call \
+`krate::ui::app_view::open(win, \"web\", \"index.html\", &preload)` \
+-- it fills the window and follows its size; `preload` is JSON the page \
+reads as `window.krate.preload` (a `localStorage` object in it becomes \
+the page's localStorage, each change posted back as \
+`{\"krate\":\"ls\",\"op\":\"set\",...}`). The page calls \
+`window.krate.post(text)`; the app gets `Event::Action(view)` and reads \
+`app_view::receive(view)`; `app_view::post(view, text)` reaches the \
+page's `krate.onmessage`. The page's own fetches and websockets reach \
+only hosts declared with `net.connect`; everything else (files, the \
+store, the camera) it asks the app for over the channel. Mac and Windows \
+now; Linux, a phone and a browser tab answer `Err(Unsupported)`.\n\n\
 A PDF (a manual, an invoice, a vault's attachment): read its bytes the \
 ordinary way, then `let d = krate::gfx::pdf::open(&bytes)?`, \
 `page_count(d)`, `page_size(d, i)` in points, and \

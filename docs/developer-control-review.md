@@ -15,9 +15,9 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 88 boundaries reviewed, 79 of them WIT interfaces (79 declared under wit/krate).
-- 37 compulsory, each with a justification or a recorded gap; 51 optional.
-- 9 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
+- 89 boundaries reviewed, 80 of them WIT interfaces (80 declared under wit/krate).
+- 37 compulsory, each with a justification or a recorded gap; 52 optional.
+- 10 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
 
@@ -70,6 +70,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:time@0.1.0/clock` | wit | where the host clock is read | everything computed from it | none needed | no | -- |
 | `krate:time@0.1.0/sleep` | wit | a blocking sleep for CLI apps | scheduling, timers, event loops built on it or not | events/wait with a timeout in GUI apps | no | -- |
 | `krate:ui@0.1.0/accessibility` | wit | telling the platform screen reader what a self-drawn window shows: frames, roles, labels, values and toggle states, with activation as a tap at the centre | what each element is called and says, the reading order, and when to describe again | widget apps, which Krate describes itself | no | -- |
+| `krate:ui@0.1.0/app-view` | wit | that a web app's files are served only from inside its own bundled folder, that its page reaches only the hosts the app was granted, that it keeps nothing of its own between runs, and that everything else it does goes through the app's Krate code | the web app itself, its window, what it keeps and what the app answers to its messages | draw the app with Krate's own widgets or canvas | no | -- |
 | `krate:ui@0.1.0/appearance` | wit | reading whether the system is in dark mode, wants more contrast, and the person's text size | the colours for light and dark, how text grows, and how the layout makes room for it | the app's own fixed look (check-app fails one that stays bright in dark mode or keeps text small) | no | -- |
 | `krate:ui@0.1.0/bluetooth` | wit | Bluetooth LE reached only through a device the person picks in Krate's own list, then read, write, subscribe and notifications by service and characteristic UUID | which service to ask for, what to read and write, and what the values mean | none: bluetooth.connect is opt-in, and an app can never scan or reach a device the person did not pick | no | -- |
 | `krate:ui@0.1.0/clipboard` | wit | that the clipboard is the person's and reached through a grant | what is put on it | none: the clipboard is the host's | yes | recipient-permission |
@@ -121,6 +122,7 @@ Where a developer's choice is narrower than the principle says it should be. Eac
 - `krate:print@0.1.0/printers`: Windows prints PNG pages and raw printer language, not PDF, and uses the printer's own paper setting for a PNG; a browser tab and a phone answer unavailable
 - `krate:serial@0.1.0/ports`: HID devices are not offered yet (raw USB is krate:usb); a browser tab and a phone answer unavailable
 - `krate:speech@0.1.0/transcription`: the recogniser reads one model family; another engine means the app ships its own
+- `krate:ui@0.1.0/app-view`: opens on a Mac and Windows; Linux, a browser tab and phones refuse it (K-1361)
 - `krate:ui@0.1.0/menus`: no bar or right-click menu is drawn on Linux, in a browser tab or on a phone yet (K-1349); shortcuts still work on Linux
 - `krate:ui@0.1.0/tray`: a phone and a browser tab have no tray: available() is false
 - `krate:usb@0.1.0/devices`: isochronous transfers, alternate settings and standard requests that change the device are not offered; HID devices (security keys) are a later item; a browser tab (WebUSB) and a phone answer unavailable
