@@ -11,6 +11,7 @@
 mod basemenus;
 mod boards;
 mod carddoc;
+mod diagram;
 mod disk;
 mod editor;
 mod look;

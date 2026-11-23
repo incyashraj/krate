@@ -113,6 +113,10 @@ pub struct Env {
     /// coordinates), for presses.
     pub media_menu: Option<MediaMenu>,
     menu_at: core::cell::Cell<Option<Rect>>,
+    /// Whether Vault is dark, for the colours diagrams are drawn in.
+    pub dark: bool,
+    /// Diagrams drawn by Pele, as pictures, newest last (a few kept).
+    pele: Vec<(u64, Img)>,
 }
 
 impl Env {
@@ -221,6 +225,9 @@ pub fn anim_due(cache: &LayCache) -> Option<u64> {
 /// note should be drawn again).
 pub fn fetch(cache: &mut LayCache, app: &mut crate::app::App, c: u64) -> bool {
     cache.env.now = krate::time::monotonic_nanos() / 1_000_000;
+    if cache.env.dark != app.dark {
+        cache.env.dark = app.dark;
+    }
     // Spelling choices made in the menu: teach the checker, or ignore.
     let pending: Vec<crate::spell::SpellAct> = app
         .doc_mut()
@@ -560,6 +567,16 @@ pub enum Widget {
         note: Option<String>,
         line: usize,
     },
+    /// A diagram Pele drew, kept as a picture (`Env::pele`).
+    Picture {
+        key: u64,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        line: usize,
+        said: String,
+    },
     Diagram {
         d: crate::charts::Chart,
         x: f32,
@@ -675,6 +692,7 @@ impl Widget {
                 }
             }
             Widget::Image { note: Some(n), .. } => add(n),
+            Widget::Picture { said, .. } => add(said),
             Widget::Diagram { d, .. } => {
                 for i in &d.items {
                     if let crate::charts::Item::Text { s, .. } = i {
@@ -795,6 +813,10 @@ pub fn block(cache: &mut LayCache, c: u64, doc: &Doc, span: Span, v: &View) -> R
             fnv(&mut h, &state.to_le_bytes());
         }
     }
+    // A diagram is drawn in the theme's colours.
+    if span.kind == SpanKind::Diagram {
+        fnv(&mut h, &[u8::from(cache.env.dark)]);
+    }
     if let Some(l) = cache.cached(h) {
         return l;
     }
@@ -804,7 +826,7 @@ pub fn block(cache: &mut LayCache, c: u64, doc: &Doc, span: Span, v: &View) -> R
         SpanKind::Callout => callout(c, doc, span, v.width, &sz),
         SpanKind::Math => math_block(c, doc, span, v.width, &sz),
         SpanKind::Front => properties(c, doc, span, v.width, &sz),
-        SpanKind::Diagram => diagram(c, doc, span, v.width, &sz),
+        SpanKind::Diagram => diagram(c, &mut cache.env, doc, span, v.width, &sz),
         SpanKind::Embed => match embed {
             Some(e) if e.media().is_some() => {
                 media(&mut cache.env, &e, &folder, span.first, v.width, &sz)
@@ -1073,11 +1095,74 @@ fn math_block(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> 
     )
 }
 
-fn diagram(c: u64, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
+/// The Mermaid kinds Vault draws through its port of Pele, as Obsidian
+/// does (src/pele/); the others are still drawn by src/charts.rs.
+const PELE_KINDS: &[&str] = &["flowchart"];
+
+/// A diagram Pele draws: its SVG in Obsidian's colours, read into a
+/// picture once and kept (the few newest).
+fn pele_picture(
+    c: u64,
+    env: &mut Env,
+    src: &str,
+    width: f32,
+    sz: &Sizes,
+    line: usize,
+) -> Option<Rc<Lay>> {
+    let measure = super::diagram::CanvasMeasure { c };
+    let opts = crate::pele::render::obsidian_options(&measure, "x", "sans-serif");
+    let svg = crate::pele::render::render_with(src, &opts).ok()?.svg;
+    let t = if env.dark { &look::DARK } else { &look::LIGHT };
+    let themed = super::diagram::themed(&svg, t);
+    let mut key: u64 = 0xcbf2_9ce4_8422_2325;
+    super::editor::fnv(&mut key, themed.as_bytes());
+    if !env.pele.iter().any(|(k, _)| *k == key) {
+        let pic = crate::image::decode(themed.as_bytes()).ok()?;
+        let img = keep(c, pic);
+        if env.pele.len() >= 24 {
+            let (_, old) = env.pele.remove(0);
+            if let Img::Ready { handle, .. } = old {
+                krate::gfx::canvas_images::forget(c, handle);
+            }
+        }
+        env.pele.push((key, img));
+    }
+    let (w, h, said) = match env.pele.iter().find(|(k, _)| *k == key).map(|(_, i)| i) {
+        Some(Img::Ready { w, h, texts, .. }) => {
+            let said: Vec<&str> = texts.iter().map(|t| t.text.as_str()).collect();
+            (*w as f32, *h as f32, said.join(" "))
+        }
+        _ => return None,
+    };
+    // Drawn at its own size (useMaxWidth off, as Obsidian sets it); wider
+    // than the column, it is scaled to fit.
+    let k = if w > width { width / w } else { 1.0 };
+    let pad = 12.0 * sz.body / 16.0;
+    Some(widget_lay(
+        Widget::Picture {
+            key,
+            x: 0.0,
+            y: pad,
+            w: w * k,
+            h: h * k,
+            line,
+            said,
+        },
+        h * k + pad * 2.0,
+        sz.body,
+    ))
+}
+
+fn diagram(c: u64, env: &mut Env, doc: &Doc, span: Span, width: f32, sz: &Sizes) -> Rc<Lay> {
     let mut src = String::new();
     for n in span.first + 1..span.last {
         src.push_str(doc.line(n));
         src.push('\n');
+    }
+    if crate::charts::kind(&src).is_some_and(|k| PELE_KINDS.contains(&k)) {
+        if let Some(l) = pele_picture(c, env, &src, width, sz, span.first) {
+            return l;
+        }
     }
     let size = 14.0 * sz.body / 16.0;
     let measure = |s: &str, sz: f32| look::width(c, s, sz, 400);
@@ -1308,7 +1393,7 @@ fn note_lines(
                     Some(e) if e.is_image() => Some(image(env, &e, folder, n, width, sz)),
                     _ => None,
                 },
-                SpanKind::Diagram => Some(diagram(c, &d, span, width, sz)),
+                SpanKind::Diagram => Some(diagram(c, env, &d, span, width, sz)),
                 SpanKind::Front => None,
             };
             if let Some(l) = lay {
@@ -1649,48 +1734,7 @@ pub fn draw(
                         t -= u64::from(*d);
                     }
                 }
-                let _ = krate::gfx::canvas_images::draw_round(
-                    c,
-                    shown,
-                    look::g(r(ox + x, oy + y, *w, *h)),
-                    look::radii(4.0),
-                );
-                // An SVG's text, drawn at the picture's scale.
-                let k = *w / (*px_w as f32).max(1.0);
-                for tx in texts {
-                    let size = tx.size * k;
-                    let st = krate::gfx::types::TextStyle {
-                        weight: if tx.bold { 700 } else { 400 },
-                        italic: false,
-                        letter_spacing: 0.0,
-                        family: if tx.serif {
-                            krate::gfx::types::FontFamily::Serif
-                        } else {
-                            krate::gfx::types::FontFamily::Sans
-                        },
-                    };
-                    let tw = look::width_styled(c, &tx.text, size, st);
-                    let dx = match tx.anchor {
-                        1 => tw * 0.5,
-                        2 => tw,
-                        _ => 0.0,
-                    };
-                    let col = krate::gfx::types::Color {
-                        r: tx.color[0],
-                        g: tx.color[1],
-                        b: tx.color[2],
-                        a: tx.color[3],
-                    };
-                    look::text_styled(
-                        c,
-                        &tx.text,
-                        ox + x + tx.x * k - dx,
-                        oy + y + tx.y * k,
-                        size,
-                        st,
-                        col,
-                    );
-                }
+                draw_ready(c, shown, texts, *px_w, r(ox + x, oy + y, *w, *h), 4.0);
             }
             (Some(n), _) => {
                 look::fit(c, n, ox + x, oy + y + h * 0.65, 14.0, 400, t.faint, *w);
@@ -1729,6 +1773,22 @@ pub fn draw(
             }
         }
         Widget::Diagram { d, x, y, .. } => draw_chart(c, d, ox + x, oy + y, t),
+        Widget::Picture {
+            key, x, y, w, h, ..
+        } => {
+            if let Some((
+                _,
+                Img::Ready {
+                    handle,
+                    texts,
+                    px_w,
+                    ..
+                },
+            )) = env.pele.iter().find(|(k, _)| k == key)
+            {
+                draw_ready(c, *handle, texts, *px_w, r(ox + x, oy + y, *w, *h), 0.0);
+            }
+        }
         Widget::Media {
             key,
             audio,
@@ -2789,6 +2849,40 @@ fn fill_poly_with(c: u64, pts: &[(f32, f32)], colour: impl Fn(f32) -> Rgba) {
     }
 }
 
+/// A kept picture in `rc` with its SVG text drawn over it at its scale.
+fn draw_ready(c: u64, handle: u64, texts: &[crate::svg::Text], px_w: u32, rc: Rect, radius: f32) {
+    let (x, y, w) = (rc.x, rc.y, rc.w);
+    let _ = krate::gfx::canvas_images::draw_round(c, handle, look::g(rc), look::radii(radius));
+    // An SVG's text, drawn at the picture's scale.
+    let k = w / (px_w as f32).max(1.0);
+    for tx in texts {
+        let size = tx.size * k;
+        let st = krate::gfx::types::TextStyle {
+            weight: if tx.bold { 700 } else { 400 },
+            italic: false,
+            letter_spacing: 0.0,
+            family: if tx.serif {
+                krate::gfx::types::FontFamily::Serif
+            } else {
+                krate::gfx::types::FontFamily::Sans
+            },
+        };
+        let tw = look::width_styled(c, &tx.text, size, st);
+        let dx = match tx.anchor {
+            1 => tw * 0.5,
+            2 => tw,
+            _ => 0.0,
+        };
+        let col = krate::gfx::types::Color {
+            r: tx.color[0],
+            g: tx.color[1],
+            b: tx.color[2],
+            a: tx.color[3],
+        };
+        look::text_styled(c, &tx.text, x + tx.x * k - dx, y + tx.y * k, size, st, col);
+    }
+}
+
 /// Where the caret is drawn when it is in a table cell: x, top and height
 /// relative to the table's row.
 pub fn table_caret(c: u64, w: &Widget, cur: Pos) -> Option<(f32, f32, f32)> {
@@ -2890,7 +2984,9 @@ pub fn press(c: u64, w: &Widget, lx: f32, ly: f32, _width: f32, line: usize) -> 
             Some(Act::Place(Pos::new(*head, *title_col)))
         }
         Widget::Math { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
-        Widget::Diagram { line, .. } => Some(Act::Place(Pos::new(line + 1, 0))),
+        Widget::Diagram { line, .. } | Widget::Picture { line, .. } => {
+            Some(Act::Place(Pos::new(line + 1, 0)))
+        }
         Widget::Props {
             rows,
             add_y,

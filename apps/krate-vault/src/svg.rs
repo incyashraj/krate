@@ -984,6 +984,17 @@ fn set_prop(s: &mut Style, k: &str, v: &str) {
         "fill-rule" => s.even_odd = v.trim() == "evenodd",
         "clip-rule" => s.clip_even_odd = v.trim() == "evenodd",
         "font-size" => s.font = num(v).unwrap_or(s.font),
+        // The CSS shorthand: its size is the token in px, its family the rest.
+        "font" => {
+            for tok in v.split_whitespace() {
+                if tok.ends_with("px") {
+                    s.font = num(tok).unwrap_or(s.font);
+                }
+            }
+            if let Some(fam) = v.split_whitespace().last() {
+                set_prop(s, "font-family", fam);
+            }
+        }
         "text-anchor" => {
             s.anchor = match v.trim() {
                 "middle" => 1,
