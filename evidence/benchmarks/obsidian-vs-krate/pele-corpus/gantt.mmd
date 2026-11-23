@@ -1,0 +1,9 @@
+gantt
+    title A plan
+    dateFormat YYYY-MM-DD
+    section Build
+    Design      :done, d1, 2026-01-01, 5d
+    Code        :active, c1, after d1, 10d
+    section Ship
+    Test        :crit, t1, after c1, 4d
+    Release     :r1, after t1, 1d

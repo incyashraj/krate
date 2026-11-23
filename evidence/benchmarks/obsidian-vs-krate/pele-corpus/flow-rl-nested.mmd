@@ -1,0 +1,10 @@
+flowchart RL
+    subgraph outer [Outer]
+      direction TB
+      subgraph inner [Inner]
+        x1 --> x2
+      end
+      x2 --> x3
+    end
+    s[Start] --> x1
+    x3 --> e[End]

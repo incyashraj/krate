@@ -1,0 +1,10 @@
+stateDiagram-v2
+    [*] --> Still
+    Still --> Moving : push
+    Moving --> Still : stop
+    Moving --> Crash
+    Crash --> [*]
+    state Moving {
+        [*] --> Slow
+        Slow --> Fast
+    }

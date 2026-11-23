@@ -1,0 +1,10 @@
+flowchart TD
+    A[Start] --> B{Is it working?}
+    B -->|Yes| C[Ship it]
+    B -->|No| D[Debug]
+    D --> E[Fix the bug]
+    E --> B
+    C --> F[Tell users]
+    A --> G[Write tests]
+    G --> F
+    D --> H[(Logs)]

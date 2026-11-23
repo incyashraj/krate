@@ -1,0 +1,14 @@
+classDiagram
+    class Animal {
+        +String name
+        +int age
+        +eat(food) bool
+    }
+    class Duck {
+        +swim()
+    }
+    class Fish
+    Animal <|-- Duck
+    Animal <|-- Fish
+    Duck "1" --> "*" Egg : lays
+    Animal ..> Food : uses
