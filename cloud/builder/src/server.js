@@ -399,6 +399,42 @@ async function persistJob(job) {
   } catch (e) { /* the next state change tries again */ }
 }
 
+/* One build as support needs it: the record, the account's recent builds
+ * and the end of the engine log (48 KB; the whole log stays on the volume). */
+async function buildForSupport(id) {
+  const job = jobs.get(String(id || ""));
+  if (!job) return null;
+  const brief = (j) => ({
+    id: j.id,
+    state: j.state,
+    started: j.started || null,
+    finished: j.finished || null,
+    usd: j.spend ? j.spend.usd : null,
+    rounds: j.spend ? j.spend.rounds : null,
+    error: j.error || null,
+  });
+  const recent = [...jobs.values()]
+    .filter((j) => j.account === job.account && j.id !== job.id)
+    .sort((a, b) => (b.started || 0) - (a.started || 0))
+    .slice(0, 8)
+    .map(brief);
+  const log = await readFile(join(LOGS_DIR, `${job.id}.log`), "utf8").catch(() => null);
+  return {
+    ...brief(job),
+    account: job.account,
+    kind: job.kind || "build",
+    stage: job.stage || null,
+    line: job.line || null,
+    request: job.request || null,
+    parent: job.parent || null,
+    paidBy: job.paidBy || null,
+    spend: job.spend || null,
+    recent,
+    log: log ? log.slice(-48 * 1024) : null,
+    logBytes: log ? Buffer.byteLength(log) : 0,
+  };
+}
+
 async function keepFailedLog(id, log) {
   if (!stateWritable || !log) return;
   try {
@@ -1845,6 +1881,12 @@ const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, "");
 
   try {
+    // A box that makes apps, not a website: Search Console listed
+    // build.krate.tech/ as a page it could not index (2026-11-23).
+    if (req.method === "GET" && url.pathname === "/robots.txt") {
+      res.setHeader("content-type", "text/plain; charset=utf-8");
+      return send(res, 200, "User-agent: *\nDisallow: /\n");
+    }
     // HEAD too: uptime checks ask with HEAD, and 404 read as "down" (K-911).
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/health") {
       // `authoring` is the answer to "is this box switched on", which is
@@ -2247,6 +2289,18 @@ const server = createServer(async (req, res) => {
         throw err;
       }
       return json(res, 200, { id: next.id, parent: id });
+    }
+
+    // Everything about one build, for the hub only, when someone reports it:
+    // what was asked, what it cost and how many rounds, how it ended, the
+    // account's other recent builds, and the engine's own output. The hub
+    // mails it to the founder with the report (2026-11-23: a report said a
+    // build failed and nothing could say why). The shared secret is the
+    // only door; anyone else meets the same 404 as a missing route.
+    if (req.method === "GET" && url.pathname.startsWith("/support/build/")) {
+      if (!fromHub(req)) return send(res, 404, "not found");
+      const found = await buildForSupport(url.pathname.split("/")[3]);
+      return found ? json(res, 200, found) : send(res, 404, "no such build");
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/build/")) {
