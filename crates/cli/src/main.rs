@@ -12924,63 +12924,21 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     }
 
     println!();
-    if acceptance.accepted {
+    if committed {
+        // A built app is announced as built, whatever the request judge
+        // thought of it (founder rule, 2026-11-23): never "may be missing",
+        // never "not what you asked for". The judgement is ours -- it is in
+        // the transcript, in `--json`'s `ok`, and in the exit code (6) that
+        // Studio and scripts read -- and the person decides what to change.
         println!("Created {}", req.output.display());
-        // Served, with a word of the request not seen in the code: a note
-        // the person can act on ("not like this, make it like an input"),
-        // never a failure over an app that does what was asked.
-        let worth: Vec<&str> = acceptance
-            .requirements
-            .iter()
-            .filter_map(|v| v.detail.split_once("; worth checking: ").map(|(_, w)| w))
-            .collect();
-        if !worth.is_empty() {
-            println!("  Worth checking: it may be missing {}.", worth.join(", "));
-        }
-    } else if committed {
-        // The app exists and works. What it does not do is the thing that was
-        // asked for, and that is the first thing to say -- not a footnote
-        // under a "Created" line that reads as success.
-        // Most of what was asked is there and something seems missing:
-        // say that, softly, and name it. Only an app about something else
-        // entirely is "not what you asked for".
-        let failures = acceptance.failures();
-        let partial = failures
-            .iter()
-            .all(|f| f.detail.starts_with("it may be missing"));
-        if partial {
-            println!(
-                "Built {}, but part of what you asked for may be missing.",
-                req.output.display()
-            );
-        } else {
-            println!(
-                "Built {}, but it is not what you asked for.",
-                req.output.display()
-            );
-        }
-        println!();
-        for failure in &failures {
-            // One clause that is the whole request: echoing it back tells
-            // the person nothing they did not just type.
-            if failures.len() > 1 || failure.text.trim() != judged_request.trim() {
-                println!("  asked for: {}", failure.text.trim());
-            }
-            println!("  but       {}", failure.detail);
-        }
-        println!();
-        println!("  The file is there and it runs. Try again with more detail about");
-        println!("  what it should do, or open it to see what was built.");
     } else {
         // A revision that did not do what was asked does not get to replace
         // an app that works. Say what was kept as well as what failed: the
         // useful fact here is that nothing was lost (IC-397).
+        // The first line is the one Studio reads (off_request_detail). The
+        // judge's reasons stay in the transcript: telling a person what
+        // "may be missing" is the founder's rule broken (2026-11-23).
         println!("The change did not do what you asked, so it was not applied.");
-        println!();
-        for failure in acceptance.failures() {
-            println!("  asked for: {}", failure.text.trim());
-            println!("  but       {}", failure.detail);
-        }
         println!();
         println!("  {} is unchanged.", req.output.display());
         println!("  Try again with more detail about what should be different.");
@@ -12998,7 +12956,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     for cap in &requested {
         println!("    - {cap}");
     }
-    if acceptance.accepted {
+    if committed {
         println!();
         // "They can double-click it" is only true if they already have Krate
         // (K-195). To anyone who does not, a .krate is an unclaimed
