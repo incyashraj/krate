@@ -493,6 +493,20 @@ export default {
       return cors(await developerRoute(request, url, subdomain, env));
     }
 
+    // The hub is an API, not a website. Google crawled its addresses
+    // (/, /meta/, /run/, /saml/, /scim/v2/, jwks.json) and listed them as
+    // pages it could not index; krate.tech is where people should land.
+    // Developer names (alice.krate.tech) were answered above and keep their
+    // own pages.
+    if (request.method === "GET" && pathname === "/robots.txt") {
+      return new Response("User-agent: *\nDisallow: /\n", {
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=86400" },
+      });
+    }
+    if (request.method === "GET" && pathname === "/") {
+      return Response.redirect(`${siteBase(env)}/`, 301);
+    }
+
     try {
       if (request.method === "GET" && pathname === "/health") {
         return cors(await health(env));
