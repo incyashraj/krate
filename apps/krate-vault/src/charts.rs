@@ -29,6 +29,12 @@ pub enum Role {
     Done,
     Active,
     Critical,
+    /// Dark text on a coloured label (gitGraph's branch names).
+    Ink,
+    /// A chart's faint grid lines.
+    Grid,
+    /// A see-through band in a series colour (sankey's flows).
+    Band(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +75,12 @@ pub enum Item {
         fill: Role,
         stroke: Role,
     },
+    /// A closed outline, filled.
+    Poly {
+        pts: Vec<(f32, f32)>,
+        fill: Role,
+        stroke: Role,
+    },
     Wedge {
         cx: f32,
         cy: f32,
@@ -104,7 +116,7 @@ pub struct Chart {
     pub items: Vec<Item>,
 }
 
-fn text(x: f32, y: f32, s: &str, size: f32, anchor: u8, bold: bool, role: Role) -> Item {
+pub(crate) fn text(x: f32, y: f32, s: &str, size: f32, anchor: u8, bold: bool, role: Role) -> Item {
     Item::Text {
         x,
         y,
@@ -116,7 +128,7 @@ fn text(x: f32, y: f32, s: &str, size: f32, anchor: u8, bold: bool, role: Role) 
     }
 }
 
-fn line(pts: Vec<(f32, f32)>, dashed: bool, head: Head) -> Item {
+pub(crate) fn line(pts: Vec<(f32, f32)>, dashed: bool, head: Head) -> Item {
     Item::Line {
         pts,
         role: Role::Line,
@@ -127,7 +139,7 @@ fn line(pts: Vec<(f32, f32)>, dashed: bool, head: Head) -> Item {
     }
 }
 
-fn bx(x: f32, y: f32, w: f32, h: f32, r: f32, fill: Role) -> Item {
+pub(crate) fn bx(x: f32, y: f32, w: f32, h: f32, r: f32, fill: Role) -> Item {
     Item::Box {
         x,
         y,
@@ -140,14 +152,14 @@ fn bx(x: f32, y: f32, w: f32, h: f32, r: f32, fill: Role) -> Item {
     }
 }
 
-fn lines_of(src: &str) -> Vec<&str> {
+pub(crate) fn lines_of(src: &str) -> Vec<&str> {
     src.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with("%%"))
         .collect()
 }
 
-fn unquote(s: &str) -> &str {
+pub(crate) fn unquote(s: &str) -> &str {
     s.trim().trim_matches('"')
 }
 
@@ -166,6 +178,13 @@ pub fn kind(src: &str) -> Option<&'static str> {
         "journey" => "journey",
         "mindmap" => "mindmap",
         "timeline" => "timeline",
+        "gitGraph" | "gitGraph:" => "git",
+        "quadrantChart" => "quadrant",
+        "xychart-beta" | "xychart" => "xy",
+        "sankey-beta" | "sankey" => "sankey",
+        "block-beta" | "block" => "block",
+        "requirementDiagram" => "requirement",
+        "C4Context" | "C4Container" | "C4Component" | "C4Dynamic" | "C4Deployment" => "c4",
         _ => return None,
     })
 }
@@ -187,6 +206,13 @@ pub fn chart(src: &str, width: &dyn Fn(&str, f32) -> f32, size: f32, max_w: f32)
         "journey" => journey(src, width, size),
         "mindmap" => mindmap(src, width, size),
         "timeline" => timeline(src, width, size),
+        "git" => crate::charts_more::git(src, width, size),
+        "quadrant" => crate::charts_more::quadrant(src, width, size),
+        "xy" => crate::charts_more::xy(src, width, size),
+        "sankey" => crate::charts_more::sankey(src, width, size),
+        "block" => crate::charts_more::block(src, width, size),
+        "requirement" => crate::charts_more::requirement(src, width, size),
+        "c4" => crate::charts_more::c4(src, width, size),
         _ => None,
     }
 }
@@ -195,7 +221,11 @@ fn from_flowchart(d: &mermaid::Diagram, size: f32) -> Chart {
     let mut items = Vec::new();
     for e in &d.edges {
         items.push(Item::Line {
-            pts: alloc::vec![(e.x0, e.y0), (e.x1, e.y1)],
+            pts: if e.pts.len() >= 2 {
+                e.pts.clone()
+            } else {
+                alloc::vec![(e.x0, e.y0), (e.x1, e.y1)]
+            },
             role: Role::Line,
             width: if e.thick { 2.6 } else { 1.4 },
             dashed: e.dotted,
@@ -203,7 +233,19 @@ fn from_flowchart(d: &mermaid::Diagram, size: f32) -> Chart {
             tail: Head::None,
         });
         if !e.label.is_empty() {
-            let (mx, my) = ((e.x0 + e.x1) * 0.5, (e.y0 + e.y1) * 0.5);
+            let (mx, my) = e.label_at;
+            // Mermaid's label sits on a patch of the page over the line.
+            let lw = e.label_w;
+            items.push(Item::Box {
+                x: mx - lw * 0.5,
+                y: my - size * 0.7,
+                w: lw,
+                h: size * 1.4,
+                r: 0.0,
+                fill: Role::Paper,
+                stroke: Role::None,
+                dashed: false,
+            });
             items.push(text(
                 mx,
                 my + size * 0.3,
@@ -217,35 +259,65 @@ fn from_flowchart(d: &mermaid::Diagram, size: f32) -> Chart {
     }
     for n in &d.nodes {
         let (cx, cy) = (n.x + n.w * 0.5, n.y + n.h * 0.5);
-        items.push(match n.shape {
-            Shape::Circle => Item::Circle {
+        let mut text_y = cy + size * 0.36;
+        match n.shape {
+            Shape::Circle => items.push(Item::Circle {
                 cx,
                 cy,
                 r: n.w * 0.5,
                 fill: Role::Node,
                 stroke: Role::Line,
-            },
-            Shape::Diamond => Item::Diamond {
+            }),
+            Shape::Diamond => items.push(Item::Diamond {
                 x: n.x,
                 y: n.y,
                 w: n.w,
                 h: n.h,
                 fill: Role::Node,
                 stroke: Role::Line,
-            },
-            Shape::Stadium => bx(n.x, n.y, n.w, n.h, n.h * 0.5, Role::Node),
-            Shape::Round => bx(n.x, n.y, n.w, n.h, 8.0, Role::Node),
-            Shape::Rect => bx(n.x, n.y, n.w, n.h, 3.0, Role::Node),
-        });
-        items.push(text(
-            cx,
-            cy + size * 0.36,
-            &n.label,
-            size,
-            1,
-            false,
-            Role::Text,
-        ));
+            }),
+            Shape::Stadium => items.push(bx(n.x, n.y, n.w, n.h, n.h * 0.5, Role::Node)),
+            Shape::Round => items.push(bx(n.x, n.y, n.w, n.h, 8.0, Role::Node)),
+            Shape::Rect => items.push(bx(n.x, n.y, n.w, n.h, 3.0, Role::Node)),
+            Shape::Subroutine => {
+                items.push(bx(n.x, n.y, n.w, n.h, 0.0, Role::Node));
+                let inset = size * 0.5;
+                for x in [n.x + inset, n.x + n.w - inset] {
+                    items.push(line(
+                        alloc::vec![(x, n.y), (x, n.y + n.h)],
+                        false,
+                        Head::None,
+                    ));
+                }
+            }
+            Shape::Cylinder => {
+                // A drum: the body with its rounded foot, and the top's
+                // whole ellipse.
+                let ry = size * 0.45;
+                let ell = |ey: f32, from: f32, to: f32| -> Vec<(f32, f32)> {
+                    (0..=24)
+                        .map(|k| {
+                            let a = from + (to - from) * k as f32 / 24.0;
+                            (cx + n.w * 0.5 * a.cos(), ey + ry * a.sin())
+                        })
+                        .collect()
+                };
+                let pi = core::f32::consts::PI;
+                let mut body = ell(n.y + ry, pi, 2.0 * pi);
+                body.extend(ell(n.y + n.h - ry, 0.0, pi));
+                if let Some(f) = body.first().copied() {
+                    body.push(f);
+                }
+                items.push(Item::Poly {
+                    pts: body,
+                    fill: Role::Node,
+                    stroke: Role::Line,
+                });
+                items.push(line(ell(n.y + ry, 0.0, pi), false, Head::None));
+                text_y += ry * 0.5;
+            }
+        }
+        items.push(text(cx, text_y, &n.label, size, 1, false, Role::Text));
     }
     Chart {
         w: d.w,
@@ -621,25 +693,27 @@ fn sequence(src: &str, width: &dyn Fn(&str, f32) -> f32, size: f32) -> Option<Ch
 
 // ---- boxes joined by edges: class, state, ER ----------------------------------------------------
 
-struct GNode {
-    id: String,
-    title: String,
-    rows: Vec<String>,
-    kind: u8, // 0 box, 1 start dot, 2 end dot
+pub(crate) struct GNode {
+    pub id: String,
+    pub title: String,
+    pub rows: Vec<String>,
+    pub kind: u8, // 0 box, 1 start dot, 2 end dot
+    /// A «stereotype» line over the title (requirement diagrams).
+    pub stereo: String,
 }
 
-struct GEdge {
-    a: usize,
-    b: usize,
-    label: String,
-    dashed: bool,
-    head: Head,
-    tail: Head,
-    a_card: String,
-    b_card: String,
+pub(crate) struct GEdge {
+    pub a: usize,
+    pub b: usize,
+    pub label: String,
+    pub dashed: bool,
+    pub head: Head,
+    pub tail: Head,
+    pub a_card: String,
+    pub b_card: String,
 }
 
-fn find_or_add(nodes: &mut Vec<GNode>, id: &str) -> usize {
+pub(crate) fn find_or_add(nodes: &mut Vec<GNode>, id: &str) -> usize {
     if let Some(i) = nodes.iter().position(|n| n.id == id) {
         return i;
     }
@@ -653,27 +727,19 @@ fn find_or_add(nodes: &mut Vec<GNode>, id: &str) -> usize {
         title: String::from(if kind > 0 { "" } else { id }),
         rows: Vec::new(),
         kind,
+        stereo: String::new(),
     });
     nodes.len() - 1
 }
 
 /// Boxes in ranks top to bottom (or left to right), edges between them.
-fn graph_chart(
+pub(crate) fn graph_chart(
     nodes: &[GNode],
     edges: &[GEdge],
     width: &dyn Fn(&str, f32) -> f32,
     size: f32,
     across: bool,
 ) -> Chart {
-    // Lay the boxes out through the flowchart's ranking, by writing them as
-    // one: their sizes come from the measure below.
-    let mut src = String::from(if across { "graph LR\n" } else { "graph TD\n" });
-    for (i, _) in nodes.iter().enumerate() {
-        src.push_str(&alloc::format!("n{i}\n"));
-    }
-    for e in edges {
-        src.push_str(&alloc::format!("n{} --> n{}\n", e.a, e.b));
-    }
     let sizes: Vec<(f32, f32)> = nodes
         .iter()
         .map(|n| match n.kind {
@@ -683,8 +749,10 @@ fn graph_chart(
                     .iter()
                     .map(|r| width(r, size * 0.9))
                     .fold(width(&n.title, size), f32::max)
+                    .max(width(&n.stereo, size * 0.85))
                     + size * 2.0;
                 let h = size * 2.2
+                    + if n.stereo.is_empty() { 0.0 } else { size * 1.3 }
                     + if n.rows.is_empty() {
                         0.0
                     } else {
@@ -695,104 +763,61 @@ fn graph_chart(
             _ => (size * 1.2, size * 1.2),
         })
         .collect();
-    let m = |_: &str| 0.0f32;
-    let mut d = match mermaid::flowchart(&src, &m, size) {
-        Some(d) => d,
-        None => return Chart::default(),
-    };
-    // Replace the flowchart's sizes with the boxes' own and lay the ranks
-    // out again by those.
-    let ranks: Vec<f32> = d
-        .nodes
+    // Laid out as dagre lays out Mermaid's (src/layered.rs).
+    let pairs: Vec<(usize, usize)> = edges.iter().map(|e| (e.a, e.b)).collect();
+    let labels: Vec<(f32, f32)> = edges
         .iter()
-        .map(|n| if across { n.x } else { n.y })
+        .map(|e| {
+            if e.label.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (width(&e.label, size * 0.85) + size * 0.6, size * 1.5)
+            }
+        })
         .collect();
-    let mut order: Vec<usize> = (0..d.nodes.len()).collect();
-    order.sort_by(|a, b| {
-        ranks[*a]
-            .partial_cmp(&ranks[*b])
-            .unwrap_or(core::cmp::Ordering::Equal)
+    let lay = crate::layered::layout(&crate::layered::Input {
+        sizes: &sizes,
+        edges: &pairs,
+        labels: &labels,
+        shapes: &nodes
+            .iter()
+            .map(|n| if n.kind == 0 { 0 } else { 2 })
+            .collect::<Vec<u8>>(),
+        dir: if across {
+            crate::layered::Dir::LeftRight
+        } else {
+            crate::layered::Dir::TopDown
+        },
+        node_sep: size * 3.125,
+        rank_sep: size * 3.125,
+        label_gap: size * 1.25,
     });
-    let mut rank_of = alloc::vec![0usize; d.nodes.len()];
-    let mut r = 0;
-    for (k, &i) in order.iter().enumerate() {
-        if k > 0 && (ranks[i] - ranks[order[k - 1]]).abs() > 0.5 {
-            r += 1;
-        }
-        rank_of[i] = r;
+    struct Placed {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
     }
-    let nranks = r + 1;
-    let gap_main = size * 3.5;
-    let gap_cross = size * 2.0;
-    let mut main_size = alloc::vec![0.0f32; nranks];
-    let mut cross_tot = alloc::vec![0.0f32; nranks];
-    for (i, (w, h)) in sizes.iter().enumerate() {
-        let rk = rank_of[i];
-        let (ms, cs) = if across { (*w, *h) } else { (*h, *w) };
-        main_size[rk] = main_size[rk].max(ms);
-        cross_tot[rk] += cs + if cross_tot[rk] > 0.0 { gap_cross } else { 0.0 };
-    }
-    let widest = cross_tot.iter().copied().fold(0.0, f32::max);
-    let mut cursor: Vec<f32> = cross_tot.iter().map(|t| (widest - t) * 0.5).collect();
-    let mut main_at = Vec::new();
-    let mut acc = 0.0;
-    for ms in &main_size {
-        main_at.push(acc);
-        acc += ms + gap_main;
-    }
-    // Keep the flowchart's order within a rank.
-    let mut by_cross: Vec<usize> = (0..d.nodes.len()).collect();
-    by_cross.sort_by(|a, b| {
-        let ca = if across { d.nodes[*a].y } else { d.nodes[*a].x };
-        let cb = if across { d.nodes[*b].y } else { d.nodes[*b].x };
-        ca.partial_cmp(&cb).unwrap_or(core::cmp::Ordering::Equal)
-    });
-    let mut place = alloc::vec![(0.0f32, 0.0f32); d.nodes.len()];
-    for &i in &by_cross {
-        let rk = rank_of[i];
-        let (w, h) = sizes[i];
-        let (ms, cs) = if across { (w, h) } else { (h, w) };
-        let main = main_at[rk] + (main_size[rk] - ms) * 0.5;
-        let cross = cursor[rk];
-        cursor[rk] += cs + gap_cross;
-        place[i] = if across { (main, cross) } else { (cross, main) };
-    }
-    for (i, n) in d.nodes.iter_mut().enumerate() {
-        n.x = place[i].0;
-        n.y = place[i].1;
-        n.w = sizes[i].0;
-        n.h = sizes[i].1;
-    }
-    let total_main = acc - gap_main;
-    let (cw, ch) = if across {
-        (total_main, widest)
-    } else {
-        (widest, total_main)
-    };
+    let d: Vec<Placed> = lay
+        .pos
+        .iter()
+        .zip(sizes.iter())
+        .map(|(p, s)| Placed {
+            x: p.0,
+            y: p.1,
+            w: s.0,
+            h: s.1,
+        })
+        .collect();
+    let (cw, ch) = (lay.w, lay.h);
     let mut items = Vec::new();
-    let clip = |cx: f32, cy: f32, w: f32, h: f32, dx: f32, dy: f32| -> (f32, f32) {
-        let tx = if dx.abs() > 1e-3 {
-            (w * 0.5) / dx.abs()
-        } else {
-            f32::MAX
+    for (ei, e) in edges.iter().enumerate() {
+        let pts = lay.paths.get(ei).cloned().unwrap_or_default();
+        let (Some(&p0), Some(&p1)) = (pts.first(), pts.last()) else {
+            continue;
         };
-        let ty = if dy.abs() > 1e-3 {
-            (h * 0.5) / dy.abs()
-        } else {
-            f32::MAX
-        };
-        let t = tx.min(ty).min(1.0);
-        (cx + dx * t, cy + dy * t)
-    };
-    for e in edges {
-        let (a, b) = (&d.nodes[e.a], &d.nodes[e.b]);
-        let (ax, ay) = (a.x + a.w * 0.5, a.y + a.h * 0.5);
-        let (bxx, byy) = (b.x + b.w * 0.5, b.y + b.h * 0.5);
-        let (dx, dy) = (bxx - ax, byy - ay);
-        let p0 = clip(ax, ay, a.w, a.h, dx, dy);
-        let p1 = clip(bxx, byy, b.w, b.h, -dx, -dy);
         items.push(Item::Line {
-            pts: alloc::vec![p0, p1],
+            pts: pts.clone(),
             role: Role::Line,
             width: 1.4,
             dashed: e.dashed,
@@ -800,7 +825,7 @@ fn graph_chart(
             tail: e.tail,
         });
         if !e.label.is_empty() {
-            let (mx, my) = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
+            let (mx, my) = lay.label_at.get(ei).copied().unwrap_or(p0);
             let w = width(&e.label, size * 0.85) + size * 0.6;
             items.push(Item::Box {
                 x: mx - w * 0.5,
@@ -822,7 +847,11 @@ fn graph_chart(
                 Role::Text,
             ));
         }
-        for (card, p, q) in [(&e.a_card, p0, p1), (&e.b_card, p1, p0)] {
+        // Cardinalities beside each end, along the curve's first and last
+        // pieces.
+        let near0 = pts.get(1).copied().unwrap_or(p1);
+        let near1 = pts.get(pts.len().saturating_sub(2)).copied().unwrap_or(p0);
+        for (card, p, q) in [(&e.a_card, p0, near0), (&e.b_card, p1, near1)] {
             if !card.is_empty() {
                 let (dx, dy) = (q.0 - p.0, q.1 - p.1);
                 let len = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -834,7 +863,7 @@ fn graph_chart(
             }
         }
     }
-    for (i, n) in d.nodes.iter().enumerate() {
+    for (i, n) in d.iter().enumerate() {
         let g = &nodes[i];
         match g.kind {
             1 => items.push(Item::Circle {
@@ -869,9 +898,21 @@ fn graph_chart(
                     if g.rows.is_empty() { 6.0 } else { 3.0 },
                     Role::Node,
                 ));
+                let st = if g.stereo.is_empty() { 0.0 } else { size * 1.3 };
+                if st > 0.0 {
+                    items.push(text(
+                        n.x + n.w * 0.5,
+                        n.y + size * 1.3,
+                        &g.stereo,
+                        size * 0.85,
+                        1,
+                        false,
+                        Role::Muted,
+                    ));
+                }
                 items.push(text(
                     n.x + n.w * 0.5,
-                    n.y + size * 1.45,
+                    n.y + size * 1.45 + st,
                     &g.title,
                     size,
                     1,
@@ -879,7 +920,7 @@ fn graph_chart(
                     Role::Text,
                 ));
                 if !g.rows.is_empty() {
-                    let sep = n.y + size * 2.2;
+                    let sep = n.y + size * 2.2 + st;
                     items.push(line(
                         alloc::vec![(n.x, sep), (n.x + n.w, sep)],
                         false,
@@ -1771,6 +1812,11 @@ fn timeline(src: &str, width: &dyn Fn(&str, f32) -> f32, size: f32) -> Option<Ch
 
 fn shift_item(i: Item, dx: f32, dy: f32) -> Item {
     match i {
+        Item::Poly { pts, fill, stroke } => Item::Poly {
+            pts: pts.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(),
+            fill,
+            stroke,
+        },
         Item::Box {
             x,
             y,
@@ -2086,7 +2132,8 @@ mod tests {
                 texts(&c)
             );
         }
-        assert!(chart("gitGraph\ncommit", &w, 14.0, 700.0).is_none());
+        assert!(chart("gitGraph\ncommit", &w, 14.0, 700.0).is_some());
+        assert!(chart("zenuml\nA.b()", &w, 14.0, 700.0).is_none());
         assert_eq!(kind("sequenceDiagram\nA->>B: x"), Some("sequence"));
     }
 

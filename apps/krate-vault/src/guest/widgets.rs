@@ -2029,6 +2029,9 @@ fn role(rl: crate::charts::Role, t: &Theme, fill: bool) -> Option<Rgba> {
         Role::Done => look::alpha(t.muted, 0.25),
         Role::Active => look::alpha(look::hex(0xA882FF), 0.45),
         Role::Critical => look::alpha(look::hex(0xFB464C), 0.85),
+        Role::Ink => look::hex(0x1E1E1E),
+        Role::Grid => look::alpha(t.muted, 0.18),
+        Role::Band(i) => look::alpha(look::hex(SERIES[usize::from(i) % SERIES.len()]), 0.4),
     })
 }
 
@@ -2120,6 +2123,14 @@ pub fn draw_chart(c: u64, d: &crate::charts::Chart, ox: f32, oy: f32, t: &Theme)
                             );
                             xx += 8.0;
                         }
+                        // And down both sides.
+                        let mut yy = rc.y;
+                        while yy < rc.bottom() {
+                            let l = 4.0f32.min(rc.bottom() - yy);
+                            fill(c, r(rc.x, yy, 1.0, l), col);
+                            fill(c, r(rc.right() - 1.0, yy, 1.0, l), col);
+                            yy += 8.0;
+                        }
                     } else {
                         look::outline(c, rc, *rad, 1.0, col);
                     }
@@ -2170,6 +2181,21 @@ pub fn draw_chart(c: u64, d: &crate::charts::Chart, ox: f32, oy: f32, t: &Theme)
                 }
                 if let Some(col) = role(*stroke, t, false) {
                     let _ = canvas2d::stroke_circle(c, p, *rad, 1.2, col);
+                }
+            }
+            Item::Poly {
+                pts,
+                fill: f,
+                stroke,
+            } => {
+                let abs: Vec<(f32, f32)> = pts.iter().map(|(x, y)| (ox + x, oy + y)).collect();
+                if let Some(col) = role(*f, t, true) {
+                    fill_poly(c, &abs, col);
+                }
+                if let Some(col) = role(*stroke, t, false) {
+                    for w in abs.windows(2) {
+                        look::line(c, w[0].0, w[0].1, w[1].0, w[1].1, 1.2, col);
+                    }
                 }
             }
             Item::Wedge {
@@ -2672,6 +2698,33 @@ fn download(env: &Env, win: u64, app: &mut crate::app::App, key: &str) {
             .and_then(|b| krate::fs::write_chosen(&chosen.token, &b).map_err(|_| ()));
     if done.is_err() {
         app.say("The file could not be saved there");
+    }
+}
+
+/// Fill a closed outline a pixel row at a time (even-odd).
+fn fill_poly(c: u64, pts: &[(f32, f32)], col: Rgba) {
+    let (top, bot) = pts
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
+    if top >= bot {
+        return;
+    }
+    let mut y = top.floor();
+    while y < bot {
+        let sy = y + 0.5;
+        let mut xs: Vec<f32> = pts
+            .windows(2)
+            .filter_map(|w| {
+                let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+                ((y0 <= sy && y1 > sy) || (y1 <= sy && y0 > sy))
+                    .then(|| x0 + (sy - y0) / (y1 - y0) * (x1 - x0))
+            })
+            .collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+        for pair in xs.chunks_exact(2) {
+            fill(c, r(pair[0], y, pair[1] - pair[0], 1.0), col);
+        }
+        y += 1.0;
     }
 }
 

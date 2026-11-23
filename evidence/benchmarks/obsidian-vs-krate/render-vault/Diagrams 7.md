@@ -1,0 +1,11 @@
+# Diagrams 7
+
+```mermaid
+C4Context
+    title System Context
+    Person(customer, "Customer", "A user of the shop")
+    System(shop, "Shop", "Sells things")
+    System_Ext(mail, "Mail", "Sends email")
+    Rel(customer, shop, "Uses")
+    Rel(shop, mail, "Sends email with")
+```

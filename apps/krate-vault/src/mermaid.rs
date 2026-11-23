@@ -1,9 +1,8 @@
 //! Mermaid flowcharts (` ```mermaid ` blocks starting `graph` or
-//! `flowchart`), drawn as Obsidian draws them: boxes in ranks, top to
-//! bottom or left to right, joined by arrows with their labels.
-//!
-//! Only flowcharts. Sequence, class, state, Gantt and pie diagrams return
-//! `None` and stay a code block; that is said in parity.md.
+//! `flowchart`), read into boxes and edges and laid out as Mermaid's dagre
+//! lays them out (src/layered.rs): ranks top to bottom or left to right,
+//! the order with fewest crossings, curved edges with their labels.
+//! The other kinds are in src/charts.rs.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,6 +14,10 @@ pub enum Shape {
     Stadium,
     Circle,
     Diamond,
+    /// `[(Store)]`: a database drum.
+    Cylinder,
+    /// `[[Step]]`: a box with a line down each side.
+    Subroutine,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +44,11 @@ pub struct Edge {
     pub y0: f32,
     pub x1: f32,
     pub y1: f32,
+    /// The curve drawn, border to border.
+    pub pts: Vec<(f32, f32)>,
+    /// Where its label is centred, and how wide its patch is.
+    pub label_at: (f32, f32),
+    pub label_w: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,8 +74,8 @@ fn node_ref(s: &str) -> Option<NodeRef<'_>> {
     let shapes: [(&str, &str, Shape); 8] = [
         ("((", "))", Shape::Circle),
         ("([", "])", Shape::Stadium),
-        ("[[", "]]", Shape::Rect),
-        ("[(", ")]", Shape::Rect),
+        ("[[", "]]", Shape::Subroutine),
+        ("[(", ")]", Shape::Cylinder),
         ("[", "]", Shape::Rect),
         ("(", ")", Shape::Round),
         ("{", "}", Shape::Diamond),
@@ -144,7 +152,6 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
         return None;
     }
     let dir = words.next().unwrap_or("TD");
-    let across = matches!(dir, "LR" | "RL");
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
     let find_or_add = |nodes: &mut Vec<Node>, id: String, def: Option<(String, Shape)>| -> usize {
@@ -202,6 +209,9 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
                 y0: 0.0,
                 x1: 0.0,
                 y1: 0.0,
+                pts: Vec::new(),
+                label_at: (0.0, 0.0),
+                label_w: 0.0,
             });
             prev = next;
             rest = after2;
@@ -209,67 +219,6 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
     }
     if nodes.is_empty() {
         return None;
-    }
-    // Ranks: the longest path from the top, after setting aside the edges
-    // that close a cycle (found by a walk in the order the nodes appear).
-    let n = nodes.len();
-    let mut back = alloc::vec![false; edges.len()];
-    let mut state = alloc::vec![0u8; n]; // 0 new, 1 on the walk, 2 done
-    for root in 0..n {
-        if state.get(root).copied() != Some(0) {
-            continue;
-        }
-        let mut stack: Vec<(usize, usize)> = alloc::vec![(root, 0)];
-        if let Some(s) = state.get_mut(root) {
-            *s = 1;
-        }
-        while let Some(&(v, k)) = stack.last() {
-            let next = edges.iter().enumerate().filter(|(_, e)| e.from == v).nth(k);
-            if let Some(top) = stack.last_mut() {
-                top.1 += 1;
-            }
-            match next {
-                Some((ei, e)) => match state.get(e.to).copied() {
-                    Some(0) => {
-                        if let Some(s) = state.get_mut(e.to) {
-                            *s = 1;
-                        }
-                        stack.push((e.to, 0));
-                    }
-                    Some(1) => {
-                        if let Some(b) = back.get_mut(ei) {
-                            *b = true;
-                        }
-                    }
-                    _ => {}
-                },
-                None => {
-                    if let Some(s) = state.get_mut(v) {
-                        *s = 2;
-                    }
-                    stack.pop();
-                }
-            }
-        }
-    }
-    let mut rank = alloc::vec![0usize; n];
-    for _ in 0..n {
-        let mut changed = false;
-        for (ei, e) in edges.iter().enumerate() {
-            if back.get(ei).copied().unwrap_or(false) || e.from == e.to {
-                continue;
-            }
-            let want = rank.get(e.from).copied().unwrap_or(0) + 1;
-            if let Some(r) = rank.get_mut(e.to) {
-                if *r < want {
-                    *r = want;
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
     }
     let pad_x = size * 1.0;
     let pad_y = size * 0.75;
@@ -280,105 +229,67 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
                 let d = tw + pad_x * 1.2;
                 (d, d)
             }
-            Shape::Diamond => (tw + pad_x * 2.6, size * 1.4 + pad_y * 2.6),
+            // Mermaid 11's rhombus: twice a box's height, the label's width
+            // and most of that height again across (measured in Obsidian).
+            Shape::Diamond => {
+                let h = (size * 1.4 + pad_y * 2.0) * 2.0;
+                (tw + h * 0.68, h)
+            }
+            Shape::Cylinder => (tw + pad_x * 2.0, size * 1.4 + pad_y * 2.0 + size * 0.9),
+            Shape::Subroutine => (tw + pad_x * 3.0, size * 1.4 + pad_y * 2.0),
             _ => (tw + pad_x * 2.0, size * 1.4 + pad_y * 2.0),
         };
         node.w = w;
         node.h = h;
     }
-    let ranks = rank.iter().copied().max().unwrap_or(0) + 1;
-    let gap_main = size * 3.0;
-    let gap_cross = size * 1.6;
-    // The size of each rank along the main axis, and its total across.
-    let mut main_size = alloc::vec![0.0f32; ranks];
-    let mut cross_total = alloc::vec![0.0f32; ranks];
-    for (i, node) in nodes.iter().enumerate() {
-        let r = rank.get(i).copied().unwrap_or(0);
-        let (m, c) = if across {
-            (node.w, node.h)
-        } else {
-            (node.h, node.w)
-        };
-        if let Some(s) = main_size.get_mut(r) {
-            *s = s.max(m);
-        }
-        if let Some(t) = cross_total.get_mut(r) {
-            *t += c + if *t > 0.0 { gap_cross } else { 0.0 };
-        }
-    }
-    let widest = cross_total.iter().copied().fold(0.0f32, f32::max);
-    let mut cursor = alloc::vec![0.0f32; ranks];
-    for (r, c) in cursor.iter_mut().enumerate() {
-        *c = (widest - cross_total.get(r).copied().unwrap_or(0.0)) * 0.5;
-    }
-    let mut main_at = alloc::vec![0.0f32; ranks];
-    let mut acc = 0.0;
-    for r in 0..ranks {
-        if let Some(m) = main_at.get_mut(r) {
-            *m = acc;
-        }
-        acc += main_size.get(r).copied().unwrap_or(0.0) + gap_main;
-    }
-    let total_main = acc - gap_main;
-    let reverse = matches!(dir, "BT" | "RL");
-    for (i, node) in nodes.iter_mut().enumerate() {
-        let r = rank.get(i).copied().unwrap_or(0);
-        let ms = main_size.get(r).copied().unwrap_or(0.0);
-        let (m, c) = if across {
-            (node.w, node.h)
-        } else {
-            (node.h, node.w)
-        };
-        let mut main = main_at.get(r).copied().unwrap_or(0.0) + (ms - m) * 0.5;
-        if reverse {
-            main = total_main - main - m;
-        }
-        let cross = cursor.get(r).copied().unwrap_or(0.0);
-        if let Some(cu) = cursor.get_mut(r) {
-            *cu += c + gap_cross;
-        }
-        if across {
-            node.x = main;
-            node.y = cross;
-        } else {
-            node.x = cross;
-            node.y = main;
-        }
-    }
-    // Each edge from the border of one box toward the centre of the other.
-    for e in edges.iter_mut() {
-        let (Some(a), Some(b)) = (nodes.get(e.from), nodes.get(e.to)) else {
-            continue;
-        };
-        let (ax, ay) = (a.x + a.w * 0.5, a.y + a.h * 0.5);
-        let (bx, by) = (b.x + b.w * 0.5, b.y + b.h * 0.5);
-        let clip = |cx: f32, cy: f32, w: f32, h: f32, dx: f32, dy: f32| -> (f32, f32) {
-            let tx = if dx.abs() > 1e-3 {
-                (w * 0.5) / dx.abs()
+    // Laid out as dagre lays out Mermaid's (src/layered.rs), with Mermaid's
+    // 50 px between nodes and ranks at its 16 px text.
+    let sizes: Vec<(f32, f32)> = nodes.iter().map(|n| (n.w, n.h)).collect();
+    let pairs: Vec<(usize, usize)> = edges.iter().map(|e| (e.from, e.to)).collect();
+    let labels: Vec<(f32, f32)> = edges
+        .iter()
+        .map(|e| {
+            if e.label.is_empty() {
+                (0.0, 0.0)
             } else {
-                f32::MAX
-            };
-            let ty = if dy.abs() > 1e-3 {
-                (h * 0.5) / dy.abs()
-            } else {
-                f32::MAX
-            };
-            let t = tx.min(ty).min(1.0);
-            (cx + dx * t, cy + dy * t)
-        };
-        let (dx, dy) = (bx - ax, by - ay);
-        let (x0, y0) = clip(ax, ay, a.w, a.h, dx, dy);
-        let (x1, y1) = clip(bx, by, b.w, b.h, -dx, -dy);
-        e.x0 = x0;
-        e.y0 = y0;
-        e.x1 = x1;
-        e.y1 = y1;
+                (width(&e.label) * 0.85 + size * 0.6, size * 1.5)
+            }
+        })
+        .collect();
+    let lay = crate::layered::layout(&crate::layered::Input {
+        sizes: &sizes,
+        edges: &pairs,
+        labels: &labels,
+        shapes: &nodes
+            .iter()
+            .map(|n| match n.shape {
+                Shape::Diamond => 1,
+                Shape::Circle => 2,
+                _ => 0,
+            })
+            .collect::<Vec<u8>>(),
+        dir: crate::layered::Dir::of(dir),
+        node_sep: size * 3.125,
+        rank_sep: size * 3.125,
+        label_gap: size * 1.25,
+    });
+    for (node, p) in nodes.iter_mut().zip(lay.pos.iter()) {
+        node.x = p.0;
+        node.y = p.1;
     }
-    let (w, h) = if across {
-        (total_main, widest)
-    } else {
-        (widest, total_main)
-    };
+    for (i, e) in edges.iter_mut().enumerate() {
+        let pts = lay.paths.get(i).cloned().unwrap_or_default();
+        if let (Some(f), Some(l)) = (pts.first(), pts.last()) {
+            e.x0 = f.0;
+            e.y0 = f.1;
+            e.x1 = l.0;
+            e.y1 = l.1;
+        }
+        e.label_at = lay.label_at.get(i).copied().unwrap_or((0.0, 0.0));
+        e.label_w = labels.get(i).map_or(0.0, |l| l.0);
+        e.pts = pts;
+    }
+    let (w, h) = (lay.w, lay.h);
     Some(Diagram { nodes, edges, w, h })
 }
 
