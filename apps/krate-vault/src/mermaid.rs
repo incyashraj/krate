@@ -51,10 +51,16 @@ pub struct Edge {
     pub label_w: f32,
 }
 
+/// A subgraph: its title, its nodes, its box (x, y, w, h).
+pub type Cluster = (String, Vec<usize>, (f32, f32, f32, f32));
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagram {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// Subgraphs: title, the nodes first named inside them, and the box
+    /// drawn round them (x, y, w, h), innermost last.
+    pub clusters: Vec<Cluster>,
     pub w: f32,
     pub h: f32,
 }
@@ -174,21 +180,34 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
         });
         nodes.len() - 1
     };
+    let mut clusters: Vec<Cluster> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
     for line in lines {
         let first = line.split_whitespace().next().unwrap_or("");
+        if first == "subgraph" {
+            // subgraph id [Title], subgraph id, or subgraph Title words
+            let rest = line.get(8..).unwrap_or("").trim();
+            let title = match (rest.find('['), rest.rfind(']')) {
+                (Some(a), Some(b)) if b > a => {
+                    rest.get(a + 1..b).unwrap_or("").trim().trim_matches('"')
+                }
+                _ => rest.trim_matches('"'),
+            };
+            clusters.push((String::from(title), Vec::new(), (0.0, 0.0, 0.0, 0.0)));
+            open.push(clusters.len() - 1);
+            continue;
+        }
+        if first == "end" {
+            open.pop();
+            continue;
+        }
         if matches!(
             first,
-            "style"
-                | "classDef"
-                | "class"
-                | "click"
-                | "linkStyle"
-                | "subgraph"
-                | "end"
-                | "direction"
+            "style" | "classDef" | "class" | "click" | "linkStyle" | "direction"
         ) {
             continue;
         }
+        let before = nodes.len();
         let Some((id, def, mut rest)) = node_ref(line) else {
             continue;
         };
@@ -215,6 +234,16 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
             });
             prev = next;
             rest = after2;
+        }
+        if let Some(&c) = open.last() {
+            // Nodes first named inside a subgraph belong to it (and to the
+            // ones round it).
+            let _ = c;
+            for i in before..nodes.len() {
+                for &k in &open {
+                    clusters[k].1.push(i);
+                }
+            }
         }
     }
     if nodes.is_empty() {
@@ -256,6 +285,15 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
             }
         })
         .collect();
+    // Each node's innermost subgraph.
+    let mut groups = alloc::vec![0u32; nodes.len()];
+    for (k, (_, members, _)) in clusters.iter().enumerate() {
+        for &i in members {
+            if let Some(g) = groups.get_mut(i) {
+                *g = k as u32 + 1;
+            }
+        }
+    }
     let lay = crate::layered::layout(&crate::layered::Input {
         sizes: &sizes,
         edges: &pairs,
@@ -272,6 +310,9 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
         node_sep: size * 3.125,
         rank_sep: size * 3.125,
         label_gap: size * 1.25,
+        // Room between ranks for subgraph boxes and their titles.
+        groups: &groups,
+        group_gap: size * 3.0,
     });
     for (node, p) in nodes.iter_mut().zip(lay.pos.iter()) {
         node.x = p.0;
@@ -290,7 +331,71 @@ pub fn flowchart(src: &str, width: &dyn Fn(&str) -> f32, size: f32) -> Option<Di
         e.pts = pts;
     }
     let (w, h) = (lay.w, lay.h);
-    Some(Diagram { nodes, edges, w, h })
+    // Each subgraph's box: round its nodes, room for its title on top,
+    // innermost drawn last.
+    let pad = size * 0.75;
+    for (_, members, rect) in clusters.iter_mut() {
+        if members.is_empty() {
+            continue;
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for &i in members.iter() {
+            let n = &nodes[i];
+            x0 = x0.min(n.x);
+            y0 = y0.min(n.y);
+            x1 = x1.max(n.x + n.w);
+            y1 = y1.max(n.y + n.h);
+        }
+        *rect = (
+            x0 - pad,
+            y0 - pad - size * 1.9,
+            x1 - x0 + pad * 2.0,
+            y1 - y0 + pad * 2.0 + size * 1.9,
+        );
+    }
+    // Make room for the boxes outside the drawing.
+    let (mut minx, mut miny) = (0.0f32, 0.0f32);
+    let (mut maxx, mut maxy) = (w, h);
+    for (_, m, r) in &clusters {
+        if m.is_empty() {
+            continue;
+        }
+        minx = minx.min(r.0);
+        miny = miny.min(r.1);
+        maxx = maxx.max(r.0 + r.2);
+        maxy = maxy.max(r.1 + r.3);
+    }
+    let (dx, dy) = (-minx, -miny);
+    if dx != 0.0 || dy != 0.0 {
+        for n in nodes.iter_mut() {
+            n.x += dx;
+            n.y += dy;
+        }
+        for e in edges.iter_mut() {
+            for p in e.pts.iter_mut() {
+                p.0 += dx;
+                p.1 += dy;
+            }
+            e.x0 += dx;
+            e.x1 += dx;
+            e.y0 += dy;
+            e.y1 += dy;
+            e.label_at = (e.label_at.0 + dx, e.label_at.1 + dy);
+        }
+        for (_, _, r) in clusters.iter_mut() {
+            r.0 += dx;
+            r.1 += dy;
+        }
+    }
+    let (w, h) = (maxx - minx, maxy - miny);
+    clusters.retain(|c| !c.1.is_empty());
+    Some(Diagram {
+        nodes,
+        edges,
+        clusters,
+        w,
+        h,
+    })
 }
 
 #[cfg(test)]
@@ -326,5 +431,28 @@ mod tests {
         assert!(chain.nodes[2].y > chain.nodes[1].y);
         assert!(flowchart("sequenceDiagram\nA->>B: hi", &w, 16.0).is_none());
         assert!(flowchart("graph TD", &w, 16.0).is_none());
+    }
+
+    #[test]
+    fn subgraphs_are_boxed_round_their_nodes() {
+        let d = flowchart(
+            "flowchart TD\nsubgraph one [Build]\na1[Write] --> a2[Test]\nend\nsubgraph Ship it\nb1 --> b2\nend\na2 --> b1\nc --> a1",
+            &w,
+            16.0,
+        )
+        .unwrap();
+        assert_eq!(d.clusters.len(), 2);
+        assert_eq!(d.clusters[0].0, "Build");
+        assert_eq!(d.clusters[1].0, "Ship it");
+        assert_eq!(d.clusters[0].1, [0, 1]);
+        for (_, m, r) in &d.clusters {
+            for &i in m {
+                let n = &d.nodes[i];
+                assert!(
+                    n.x >= r.0 && n.x + n.w <= r.0 + r.2 && n.y >= r.1 && n.y + n.h <= r.1 + r.3
+                );
+            }
+            assert!(r.0 >= 0.0 && r.1 >= 0.0 && r.0 + r.2 <= d.w + 0.01);
+        }
     }
 }

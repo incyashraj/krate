@@ -238,6 +238,28 @@ pub fn chart(src: &str, width: &dyn Fn(&str, f32) -> f32, size: f32, max_w: f32)
 
 fn from_flowchart(d: &mermaid::Diagram, size: f32) -> Chart {
     let mut items = Vec::new();
+    // Subgraph boxes under everything, their titles at the top left.
+    for (title, _, (x, y, w, h)) in &d.clusters {
+        items.push(Item::Box {
+            x: *x,
+            y: *y,
+            w: *w,
+            h: *h,
+            r: 4.0,
+            fill: Role::Cluster,
+            stroke: Role::Line,
+            dashed: false,
+        });
+        items.push(text(
+            x + size * 0.75,
+            y + size * 1.5,
+            title,
+            size,
+            0,
+            false,
+            Role::Muted,
+        ));
+    }
     for e in &d.edges {
         items.push(Item::Line {
             pts: if e.pts.len() >= 2 {
@@ -810,6 +832,8 @@ pub(crate) fn graph_chart(
         node_sep: size * 3.125,
         rank_sep: size * 3.125,
         label_gap: size * 1.25,
+        groups: &[],
+        group_gap: 0.0,
     });
     struct Placed {
         x: f32,

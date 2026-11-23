@@ -62,6 +62,11 @@ pub struct Input<'a> {
     /// The height every label rank keeps even with no label in it (Mermaid
     /// sizes an empty edge label one line high).
     pub label_gap: f32,
+    /// Each node's group (a subgraph, counted from 1; 0 for none) and the
+    /// room added between two ranks whose groups differ, for the groups'
+    /// boxes and titles.
+    pub groups: &'a [u32],
+    pub group_gap: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -400,6 +405,22 @@ pub fn layout(inp: &Input<'_>) -> Layout {
             *h = h.max(inp.label_gap);
         }
     }
+    if inp.groups.iter().any(|g| *g > 0) {
+        let set = |r: usize| -> Vec<u32> {
+            let mut g: Vec<u32> = (0..n)
+                .filter(|i| rank[*i] * 2 == r)
+                .map(|i| inp.groups.get(i).copied().unwrap_or(0))
+                .collect();
+            g.sort_unstable();
+            g.dedup();
+            g
+        };
+        for r in (1..nranks.saturating_sub(1)).step_by(2) {
+            if set(r - 1) != set(r + 1) {
+                rank_h[r] += inp.group_gap;
+            }
+        }
+    }
     let mut rank_y = alloc::vec![0.0f32; nranks];
     let mut y = 0.0;
     for r in 0..nranks {
@@ -629,6 +650,8 @@ mod tests {
             node_sep: 50.0,
             rank_sep: 50.0,
             label_gap: 0.0,
+            groups: &[],
+            group_gap: 0.0,
         })
     }
 
