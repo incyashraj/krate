@@ -1959,11 +1959,35 @@ fn finish_gui_run(
 /// only the app ends, as Krate's own Close does (K-1074).
 pub(crate) fn end_unanswered_close() -> wasmtime::Error {
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    std::process::exit(0);
+    end_process_now(0);
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         krate_adapter_common::ui::end_running_app();
         wasmtime::Error::msg(ENDED_BY_KRATE)
+    }
+}
+
+/// End the process now, for a run Krate ends itself (the second unanswered
+/// Close, a second Ctrl-C). Output is flushed, then the process leaves
+/// without running destructors (K-1359): `exit` ran them, and on a Mac the
+/// window surface's destructor reached into wgpu's thread-locals after they
+/// were gone and the run ended in a panic instead of quietly. The app was
+/// not answering, so there is nothing of its own left to tear down; the
+/// system reclaims the rest.
+pub(crate) fn end_process_now(code: i32) -> ! {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    #[cfg(unix)]
+    // SAFETY: _exit only ends the process; it touches no Rust state.
+    unsafe {
+        libc::_exit(code)
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: ExitProcess runs no Rust thread-local destructors on the
+        // calling thread's behalf the way a Mac's exit does; exit is fine.
+        std::process::exit(code)
     }
 }
 

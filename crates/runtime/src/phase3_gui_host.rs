@@ -5038,7 +5038,7 @@ impl Phase3GuiHost {
         if interrupted() {
             self.interrupts.set(self.interrupts.get() + 1);
             if self.interrupts.get() > 1 {
-                std::process::exit(130);
+                crate::end_process_now(130);
             }
         }
         // Same for the close button: a game loop may never call poll or wait,
@@ -6120,7 +6120,7 @@ impl ui::events::Host for Phase3GuiHost {
             // otherwise Ctrl-C is a suggestion the app can decline.
             self.interrupts.set(self.interrupts.get() + 1);
             if self.interrupts.get() > 1 {
-                std::process::exit(130);
+                crate::end_process_now(130);
             }
             if let Some(window) = self.windows.first().copied() {
                 return Ok(Some(ui::types::Event::CloseRequested(window.get())));
@@ -6240,7 +6240,7 @@ impl ui::events::Host for Phase3GuiHost {
             if interrupted() {
                 self.interrupts.set(self.interrupts.get() + 1);
                 if self.interrupts.get() > 1 {
-                    std::process::exit(130);
+                    crate::end_process_now(130);
                 }
                 if let Some(window) = self.windows.first().copied() {
                     return Ok(Some(ui::types::Event::CloseRequested(window.get())));
