@@ -59,7 +59,7 @@
         const c = document.createElement("canvas"); c.width = w; c.height = h;
         c.getContext("2d").drawImage(img, 0, 0, w, h);
         const all = shots(); all[path] = { at: Date.now(), src: c.toDataURL("image/jpeg", 0.8) };
-        const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 12);
+        const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 24);
         localStorage.setItem(SHOTS, JSON.stringify(Object.fromEntries(keep)));
       } catch (e) { /* a full or blocked store: the tile just has no picture */ }
     };
@@ -1357,7 +1357,10 @@
     setTimeout(() => { if (window.krHomeMode) window.krHomeMode("ide"); else { const t = $("homeIdeTab"); if (t) t.click(); } }, 50);
   });
 
-  let projects = [], projectsAsked = 0;
+  let projects = [], projectsAsked = 0, showAll = false;
+  // The filter appears only once there are more projects than fit at a
+  // glance; under that, every project is already on screen.
+  const GLANCE = 8;
   async function loadProjects() {
     // Only the newest answer is drawn: a slow first one does not paint over it.
     const mine = ++projectsAsked;
@@ -1368,91 +1371,144 @@
     if (why) hint(`Could not list your projects: ${why}`);
     paintProjects();
   }
+  // A project with no picture yet: its initial on a soft tile, the tint
+  // picked from its name so the same project keeps the same colour.
+  const TINTS = ["accent", "green", "violet", "orange", "pink"];
+  const tint = (name) => TINTS[[...String(name)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % TINTS.length];
+  // Where a project lives, in the fewest words: the folder that holds it
+  // and its parent ("Krate Apps/Projects"); the full path is the tooltip.
+  const where = (path) => {
+    const parts = short(path).split(/[\\/]/).filter(Boolean);
+    parts.pop();
+    return parts.length > 2 ? parts.slice(-2).join("/") : parts.join("/");
+  };
+  function projectCard(p, i, pics) {
+    const pic = pics[p.path];
+    const initial = (String(p.name).match(/[A-Za-z0-9]/) || ["?"])[0].toUpperCase();
+    const th = pic ? `<img src="${esc(pic.src)}" alt="">` : `<span class="kr-pj-none" style="--t:var(--${tint(p.name)})"><i>${esc(initial)}</i></span>`;
+    return `<button type="button" class="kr-pj" style="--k:${Math.min(i, 11)}" data-path="${esc(p.path)}" data-name="${esc(p.name)}" title="${esc(short(p.path))}"><span class="th">${th}</span><b>${esc(p.name)}</b><small><span class="pth">${esc(where(p.path))}</span>${p.updated ? `<span class="when">${esc(ago(p.updated))}</span>` : ""}</small></button>`;
+  }
   function paintProjects() {
     const box = $("homeIdeRows"); if (!box) return;
+    const many = projects.length > GLANCE;
+    $("homeIdeFilter").hidden = !many;
+    if (!many) $("homeIdeFind").value = "";
+    $("homeIdeCount").textContent = projects.length ? String(projects.length) : "";
     const q = ($("homeIdeFind").value || "").trim().toLowerCase();
     const list = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
     const pics = shots();
-    // Seven at a glance; a search shows every match.
-    const shown = q ? list.slice(0, 40) : list.slice(0, 7);
-    box.innerHTML = shown.map((p, i) => `<button type="button" class="kr-start" style="--k:${i}" data-path="${esc(p.path)}" data-name="${esc(p.name)}"><span class="th">${pics[p.path] ? `<img src="${esc(pics[p.path].src)}" alt="">` : `<span class="th-none">${ICON.rs}</span>`}</span><b>${esc(p.name)}</b><small>${esc(short(p.path))}${p.updated ? " · " + esc(ago(p.updated)) : ""}</small></button>`).join("") +
-      (q && !list.length ? `<p class="kr-ide-none">No project called “${esc(q)}”. Press Enter to open it as a path, or start a new one.</p>` : "") +
-      (!q && list.length > 7 ? `<p class="kr-ide-more">${list.length - 7} more · type a name to find one</p>` : "") +
-      (q ? "" : `<button type="button" class="kr-start newp" style="--k:${Math.min(list.length, 7)}" data-new="1"><span class="th"><svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>New project</b><small>A working starter to build on</small></button>`);
+    const shown = q || showAll ? list : list.slice(0, GLANCE);
+    if (!projects.length) {
+      box.innerHTML = `<p class="kr-pj-empty">Projects you start or open show up here, with a picture of the app.</p>`;
+      return;
+    }
+    box.innerHTML = shown.map((p, i) => projectCard(p, i, pics)).join("") +
+      (q && !list.length ? `<p class="kr-pj-empty">No project matches “${esc(q)}”.</p>` : "") +
+      (!q && !showAll && list.length > GLANCE ? `<button type="button" class="kr-pj-more" data-all="1">Show all ${list.length}</button>` : "");
   }
   $("homeIdeRows").addEventListener("click", (e) => {
-    const b = e.target.closest(".kr-start"); if (!b) return;
-    if (b.dataset.new) { newProject(); return; }
+    if (e.target.closest("[data-all]")) { showAll = true; paintProjects(); return; }
+    const b = e.target.closest(".kr-pj"); if (!b) return;
+    hint("");
     openProject({ path: b.dataset.path, name: b.dataset.name });
   });
   $("homeIdeFind").addEventListener("input", paintProjects);
-  async function openTyped() {
-    const v = $("homeIdeFind").value.trim();
-    if (!v) { const first = projects[0]; if (first) openProject(first); return; }
-    const hit = projects.find((p) => p.name.toLowerCase() === v.toLowerCase());
-    if (hit) { openProject(hit); return; }
-    if (/^[~/\\]|^[A-Za-z]:\\/.test(v)) {
-      // Resolved to the one path every door uses (a typed ~/ path was filed
-      // under its spelling, so its drafts and picture went missing).
-      try { openProject(await call("ide_resolve", { path: v })); }
-      catch (err) { hint(String(err)); }
-      return;
-    }
-    const near = projects.find((p) => p.name.toLowerCase().includes(v.toLowerCase()));
-    if (near) openProject(near); else hint("No project by that name. Open its folder, or start a new one.");
-  }
-  $("homeIdeFind").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); openTyped(); } });
-  $("homeIdeGo").addEventListener("click", openTyped);
+  $("homeIdeFind").addEventListener("keydown", (e) => {
+    // Enter opens the one match; Escape clears the filter.
+    if (e.key === "Escape") { e.preventDefault(); e.target.value = ""; paintProjects(); return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const q = e.target.value.trim().toLowerCase(); if (!q) return;
+    const hits = projects.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
+    if (hits.length === 1) openProject(hits[0]);
+  });
   $("homeIdeOpen").addEventListener("click", async () => {
+    hint("");
     try { const p = await call("ide_open_folder"); if (p) openProject(p); }
     catch (err) { hint(String(err)); }
   });
-  $("homeIdeNew").addEventListener("click", newProject);
+  // An error belongs to the thing the person just tried. Nothing writes
+  // here on arrival: every visit starts clean (the old door showed a red
+  // line saying there was no such project before anyone had typed).
   function hint(text) { const h = $("homeIdeHint"); if (h) { h.textContent = text; h.hidden = !text; } }
 
-  // A new project: a name, then a working starter made by the engine's own
-  // template, opened straight away.
-  function newProject() {
-    const pane = $("homeIdePane");
-    if (pane.querySelector(".kr-newp")) { pane.querySelector(".kr-newp input").focus(); return; }
+  /* ---- starting a project: one card per engine starter ----------------- */
+  // A name nobody has used yet, the way ide_new will spell the folder.
+  const kebab = (n) => {
+    let k = String(n).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+    return /^\d/.test(k) ? `app-${k}` : k;
+  };
+  function freeName(base) {
+    const taken = new Set(projects.map((p) => kebab(p.path.split(/[\\/]/).filter(Boolean).pop() || p.name)));
+    if (!taken.has(kebab(base))) return base;
+    for (let n = 2; ; n++) if (!taken.has(kebab(`${base} ${n}`))) return `${base} ${n}`;
+  }
+  const starters = $("homeIdeStarters");
+  function closeNaming(card) {
+    if (!card || card.classList.contains("busy")) return;
+    const f = card.querySelector(".kr-st-name"); if (f) f.remove();
+    card.classList.remove("naming");
+    starters.classList.remove("choosing");
+  }
+  function openNaming(card) {
+    starters.querySelectorAll(".kr-starter.naming").forEach((c) => { if (c !== card) closeNaming(c); });
+    if (card.classList.contains("naming")) { card.querySelector(".kr-st-name input").focus(); return; }
+    card.classList.add("naming"); starters.classList.add("choosing");
     const f = document.createElement("form");
-    f.className = "kr-newp"; f.autocomplete = "off";
-    // Which of the engine's own starters to begin from.
-    f.innerHTML = '<input type="text" maxlength="40" placeholder="Name your project, like habit tracker" aria-label="Project name"><button type="submit" class="kr-mk">Make it</button><button type="button" class="kr-cx">Cancel</button>' +
-      '<div class="kr-np-kinds" role="radiogroup" aria-label="Start from">' +
-      [["checklist", "A window app", "a checklist that saves"], ["word-frequency", "A command-line tool", "reads a file, prints words"], ["voice-prompter", "A voice app", "listens to the microphone"]]
-        .map(([k, t, d], i) => `<label><input type="radio" name="kind" value="${k}"${i ? "" : " checked"}><b>${t}</b><small>${d}</small></label>`).join("") +
-      '</div><p class="kr-np-line" aria-live="polite"></p>';
-    pane.appendChild(f);
-    const input = f.querySelector("input"), line = f.querySelector(".kr-np-line");
-    input.focus();
-    f.querySelector(".kr-cx").addEventListener("click", () => f.remove());
-    f.addEventListener("keydown", (e) => { if (e.key === "Escape" && !f.classList.contains("busy")) { e.preventDefault(); f.remove(); } });
+    f.className = "kr-st-name"; f.autocomplete = "off";
+    f.innerHTML = '<input type="text" maxlength="40" aria-label="Project name" spellcheck="false"><button type="submit" class="kr-mk">Create</button><button type="button" class="kr-cx" aria-label="Cancel" title="Cancel (Esc)"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button><p class="kr-st-line" aria-live="polite"></p>';
+    card.appendChild(f);
+    const input = f.querySelector("input"), line = f.querySelector(".kr-st-line");
+    input.value = freeName(card.dataset.name);
+    input.focus(); input.select();
+    input.addEventListener("input", () => { line.textContent = ""; line.classList.remove("bad"); });
+    f.querySelector(".kr-cx").addEventListener("click", () => closeNaming(card));
+    f.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closeNaming(card); } });
     let off = null;
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = input.value.trim();
-      if (!name) { line.textContent = "Give it a name first."; input.value = ""; input.focus(); return; }
-      f.classList.add("busy"); f.querySelectorAll("button, input").forEach((x) => (x.disabled = true));
-      line.textContent = "Making a working starter…";
+      if (!kebab(name)) { line.textContent = "Give it a name with a letter or a number in it."; line.classList.add("bad"); input.focus(); return; }
+      card.classList.add("busy"); starters.classList.add("making");
+      f.querySelectorAll("button, input").forEach((x) => (x.disabled = true));
+      line.classList.remove("bad"); line.textContent = "Making a working starter…";
       try { off = await tauri.event.listen("ide-line", (ev) => { const l = ev.payload && ev.payload.line; if (l && l.trim()) line.textContent = l.trim().slice(0, 140); }); } catch (err) { off = null; }
       try {
-        const kind = (f.querySelector('input[name="kind"]:checked') || {}).value || "checklist";
-        const p = await call("ide_new", { name, kind });
-        f.remove();
+        const p = await call("ide_new", { name, kind: card.dataset.kind });
+        card.classList.remove("busy"); starters.classList.remove("making");
+        closeNaming(card);
         await loadProjects();
         openProject(p);
       } catch (err) {
-        f.classList.remove("busy"); f.querySelectorAll("button, input").forEach((x) => (x.disabled = false));
-        line.textContent = String(err);
+        card.classList.remove("busy"); starters.classList.remove("making");
+        f.querySelectorAll("button, input").forEach((x) => (x.disabled = false));
+        line.textContent = String(err); line.classList.add("bad");
+        // The name is taken by a project that is right here: offer it.
+        const same = projects.find((p) => kebab(p.path.split(/[\\/]/).filter(Boolean).pop() || "") === kebab(name));
+        if (same) {
+          const b = document.createElement("button"); b.type = "button"; b.className = "kr-st-open"; b.textContent = `Open ${same.name}`;
+          b.addEventListener("click", () => { closeNaming(card); openProject(same); });
+          line.appendChild(b);
+        }
         input.focus(); input.select();
       } finally { if (off) try { off(); } catch (err) {} }
     });
   }
+  starters.addEventListener("click", (e) => {
+    const go = e.target.closest(".kr-st-go"); if (!go) return;
+    if (starters.classList.contains("making")) return;
+    hint("");
+    openNaming(go.closest(".kr-starter"));
+  });
 
   // Home tells us when its IDE tab is chosen (redesign.js setMode).
-  // Each visit starts clean: no old hint, no old search.
-  document.addEventListener("kr-home-mode", (e) => { if (e.detail === "ide") { hint(""); $("homeIdeFind").value = ""; loadProjects(); paintAgent(); } });
+  // Each visit starts clean: no old error, no old filter, no half-named card.
+  document.addEventListener("kr-home-mode", (e) => {
+    if (e.detail !== "ide") return;
+    hint(""); $("homeIdeFind").value = ""; showAll = false;
+    starters.querySelectorAll(".kr-starter.naming").forEach(closeNaming);
+    loadProjects(); paintAgent();
+  });
   // Closing the window: anything not saved is already kept as a draft, and
   // comes back the next time the project opens.
   window.addEventListener("beforeunload", () => { if (ide) saveAll(false); });

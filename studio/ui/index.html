@@ -344,6 +344,13 @@
           What are we <span class="rw" id="homeRw"><span class="w on">building</span><span class="w">shipping</span></span>?
         </h1>
         <p class="home-sub reveal" id="homeSub">Describe it. Send the link, and it opens on any phone or computer.</p>
+        <!-- What the IDE is, as a picture of its three parts, not a sentence:
+             the code, the real app running beside it, and your AI fixing it. -->
+        <ol class="kr-wbline" id="homeIdePromise" aria-label="Write the code, see the real app, fix it with AI" hidden>
+          <li><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M5.6 4.6L2.4 8l3.2 3.4M10.4 4.6L13.6 8l-3.2 3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Write the code</li>
+          <li><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="3" width="11.6" height="10" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M2.2 6h11.6" stroke="currentColor" stroke-width="1.4"/><circle cx="4.2" cy="4.5" r=".6" fill="currentColor"/></svg></span>See the real app</li>
+          <li><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 4.2 4.3 1.5-4.3 1.5L8 13.2 6.5 9 2.2 7.5 6.5 6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>Fix it with AI</li>
+        </ol>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="home-tabs" id="homeTabs" role="tablist">
@@ -366,20 +373,23 @@
                 <button type="button" class="kr-sq" id="homePortGo" title="Choose a folder"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M3 8h9.4M8.6 4.2L12.8 8l-4.2 3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
               </div>
             </div>
-            <!-- The IDE door: your Krate projects, a folder you already have,
-                 or a new one from a working starter. ide.js fills it. -->
+            <!-- The IDE door: start a project from one of the engine's own
+                 starters (each shows its real first frame), or open one you
+                 have below. ide.js fills it and opens the workbench. -->
             <div class="home-idepane" id="homeIdePane" hidden>
-              <div class="kr-drop2">
-                <span class="dz-i" aria-hidden="true"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><circle cx="7.2" cy="7.2" r="4.4" stroke="currentColor" stroke-width="1.4"/><path d="M10.6 10.6l2.9 2.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span>
-                <div class="kr-ta2"><input id="homeIdeFind" type="text" placeholder="Find a project, or paste a path" autocomplete="off" spellcheck="false" aria-label="Find a project" /><small>Your Krate projects, with the code and a live preview side by side.</small></div>
+              <div class="kr-idehead"><h2 class="kr-lab">Start a project</h2></div>
+              <div class="kr-starters" id="homeIdeStarters">
+                <div class="kr-starter" data-kind="checklist" data-name="My checklist" style="--k:0">
+                  <button type="button" class="kr-st-go" aria-label="Start a window app: a checklist that saves"><span class="th"><img src="starters/checklist.jpg" alt="" /></span><b>A window app</b><small>A checklist that saves</small></button>
+                </div>
+                <div class="kr-starter" data-kind="word-frequency" data-name="Word counter" style="--k:1">
+                  <!-- The tool's real output, run on Krate's README. -->
+                  <button type="button" class="kr-st-go" aria-label="Start a command-line tool: reads a file and counts its words"><span class="th term" aria-hidden="true"><code><i>word-counter · notes.md</i>word,count<br />krate,191<br />the,178<br />a,148<br />and,132<br />app,88</code></span><b>A command-line tool</b><small>Reads a file, counts its words</small></button>
+                </div>
+                <div class="kr-starter" data-kind="voice-prompter" data-name="Voice prompter" style="--k:2">
+                  <button type="button" class="kr-st-go" aria-label="Start a voice app: a prompter that listens to the microphone"><span class="th"><img src="starters/voice-prompter.jpg" alt="" /></span><b>A voice app</b><small>A prompter that listens</small></button>
+                </div>
               </div>
-              <div class="kr-cmprow">
-                <button type="button" class="kr-chipb" id="homeIdeOpen"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.6c0-.6.5-1.1 1.1-1.1h2.8l1.4 1.5h4.6c.6 0 1.1.5 1.1 1.1v5.8c0 .6-.5 1.1-1.1 1.1H3.6c-.6 0-1.1-.5-1.1-1.1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Open folder</button>
-                <button type="button" class="kr-chipb" id="homeIdeNew"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>New project</button>
-                <span class="grow"></span>
-                <button type="button" class="kr-sq" id="homeIdeGo" title="Open"><svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M3 8h9.4M8.6 4.2L12.8 8l-4.2 3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-              </div>
-              <p class="kr-panehint" id="homeIdeHint" role="status" hidden></p>
             </div>
             <div class="attach-row hidden" id="homeAttachRow"></div>
             <textarea id="homePrompt" rows="1" placeholder="Describe an app, or paste code to port…" autocomplete="off" spellcheck="false" maxlength="2000"></textarea>
@@ -411,8 +421,14 @@
                is there. -->
           <p class="home-sheet" id="homeSheetLine" hidden><a href="#" id="homeSheet">Start from a spreadsheet</a><span> · a .csv or .xlsx becomes an app around its rows</span></p>
           <div class="kr-under" id="homeIdeUnder" hidden>
-            <p class="kr-lab">Recent projects</p>
-            <div class="kr-starts" id="homeIdeRows"></div>
+            <div class="kr-idehead">
+              <h2 class="kr-lab">Recent projects</h2><span class="kr-idect" id="homeIdeCount"></span>
+              <span class="grow"></span>
+              <label class="kr-idefilter" id="homeIdeFilter" hidden><svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7.2" cy="7.2" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M10.6 10.6l2.9 2.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><input id="homeIdeFind" type="search" placeholder="Filter" autocomplete="off" spellcheck="false" aria-label="Filter your projects" /></label>
+              <button type="button" class="kr-chipb kr-ideopen" id="homeIdeOpen"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.6c0-.6.5-1.1 1.1-1.1h2.8l1.4 1.5h4.6c.6 0 1.1.5 1.1 1.1v5.8c0 .6-.5 1.1-1.1 1.1H3.6c-.6 0-1.1-.5-1.1-1.1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>Open folder</button>
+            </div>
+            <p class="kr-panehint" id="homeIdeHint" role="status" hidden></p>
+            <div class="kr-projs" id="homeIdeRows"></div>
           </div>
           <!-- The company's apps (IC-953): what this person's organisations
                released to them, one card each, opened through the engine's
