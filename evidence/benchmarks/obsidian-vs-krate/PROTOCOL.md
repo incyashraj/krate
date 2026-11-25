@@ -77,7 +77,7 @@ log file, so neither runs attached to a terminal.
   writes, before launch: `<user-data>/obsidian.json` with one vault
   registered (`path`, `ts`, `open: true`), so Obsidian opens that vault
   instead of its vault chooser; `<user-data>/<vault id>.json` with the
-  window size (1280 x 800 points, the size Vault opens at); and
+  window size (1280 x 800 points, the size Vault is told to open at); and
   `<vault>/.obsidian/workspace.json`: the layout Obsidian 1.15.1 itself
   wrote on its first launch, with the main pane's empty "New tab" leaf
   replaced by a markdown leaf on the target note and `lastOpenFiles` and
@@ -89,8 +89,10 @@ log file, so neither runs attached to a terminal.
   vault=./vault open=<target note> trace`, the vault copied to
   `<profile>/root/vault`. Krate's usage report is as shipped (on unless the
   machine sets `KRATE_NO_USAGE`; recorded).
-- **Window.** Both 1280 x 800 points. The window bounds each app actually
-  showed are recorded per sample and reported.
+- **Window.** Both 1280 x 800 points: Obsidian through its saved window
+  size, Vault through its `size=1280x800` argument (its own default is
+  1024 x 800, Obsidian's first-launch size). The window bounds each app
+  actually showed are recorded per sample and reported.
 - **Profiles and vault copies** live under a `*.noindex` folder so
   Spotlight does not index them during a run.
 

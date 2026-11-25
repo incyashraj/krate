@@ -4296,11 +4296,19 @@ impl krate::Guest for Component {
     #[allow(clippy::collapsible_match)]
     fn run() -> i32 {
         let t0 = ms();
+        // `size=WxH`: the window's size, for an automated run that must
+        // match another app's window (the Obsidian benchmark opens both at
+        // the protocol's 1280x800). Anything unreadable keeps the default.
+        let (start_w, start_h) = arg(&krate::io::args::raw(), "size")
+            .and_then(|s| s.split_once('x'))
+            .and_then(|(w, h)| Some((w.trim().parse::<u32>().ok()?, h.trim().parse::<u32>().ok()?)))
+            .filter(|(w, h)| (320..=4096).contains(w) && (240..=4096).contains(h))
+            .unwrap_or((START_W, START_H));
         let Ok(win) = window::create(
             "Vault",
             types::WindowSize {
-                width: START_W,
-                height: START_H,
+                width: start_w,
+                height: start_h,
             },
         ) else {
             return 30;

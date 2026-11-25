@@ -153,7 +153,7 @@ prepare_launch() {
     krate_profile_name "$PROFILE" >>"$(work_root "$run_dir")/krate-profiles.txt"
     LAUNCH=(/usr/bin/env "KRATE_CACHE_DIR=$PROFILE/krate-cache" "$KRATE_BIN" run "$KRATE_VAULT_BUNDLE"
       --profile "$(krate_profile_name "$PROFILE")" --sandbox-root "$PROFILE/root" "${grants[@]}"
-      -- vault=./vault "open=$note" trace)
+      -- vault=./vault "open=$note" "size=${BENCH_WINDOW_W}x${BENCH_WINDOW_H}" trace)
   else
     die "unknown app: $app"
   fi
