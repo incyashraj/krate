@@ -1102,12 +1102,42 @@ impl Doc {
         }
     }
 
+    /// Whether line `n` can fold: `fold_range(n).is_some()`, without
+    /// walking a heading's whole section. A heading folds when a line that
+    /// is not blank comes before the next heading of its level or higher,
+    /// so the walk stops at the first line that is not blank -- drawing a
+    /// note's first heading walked all 200,000 lines of a big note on
+    /// every frame (K-1373).
+    pub fn can_fold(&self, n: usize) -> bool {
+        let last = self.buf.last_line();
+        if n >= last {
+            return false;
+        }
+        match self.block(n) {
+            Block::Heading { level, .. } => {
+                for i in n + 1..=last {
+                    if let Block::Heading { level: l2, .. } = self.block(i) {
+                        if l2 <= level {
+                            return false;
+                        }
+                    }
+                    if !self.buf.line(i).trim().is_empty() {
+                        return true;
+                    }
+                }
+                false
+            }
+            b if b.is_list() => self.fold_range(n).is_some(),
+            _ => false,
+        }
+    }
+
     /// Fold or unfold at line `n` (or the line the caret is on).
     pub fn toggle_fold(&mut self, n: usize) -> bool {
         if self.folds.remove(&n) {
             return true;
         }
-        if self.fold_range(n).is_some() {
+        if self.can_fold(n) {
             self.folds.insert(n);
             // The caret does not stay inside what was hidden.
             if let Some((a, b)) = self.fold_range(n) {
@@ -1125,7 +1155,7 @@ impl Doc {
         self.folds.clear();
         if fold {
             for n in 0..self.buf.line_count() {
-                if self.fold_range(n).is_some() && !self.fences.in_code(n) {
+                if self.can_fold(n) && !self.fences.in_code(n) {
                     self.folds.insert(n);
                 }
             }
@@ -1621,6 +1651,9 @@ mod obsidian_blocks {
         assert_eq!(d.fold_range(2), Some((3, 3)));
         assert_eq!(d.fold_range(6), Some((7, 8)));
         assert_eq!(d.fold_range(9), None);
+        for n in 0..d.buf.line_count() {
+            assert_eq!(d.can_fold(n), d.fold_range(n).is_some(), "line {n}");
+        }
         d.place(Pos::new(1, 1), false);
         assert!(d.toggle_fold(0));
         assert!(d.folded_away(1) && d.folded_away(3) && !d.folded_away(4));
@@ -1633,6 +1666,14 @@ mod obsidian_blocks {
         assert!(d.folds.is_empty(), "jumping into a fold opens it");
         d.fold_all(true);
         assert_eq!(d.folds.len(), 4);
+        // The quick answer agrees with the full range on the shapes that
+        // matter: blank lines only before the next heading, a deeper
+        // heading first, a heading in code, the last line.
+        let d = doc("# A\n\n\n# B\n\n## C\n\ntext\n```\n# not\n```\n# D\n\n");
+        for n in 0..d.buf.line_count() {
+            assert_eq!(d.can_fold(n), d.fold_range(n).is_some(), "line {n}");
+        }
+        assert!(!d.can_fold(0) && d.can_fold(3) && d.can_fold(5));
     }
 
     #[test]

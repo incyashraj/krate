@@ -37,7 +37,7 @@ impl Ui {
         let k = sz.scale;
         let fsz = sz.ui;
         let line = 22.0 * k;
-        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
         let mut y = a.y + 9.0 * k - scroll;
         let mut ri = 0usize;
         for (label, list) in groups {
@@ -147,7 +147,7 @@ impl Ui {
                 ri += 1;
             }
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     /// The board (kanban) view: a column per group of the view's group-by
@@ -193,7 +193,7 @@ impl Ui {
         let gap = 9.0 * k;
         let top = a.y + 13.0 * k;
         let bottom = a.bottom() - 12.0 * k;
-        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
         let mut ri = 0usize;
         for (gi, (label, list)) in groups.iter().enumerate() {
             let cx = a.x + 12.0 * k + gi as f32 * (col_w + gap);
@@ -213,7 +213,7 @@ impl Ui {
             let n = alloc::format!("{}", list.len());
             text(self.c, &n, cx + 21.0 * k + nw, hy, sz.ui, 400, t.muted);
             self.said.heading(r(cx, top, col_w, 47.0 * k), &name);
-            let _ = canvas2d::set_clip(
+            let _ = look::clip(
                 self.c,
                 cx,
                 top + 47.0 * k,
@@ -292,7 +292,7 @@ impl Ui {
                 y += ch + 8.0 * k;
                 ri += 1;
             }
-            let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+            let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
             // "+ New" at the column's foot.
             let ny = col.bottom() - 20.5 * k;
             icon(self.c, Icon::Plus, cx + 21.0 * k, ny, k, t.muted);
@@ -312,7 +312,7 @@ impl Ui {
                 self.said.text(nb, "New");
             }
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         // The carried card follows the pointer, as the notes app shows it.
         if let (
             super::Drag::Card {

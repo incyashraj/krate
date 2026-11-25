@@ -332,14 +332,14 @@ impl Ui {
                     height: a.h,
                 }
             };
-            let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+            let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
             let _ = canvas_images::draw(self.c, img, dest);
-            let _ = canvas2d::clear_clip(self.c);
+            let _ = look::unclip(self.c);
         }
         // Names under the dots, when there is room to read them.
         let fade = 2.0f32.powf(-opt.text_fade);
         let show_all = zoom >= 0.4 * fade;
-        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
         let mut shown = 0;
         let size = (12.0 * zoom.clamp(0.75, 1.4)) * k;
         for (i, n) in gr.nodes.iter().enumerate().take(shown_n) {
@@ -373,7 +373,7 @@ impl Ui {
                 colr,
             );
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         if focused {
             for n in gr.nodes.iter().take(200) {
                 let (x, y) = to_screen(n.x, n.y);
@@ -909,7 +909,7 @@ impl Ui {
                 a.y + a.h * 0.5 + (y - cy) * z,
             )
         };
-        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
         // The dot grid.
         let step = 20.0 * z;
         if step >= 7.0 {
@@ -1006,7 +1006,7 @@ impl Ui {
                     let name = String::from(crate::app::strip_ext(crate::vfs::file_name(&f)));
                     text(self.c, &name, x0, y0 - ls * 0.6, ls, 400, t.faint);
                 }
-                let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+                let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
                 let lines: Vec<String> = if rendered {
                     alloc::vec![match n.kind {
                         CardKind::File => n.file.clone().unwrap_or_default(),
@@ -1071,7 +1071,7 @@ impl Ui {
                         CardKind::Group => Vec::new(),
                     }
                 };
-                let _ = canvas2d::set_clip(
+                let _ = look::clip(
                     self.c,
                     rc.x.max(a.x),
                     rc.y.max(a.y),
@@ -1121,7 +1121,7 @@ impl Ui {
                         t.text,
                     );
                 }
-                let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+                let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
                 if is_sel {
                     // The resize corner and the four places arrows start.
                     let hs = 8.0;
@@ -1232,7 +1232,7 @@ impl Ui {
                 look::line(self.c, sx, sy, px, py, 2.0, t.accent);
             }
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         if !focused {
             return;
         }
@@ -1595,7 +1595,7 @@ impl Ui {
             let line = sz.ui * 1.6;
             // A card: the name, then each property's name over its value.
             let ch = line + (cols.len().saturating_sub(1) as f32) * line * 2.0 + 28.0 * k;
-            let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
+            let _ = look::clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
             for (ri, rv) in rows_vals.iter().enumerate() {
                 let cx = tbl.x + gap + (ri % per) as f32 * (cw + gap);
                 let cy = tbl.y + gap + (ri / per) as f32 * (ch + gap) - scroll;
@@ -1651,10 +1651,10 @@ impl Ui {
                     self.button(card, &name, Hit::BaseRow(ri));
                 }
             }
-            let _ = canvas2d::clear_clip(self.c);
+            let _ = look::unclip(self.c);
             return;
         }
-        let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
+        let _ = look::clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
         fill(self.c, r(tbl.x, top, tbl.w, 1.0), t.border);
         let mut x = tbl.x;
         let ys = top - scroll;
@@ -1891,7 +1891,7 @@ impl Ui {
                         let nwid = width(self.c, name, fsz, 400);
                         let right = x + cw - 14.0 * k;
                         let base_y = fy + rh * 0.5 + fsz * 0.36;
-                        let _ = canvas2d::set_clip(self.c, x, fy, cw, rh);
+                        let _ = look::clip(self.c, x, fy, cw, rh);
                         text(self.c, &out, right - vw, base_y, fsz, 400, t.text);
                         text(
                             self.c,
@@ -1902,7 +1902,7 @@ impl Ui {
                             400,
                             t.muted,
                         );
-                        let _ = canvas2d::set_clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
+                        let _ = look::clip(self.c, tbl.x, tbl.y, tbl.w, tbl.h);
                         let mut said = String::from(name.as_str());
                         said.push(' ');
                         said.push_str(&out);
@@ -1912,7 +1912,7 @@ impl Ui {
                 x += cw;
             }
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         if choosing && focused {
             let mh = base.views.len() as f32 * 30.0 * k + 12.0;
             let card = r(vb.x, vb.bottom() + 4.0, 220.0 * k, mh);
@@ -2059,13 +2059,13 @@ impl Ui {
             300.0f32.max(a.w * 0.5).min(a.w),
             a.h - 8.0,
         );
-        let _ = canvas2d::set_clip(self.c, a.x, a.y, a.w, a.h);
+        let _ = look::clip(self.c, a.x, a.y, a.w, a.h);
         match which {
             crate::app::RightPane::Outline => self.draw_outline(list),
             crate::app::RightPane::Outgoing => self.draw_outgoing(list),
             _ => self.draw_backlinks(list),
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         self.app.side_override = None;
     }
 
@@ -2313,7 +2313,7 @@ impl Ui {
             SettingsPage::Templates => "Templates",
         };
         let rows = self.app.settings_rows();
-        let _ = canvas2d::set_clip(self.c, body.x - 8.0, card.y + 1.0, body.w + 16.0, mh - 2.0);
+        let _ = look::clip(self.c, body.x - 8.0, card.y + 1.0, body.w + 16.0, mh - 2.0);
         let mut y = card.y + 40.0 * k - self.app.settings_scroll;
         text(self.c, title, body.x, y + 10.0 * k, 20.0 * k, 600, t.text);
         self.said.heading(r(body.x, y - 10.0, body.w, 30.0), title);
@@ -2491,7 +2491,7 @@ impl Ui {
             self.button(r(body.x, y, body.w, rh), &row.name, Hit::SettingsRow(i));
             y += rh;
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     // ---- pointer on the views -------------------------------------------------------------------

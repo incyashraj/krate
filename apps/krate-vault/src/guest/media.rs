@@ -649,7 +649,7 @@ impl Ui {
 
         // The pages: only those in view are drawn, at the size shown.
         fill(self.c, body, t.bg);
-        let _ = canvas2d::set_clip(self.c, body.x, body.y, body.w, body.h);
+        let _ = look::clip(self.c, body.x, body.y, body.w, body.h);
         let widest = sizes.iter().fold(0.0f32, |m, (w, _)| m.max(*w)) * px + border * 2.0;
         let across = self.files.docs[di]
             .across
@@ -683,7 +683,7 @@ impl Ui {
             self.pdf_marks(pane, path, page, rc, px);
             self.said.text(rc, &format!("Page {} of {}", i + 1, count));
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         if focused {
             self.hit(body, Zone::File(pane, FileCtl::Pages));
         }
@@ -714,7 +714,7 @@ impl Ui {
             if self.files.docs[di].thumb_scroll > max {
                 self.files.docs[di].thumb_scroll = max;
             }
-            let _ = canvas2d::set_clip(self.c, side.x, side.y, side.w - 1.0, side.h);
+            let _ = look::clip(self.c, side.x, side.y, side.w - 1.0, side.h);
             for (page, b) in boxes {
                 if b.bottom() < side.y || b.y > side.bottom() {
                     continue;
@@ -756,7 +756,7 @@ impl Ui {
                 self.hit(b, z);
                 self.said.button(b, &format!("Page {}", page + 1));
             }
-            let _ = canvas2d::clear_clip(self.c);
+            let _ = look::unclip(self.c);
         }
     }
 

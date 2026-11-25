@@ -477,7 +477,7 @@ impl Ui {
             t.border,
         );
         let top = sb.bottom() + 8.0 * k;
-        let _ = canvas2d::set_clip(self.c, card.x, top, card.w, card.bottom() - top - 4.0 * k);
+        let _ = look::clip(self.c, card.x, top, card.w, card.bottom() - top - 4.0 * k);
         for (i, (p, on)) in list.iter().enumerate() {
             let y = top + i as f32 * rh;
             if y > card.bottom() {
@@ -540,7 +540,7 @@ impl Ui {
                 BaseUi::Rename(p.clone()),
             );
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     #[allow(clippy::too_many_arguments)]

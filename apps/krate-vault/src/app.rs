@@ -1507,6 +1507,8 @@ pub struct App {
     backlinks: Option<Cached<Vec<Backlink>>>,
     outline: Option<Cached<Vec<crate::md::Heading>>>,
     outgoing: Option<Cached<Vec<(String, bool)>>>,
+    /// When a side pane's list settles and a frame is due for it.
+    settle_at: Option<u64>,
     tags: Option<(u64, Vec<(String, usize)>)>,
     /// Notes saved this run, for the report.
     pub saves: usize,
@@ -1610,6 +1612,7 @@ impl App {
             backlinks: None,
             outline: None,
             outgoing: None,
+            settle_at: None,
             tags: None,
             saves: 0,
             closing: false,
@@ -2910,6 +2913,13 @@ impl App {
         let stale = self.backlinks.as_ref().is_none_or(|c| {
             c.path != path || (c.generation != gen && self.now >= c.at + PANE_SETTLE_MS)
         });
+        if let Some(c) = self
+            .backlinks
+            .as_ref()
+            .filter(|c| !stale && c.generation != gen)
+        {
+            self.settle_by(c.at + PANE_SETTLE_MS);
+        }
         if stale {
             let mut data = match self.vault.as_ref() {
                 Some(v) if !path.is_empty() => v.backlinks(&path),
@@ -2952,6 +2962,13 @@ impl App {
         let stale = self.outline.as_ref().is_none_or(|c| {
             c.path != path || (c.version != version && now >= c.at + PANE_SETTLE_MS)
         });
+        if let Some(c) = self
+            .outline
+            .as_ref()
+            .filter(|c| !stale && c.version != version)
+        {
+            self.settle_by(c.at + PANE_SETTLE_MS);
+        }
         if stale {
             let data = self.with_subject(Doc::headings).unwrap_or_default();
             self.outline = Some(Cached {
@@ -2973,6 +2990,13 @@ impl App {
             c.path != path
                 || ((c.version != version || c.generation != gen) && now >= c.at + PANE_SETTLE_MS)
         });
+        if let Some(c) = self
+            .outgoing
+            .as_ref()
+            .filter(|c| !stale && (c.version != version || c.generation != gen))
+        {
+            self.settle_by(c.at + PANE_SETTLE_MS);
+        }
         if stale {
             let links = self.with_subject(Doc::outgoing).unwrap_or_default();
             let data: Vec<(String, bool)> = links
@@ -4664,6 +4688,10 @@ impl App {
                 changed = true;
             }
         }
+        if self.settle_at.is_some_and(|at| self.now >= at) {
+            self.settle_at = None;
+            changed = true;
+        }
         // Save notes a moment after typing stops.
         let due: Vec<usize> = self
             .tabs
@@ -4786,8 +4814,18 @@ impl App {
 
     /// When the next timed thing is due (a save, a status message ending),
     /// in ms from now; `None` when nothing is waiting.
+    /// A side pane shows a list that is out of date until `at`, when it
+    /// settles: a frame is due then (K-1373 -- with no frame drawn while
+    /// nothing changes, nothing else would bring it).
+    fn settle_by(&mut self, at: u64) {
+        self.settle_at = Some(self.settle_at.map_or(at, |s| s.min(at)));
+    }
+
     pub fn next_due(&self) -> Option<u64> {
         let mut due: Option<u64> = self.status.as_ref().map(|s| s.1);
+        if let Some(at) = self.settle_at {
+            due = Some(due.map_or(at, |d| d.min(at)));
+        }
         for t in self.all_tabs() {
             if let Some(s) = t
                 .doc

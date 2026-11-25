@@ -233,6 +233,54 @@ pub fn style(weight: u16, italic: bool, mono: bool) -> gfx::TextStyle {
     }
 }
 
+/// A frame drawn into part of a canvas only: every clip a draw sets is
+/// trimmed to it, so a caret's blink redraws the few pixels under the
+/// caret and the screen uploads only those (K-1373). One canvas at a
+/// time; the app is single-threaded.
+struct Region(core::cell::Cell<Option<Area>>);
+
+/// A canvas and a box on it: x, y, width, height.
+type Area = (u64, f32, f32, f32, f32);
+
+// SAFETY: a guest runs on one thread; nothing else reaches this.
+unsafe impl Sync for Region {}
+
+static REGION: Region = Region(core::cell::Cell::new(None));
+
+/// Draw only inside `area` of canvas `c` until `end_region`.
+pub fn begin_region(c: u64, area: Rect) {
+    REGION.0.set(Some((c, area.x, area.y, area.w, area.h)));
+    let _ = canvas2d::set_clip(c, area.x, area.y, area.w, area.h);
+}
+
+/// Draw anywhere again.
+pub fn end_region(c: u64) {
+    REGION.0.set(None);
+    let _ = canvas2d::clear_clip(c);
+}
+
+/// `canvas2d::set_clip`, inside the region being drawn, if any.
+pub fn clip(c: u64, x: f32, y: f32, w: f32, h: f32) -> Result<(), gfx::GfxError> {
+    match REGION.0.get() {
+        Some((rc, rx, ry, rw, rh)) if rc == c => {
+            let x0 = x.max(rx);
+            let y0 = y.max(ry);
+            let x1 = (x + w).min(rx + rw);
+            let y1 = (y + h).min(ry + rh);
+            canvas2d::set_clip(c, x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
+        }
+        _ => canvas2d::set_clip(c, x, y, w, h),
+    }
+}
+
+/// `canvas2d::clear_clip`: back to the region being drawn, if any.
+pub fn unclip(c: u64) -> Result<(), gfx::GfxError> {
+    match REGION.0.get() {
+        Some((rc, rx, ry, rw, rh)) if rc == c => canvas2d::set_clip(c, rx, ry, rw, rh),
+        _ => canvas2d::clear_clip(c),
+    }
+}
+
 pub fn fill(c: u64, rc: Rect, col: Rgba) {
     let _ = canvas2d::fill_rect(c, g(rc), col);
 }

@@ -1364,7 +1364,7 @@ pub fn lay(cache: &mut LayCache, c: u64, doc: &Doc, vi: usize, v: &View) -> Rc<L
         0
     } else if doc.folds.contains(&n) {
         2
-    } else if doc.fold_range(n).is_some() {
+    } else if doc.can_fold(n) {
         1
     } else {
         0
@@ -1653,7 +1653,7 @@ pub fn draw(
     shown.x = v.x;
     shown.width = v.width;
     let total = rows_total(doc);
-    let _ = canvas2d::set_clip(c, v.area.x, v.area.y, v.area.w, v.area.h);
+    let _ = look::clip(c, v.area.x, v.area.y, v.area.w, v.area.h);
     let mut y = v.area.y - doc.top_off;
     let mut vi = doc.top;
     let sel = doc.selection();
@@ -1796,7 +1796,7 @@ pub fn draw(
             }
         }
     }
-    let _ = canvas2d::clear_clip(c);
+    let _ = look::unclip(c);
     // The scroll bar, when the note is longer than the view.
     shown.thumb = None;
     shown.track = None;

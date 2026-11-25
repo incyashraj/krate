@@ -3503,7 +3503,7 @@ pub fn draw_preview(cache: &mut LayCache, c: u64, t: &Theme, sz: &Sizes, bounds:
         }
         Some(NoteText::Text(t)) => t.clone(),
     };
-    let _ = canvas2d::set_clip(c, rc.x + 1.0, rc.y + 1.0, rc.w - 2.0, rc.h - 2.0);
+    let _ = look::clip(c, rc.x + 1.0, rc.y + 1.0, rc.w - 2.0, rc.h - 2.0);
     let title = crate::vfs::file_name(&name);
     look::text(
         c,
@@ -3533,5 +3533,5 @@ pub fn draw_preview(cache: &mut LayCache, c: u64, t: &Theme, sz: &Sizes, bounds:
         }
         draw_sub(c, s, rc.x, rc.y, t, &|_| true, env);
     }
-    let _ = canvas2d::clear_clip(c);
+    let _ = look::unclip(c);
 }

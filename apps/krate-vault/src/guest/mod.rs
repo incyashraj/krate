@@ -175,6 +175,9 @@ struct Ui {
     last_click: (u64, f32, f32, u8),
     last_input: u64,
     caret_xy: Option<(f32, f32)>,
+    /// The caret as last drawn, when it blinks: whether it was showing,
+    /// and the box it blinks in (none: redraw the whole window for it).
+    blink: Option<(bool, Option<Rect>)>,
     title: String,
     frames: u64,
     /// The microphone while the Audio recorder records.
@@ -403,6 +406,7 @@ impl Ui {
         self.hits.clear();
         self.said = Said::new();
         self.caret_xy = None;
+        self.blink = None;
         self.tree_area = None;
         self.search_area = None;
         self.right_area = None;
@@ -467,6 +471,23 @@ impl Ui {
         if !self.first_frame_done {
             self.first_frame_done = true;
             self.mark("t_first_frame_ms");
+        }
+    }
+
+    /// The caret turned on or off: redraw the box it blinks in (the frame
+    /// as it is, trimmed to that box), or every window when it is in one
+    /// that is not a plain line of the main window.
+    fn draw_blink(&mut self) {
+        match self.blink.and_then(|(_, area)| area) {
+            Some(area) => {
+                look::begin_region(self.c, area);
+                self.draw();
+                look::end_region(self.c);
+            }
+            None => {
+                self.draw();
+                self.draw_windows();
+            }
         }
     }
 
@@ -942,7 +963,7 @@ impl Ui {
         } else {
             None
         };
-        let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
+        let _ = look::clip(self.c, list.x, list.y, list.w, list.h);
         let mut y = list.y + first as f32 * row_h - scroll;
         let names: Vec<(String, String, bool)> = {
             let v = self.app.vault.as_ref();
@@ -1043,7 +1064,7 @@ impl Ui {
             self.hit(rr, z);
             y += row_h;
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
         if rows.is_empty() {
             let unreadable = self
                 .app
@@ -1094,7 +1115,7 @@ impl Ui {
         let cx = x + width(self.c, before, size, 400);
         // Keep the caret in the box by sliding long text left.
         let shift = (cx - right + 2.0).max(0.0);
-        let _ = canvas2d::set_clip(
+        let _ = look::clip(
             self.c,
             x - 2.0,
             base - size * 1.2,
@@ -1118,7 +1139,7 @@ impl Ui {
                 t.text,
             );
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     fn draw_search(&mut self, area: Rect) {
@@ -1242,7 +1263,7 @@ impl Ui {
         }
         let max = (total - list.h + 12.0).max(0.0);
         self.app.search_scroll = self.app.search_scroll.clamp(0.0, max);
-        let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
+        let _ = look::clip(self.c, list.x, list.y, list.w, list.h);
         let mut yy = list.y - self.app.search_scroll;
         for (i, (name, _folder, n, lines)) in results.iter().enumerate() {
             if yy > list.bottom() {
@@ -1335,7 +1356,7 @@ impl Ui {
                 yy += 6.0;
             }
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     fn draw_bookmarks(&mut self, area: Rect) {
@@ -1940,10 +1961,30 @@ impl Ui {
             );
             // Where the caret is, for the link completion card.
             let n = doc.cur.line + 1;
+            let mut caret_box = None;
             if let Some((_, y, l)) = self.shown.rows.iter().find(|(vi, _, _)| *vi == n) {
                 let (row, x) = l.x_of(self.c, doc.line(doc.cur.line), doc.cur.col);
                 if let Some(rl) = l.rows.get(row) {
                     self.caret_xy = Some((col_x + x, y + rl.top + rl.h));
+                    // The box the caret blinks in, as editor::draw_caret
+                    // draws it, with room for its anti-aliased edges.
+                    let size = l.size.max(sz.code);
+                    let top = (y + rl.top).min(y + rl.base - size * 0.95) - 2.0;
+                    let bottom = (y + rl.top + rl.h).max(y + rl.base + size * 0.3) + 2.0;
+                    let area = r(col_x + x - 3.0, top, 6.0 + 1.6 * sz.scale, bottom - top);
+                    if l.widget.is_none() && doc.extra.is_empty() && self.in_window == 0 {
+                        caret_box = Some(area);
+                    }
+                }
+            }
+            // A caret that blinks: the loop redraws its box, and only that,
+            // each time it turns on or off (K-1373).
+            if !doc.fresh && doc.mode != Mode::Reading && doc.prop_edit.is_none() {
+                let wants = self.app.focus == Focus::Editor
+                    && self.app.overlay.is_none()
+                    && self.app.explorer.rename.is_none();
+                if wants {
+                    self.blink = Some((caret_on, caret_box));
                 }
             }
             if let Some(thumb) = self.shown.thumb {
@@ -2249,7 +2290,7 @@ impl Ui {
         );
         let list = r(body.x, body.y + 42.0 * k, body.w, body.h - 42.0 * k);
         self.right_area = Some(list);
-        let _ = canvas2d::set_clip(self.c, list.x, list.y, list.w, list.h);
+        let _ = look::clip(self.c, list.x, list.y, list.w, list.h);
         match self.app.right {
             RightPane::Backlinks => self.draw_backlinks(list),
             RightPane::Outgoing => self.draw_outgoing(list),
@@ -2257,7 +2298,7 @@ impl Ui {
             RightPane::Properties => self.draw_properties(list),
             RightPane::Outline => self.draw_outline(list),
         }
-        let _ = canvas2d::clear_clip(self.c);
+        let _ = look::unclip(self.c);
     }
 
     /// A section heading in a side pane ("Linked mentions  5").
@@ -4359,6 +4400,7 @@ impl krate::Guest for Component {
             last_click: (0, 0.0, 0.0, 0),
             last_input: ms(),
             caret_xy: None,
+            blink: None,
             title: String::new(),
             frames: 0,
             mic: None,
@@ -4629,10 +4671,7 @@ impl krate::Guest for Component {
             if ui.files_busy() {
                 due(16);
             }
-            if ui.app.focus == Focus::Editor
-                && ui.app.doc().is_some_and(|d| d.mode != Mode::Reading)
-                && ui.app.overlay.is_none()
-            {
+            if ui.blink.is_some() {
                 let since = now.saturating_sub(ui.last_input);
                 due(BLINK_MS - since % BLINK_MS);
             }
@@ -4859,6 +4898,7 @@ impl krate::Guest for Component {
             if ms() >= last_clock + 30_000 {
                 last_clock = ms();
                 ui.app.local = local_now();
+                changed = true;
             }
             if ui.drag != Drag::None {
                 ui.drag_step();
@@ -4902,12 +4942,14 @@ impl krate::Guest for Component {
                     changed = true;
                 }
             }
-            // The caret blinks; the frame that flips it is a frame.
-            if ui.app.focus == Focus::Editor && ui.app.doc().is_some() {
-                changed = true;
-            }
             if ui.views_busy() || ui.files_busy() {
                 changed = true;
+            }
+            // Nothing else changed: the caret may have blinked, which is
+            // its own box redrawn, not a frame (K-1373). A wake for the
+            // folder watch with no news draws nothing at all.
+            if !changed && ui.blink.is_some_and(|(on, _)| on != ui.caret_visible()) {
+                ui.draw_blink();
             }
             if changed {
                 ui.draw();
