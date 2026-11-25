@@ -159,6 +159,20 @@ mod real {
             input_at: Option<std::time::Instant>,
             overlay_sprite: Option<(&[u8], u32, u32)>,
         ) -> Result<(), String> {
+            self.render_window(window, placements, interaction, input_at, overlay_sprite, 0)
+        }
+
+        /// `render` for Krate's window `krate_window`, whose canvas uploads
+        /// only what the host noted changed since its last frame (K-1373).
+        pub fn render_window(
+            &mut self,
+            window: &Window,
+            placements: &[WidgetPlacement],
+            interaction: krate_adapter_common::painter::PaintInteraction,
+            input_at: Option<std::time::Instant>,
+            overlay_sprite: Option<(&[u8], u32, u32)>,
+            krate_window: u64,
+        ) -> Result<(), String> {
             let size = window.inner_size();
             window.pre_present_notify();
             // The game case first: one canvas covering the window. The full
@@ -180,13 +194,20 @@ mod real {
                         let aspect_ok =
                             (canvas_aspect - window_aspect).abs() / window_aspect < 0.02;
                         if covers && aspect_ok {
-                            return self.inner.present_pixels_into(
+                            // Only the part the app drew since the last
+                            // frame is uploaded (K-1373).
+                            let change = krate_adapter_common::canvas_damage::take(
+                                krate_window,
+                                only.widget.get(),
+                            );
+                            return self.inner.present_pixels_into_changed(
                                 &pixels.rgba,
                                 pixels.width,
                                 pixels.height,
                                 size.width,
                                 size.height,
                                 overlay_sprite,
+                                change,
                             );
                         }
                     }
@@ -881,12 +902,13 @@ mod real {
                 };
                 let gpu = tracked.gpu.as_mut().expect("checked above");
                 let overlay_ref = overlay.as_ref().map(|(rgba, w, h)| (&rgba[..], *w, *h));
-                match gpu.render(
+                match gpu.render_window(
                     &tracked.window,
                     &tracked.placements,
                     interaction,
                     input_at,
                     overlay_ref,
+                    tracked.krate.get(),
                 ) {
                     Ok(()) => return,
                     Err(why) => {

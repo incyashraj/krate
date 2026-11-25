@@ -689,6 +689,11 @@ impl WebUi {
     }
 
     /// A picture for a widget, from `image.set-pixels` or a canvas's frame.
+    /// Drop the picture a widget shows until the next is published.
+    pub(crate) fn forget_image(&mut self, window: WindowId, widget: WidgetId) {
+        self.images.remove(&(window, widget));
+    }
+
     pub(crate) fn publish_image(
         &mut self,
         window: WindowId,

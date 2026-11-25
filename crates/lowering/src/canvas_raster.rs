@@ -9,9 +9,11 @@
 //! The buffer is `0xAARRGGBB` words, the drawn painter's own format, so its
 //! `fill_rect` and 5x7 `drawtext` are used directly rather than reimplemented.
 
+use krate_adapter_common::canvas_damage::{self, Damage};
 use krate_adapter_common::drawtext;
 use krate_adapter_common::painter::{draw_image, fill_rect};
 use krate_adapter_common::ui::{ImagePixels, UiAdapterError};
+use std::sync::Arc;
 
 /// Largest canvas edge, in logical pixels. Same spirit as the image widget's
 /// pixel cap: a width and height multiplied together must not become an
@@ -53,6 +55,15 @@ pub struct CanvasSurface {
     /// uploaded every frame. Any other drawing rasters it first, so the
     /// result is exactly what drawing it would have made.
     pending: Option<ImagePixels>,
+    /// The part of `buffer` drawn since the last `present_image`, in
+    /// physical pixels: every draw is trimmed to the clip, so the clip of
+    /// each draw (the whole canvas when there is none) bounds what it
+    /// touched. `None`: nothing drawn (K-1373).
+    damage: Option<Damage>,
+    /// The picture the last `present_image` handed out, kept so the next
+    /// one rewrites only the part that changed instead of copying 16 MB
+    /// into a fresh allocation every frame.
+    shown: Option<Arc<ImagePixels>>,
 }
 
 // ---------------------------------------------------------------- op timing
@@ -357,6 +368,8 @@ impl CanvasSurface {
             // which on a Retina window is 16 MB written white for nothing.
             buffer: Vec::new(),
             pending: None,
+            damage: None,
+            shown: None,
         })
     }
 
@@ -522,6 +535,7 @@ impl CanvasSurface {
                 | (u32::from(chunk[1]) << 8)
                 | u32::from(chunk[2]);
         }
+        self.damage = Some((0, 0, self.width, self.height));
     }
 
     /// Map one design-space point onto the canvas.
@@ -585,8 +599,13 @@ impl CanvasSurface {
     }
 
     pub fn clear(&mut self, color: u32) {
-        self.pending = None;
+        let had_picture = self.pending.take().is_some();
         self.ensure_buffer();
+        if had_picture {
+            // The kept picture is dropped, not drawn: what shows outside
+            // the clip is the raster again, which is all of it changing.
+            self.damage = Some((0, 0, self.width, self.height));
+        }
         let __op_timer = OpTimer::start(0);
         let _ = &__op_timer;
         // Clear respects the clip too, so "clear this region" works -- which
@@ -1706,12 +1725,30 @@ impl CanvasSurface {
         if self.buffer.is_empty() {
             self.buffer = vec![0xFFFF_FFFF; self.width as usize * self.height as usize];
         }
+        // Every draw comes through here first: what it can touch is the
+        // clip, or all of the canvas.
+        let all = (0, 0, self.width, self.height);
+        let touched = match self.clip {
+            None => all,
+            Some((x, y, w, h)) => {
+                let x0 = (x.floor().max(0.0) as u32).min(self.width);
+                let y0 = (y.floor().max(0.0) as u32).min(self.height);
+                let x1 = ((x + w).ceil().max(0.0) as u32).clamp(x0, self.width);
+                let y1 = ((y + h).ceil().max(0.0) as u32).clamp(y0, self.height);
+                (x0, y0, x1, y1)
+            }
+        };
+        self.damage = Some(match self.damage {
+            Some(d) => canvas_damage::union(d, touched),
+            None => touched,
+        });
     }
 
     /// Raster a kept picture before anything is drawn over it.
     fn materialize(&mut self) {
         self.ensure_buffer();
         if let Some(image) = self.pending.take() {
+            self.damage = Some((0, 0, self.width, self.height));
             draw_image(
                 &mut self.buffer,
                 self.width,
@@ -1721,6 +1758,81 @@ impl CanvasSurface {
                 None,
             );
         }
+    }
+
+    /// The canvas as the picture to put on the screen, and what changed
+    /// since the last call (K-1373).
+    ///
+    /// `to_image` makes a new 16 MB picture every frame on a Retina window
+    /// and the screen uploads all of it, so an app that only blinks a
+    /// caret paid for a whole window twice a second. This keeps the last
+    /// picture and rewrites only the part drawn since, and says which part
+    /// that was, so the screen can upload only it. The picture is shared:
+    /// a caller that keeps a clone past the next call makes that call copy
+    /// it whole, which is correct and only slower.
+    pub fn present_image(
+        &mut self,
+    ) -> Result<(Arc<ImagePixels>, canvas_damage::Change), UiAdapterError> {
+        let damage = self.damage.take();
+        if self.pending.is_some() || self.buffer.is_empty() {
+            self.shown = None;
+            return Ok((Arc::new(self.to_image()?), canvas_damage::Change::All));
+        }
+        let (w, h) = (self.width, self.height);
+        let fits = self
+            .shown
+            .as_ref()
+            .is_some_and(|img| img.width == w && img.height == h);
+        // A letterboxed design blends its bars from the edge of the drawn
+        // picture, so any change there can change all of it.
+        let whole = self.design.is_some();
+        let unique = fits
+            && self
+                .shown
+                .as_mut()
+                .is_some_and(|img| Arc::get_mut(img).is_some());
+        if !unique {
+            let image = Arc::new(self.to_image()?);
+            self.shown = Some(image.clone());
+            return Ok((image, canvas_damage::Change::All));
+        }
+        let region = match damage {
+            None => {
+                return Ok((
+                    self.shown.clone().expect("checked above"),
+                    canvas_damage::Change::Region((0, 0, 0, 0)),
+                ))
+            }
+            Some(_) if whole => (0, 0, w, h),
+            Some(d) => d,
+        };
+        let mut shown = self.shown.take().expect("checked above");
+        {
+            let img = Arc::get_mut(&mut shown).expect("checked above");
+            let (x0, y0, x1, y1) = region;
+            let (x0, x1) = (x0 as usize, x1 as usize);
+            for y in y0 as usize..y1 as usize {
+                let row = y * w as usize;
+                let src = &self.buffer[row + x0..row + x1];
+                let dst = &mut img.rgba[(row + x0) * 4..(row + x1) * 4];
+                for (chunk, word) in dst.chunks_exact_mut(4).zip(src.iter()) {
+                    chunk[0] = (word >> 16) as u8;
+                    chunk[1] = (word >> 8) as u8;
+                    chunk[2] = *word as u8;
+                    chunk[3] = (word >> 24) as u8;
+                }
+            }
+            if whole {
+                self.blend_letterbox(&mut img.rgba);
+            }
+        }
+        self.shown = Some(shown.clone());
+        let change = if whole || region == (0, 0, w, h) {
+            canvas_damage::Change::All
+        } else {
+            canvas_damage::Change::Region(region)
+        };
+        Ok((shown, change))
     }
 
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
@@ -1772,6 +1884,42 @@ mod tests {
         surface.fill_rect(0.0, 0.0, 200.0, 20.0, 0xFF_00_FF_00);
         let image = surface.to_image().expect("image");
         assert_eq!(&image.rgba[last..last + 4], &[255, 255, 255, 255]);
+    }
+
+    /// K-1373: a present after a clipped draw hands back the picture with
+    /// only the clipped part rewritten, says so, and matches `to_image`
+    /// exactly; a present with nothing drawn says nothing changed.
+    #[test]
+    fn present_image_rewrites_and_names_only_what_was_drawn() {
+        use krate_adapter_common::canvas_damage::Change;
+        let mut surface = CanvasSurface::new_scaled(120, 80, 2.0).expect("surface");
+        surface.clear(0xFF_10_20_30);
+        surface.text("Hello", 4.0, 30.0, 14.0, 0xFF_FF_FF_FF);
+        let (first, change) = surface.present_image().expect("first");
+        assert_eq!(change, Change::All, "the first picture is all new");
+        assert_eq!(first.rgba, surface.to_image().expect("image").rgba);
+        drop(first);
+        let (_, change) = surface.present_image().expect("idle");
+        assert_eq!(change, Change::Region((0, 0, 0, 0)), "nothing drawn");
+        surface.set_clip(Some((10.0, 20.0, 3.0, 15.0)));
+        surface.clear(0xFF_FF_00_00);
+        surface.fill_rect(0.0, 0.0, 120.0, 80.0, 0xFF_00_FF_00);
+        surface.set_clip(None);
+        let (img, change) = surface.present_image().expect("caret");
+        assert_eq!(
+            change,
+            Change::Region((20, 40, 26, 70)),
+            "the clip, in pixels"
+        );
+        assert_eq!(img.rgba, surface.to_image().expect("image").rgba);
+        // A picture kept past the next present is not written under its
+        // holder: the next one is a new picture, said to be all new.
+        let kept = img;
+        surface.fill_rect(0.0, 0.0, 5.0, 5.0, 0xFF_00_00_FF);
+        let (next, change) = surface.present_image().expect("kept");
+        assert_eq!(change, Change::All);
+        assert_ne!(kept.rgba, next.rgba);
+        assert_eq!(next.rgba, surface.to_image().expect("image").rgba);
     }
 
     /// K-1212: the table-driven radial gradient paints what the per-pixel

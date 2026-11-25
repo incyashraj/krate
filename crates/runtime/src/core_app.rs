@@ -802,6 +802,7 @@ impl super::Runtime {
                 if krate_adapter_common::ui::app_ending() {
                     return Err(wasmtime::Error::msg(super::ENDED_BY_KRATE));
                 }
+                super::epoch_heard();
                 // Only when no other thread is in the host: the pump must
                 // never wait behind a worker.
                 if let Some(host) = pump.host.try_lock() {

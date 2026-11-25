@@ -33,8 +33,17 @@ pub const MAX_ENTRIES: usize = 20_000;
 /// The shortest time between two looks at one folder.
 pub const MIN_INTERVAL: Duration = Duration::from_millis(250);
 /// The longest a watch with a change notice goes without a look: a network
-/// folder or a missed notice is still found, just later.
+/// folder or a missed notice is still found, just later. A big folder
+/// waits longer (`SAFETY_SHARE`).
 pub const SAFETY_LOOK: Duration = Duration::from_secs(10);
+/// How much of the time the safety look may spend looking, at most: one
+/// part in this many. Walking a 10,000-note vault every ten seconds cost
+/// about 150 ms a time -- 1.5% of a core spent idle on a look that almost
+/// never finds anything (K-1373) -- so a look that took 150 ms waits 30 s
+/// for the next, and a small folder still gets one every `SAFETY_LOOK`.
+pub const SAFETY_SHARE: u32 = 200;
+/// The longest any safety look waits, however big the folder.
+pub const SAFETY_LOOK_MAX: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeKind {
@@ -60,6 +69,11 @@ struct Watch {
     /// Raised by the system's change notice; `None` where there is none,
     /// and then every look scans.
     changed: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// When the look being made now began, to time it.
+    look_began: Option<Instant>,
+    /// How long a quiet watch goes between safety looks: `SAFETY_LOOK`,
+    /// or `SAFETY_SHARE` times what the last look took.
+    safety: Duration,
     /// Kept so the notice keeps coming; dropped with the watch.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     _notice: Option<notify::RecommendedWatcher>,
@@ -136,6 +150,8 @@ impl Watches {
                 seen: snapshot(entries),
                 looked: Instant::now(),
                 changed,
+                look_began: None,
+                safety: SAFETY_LOOK,
                 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
                 _notice: notice,
             },
@@ -147,16 +163,17 @@ impl Watches {
     /// until `SAFETY_LOOK`; a look that is due lowers the flag first, so a
     /// change during the scan raises it again for the next.
     pub fn due(&mut self, id: u64) -> Due<'_> {
-        match self.live.get(&id) {
+        match self.live.get_mut(&id) {
             None => Due::Unknown,
             Some(watch) if watch.looked.elapsed() < MIN_INTERVAL => Due::Later,
             Some(watch) => {
                 if let Some(flag) = &watch.changed {
                     let quiet = !flag.swap(false, std::sync::atomic::Ordering::SeqCst);
-                    if quiet && watch.looked.elapsed() < SAFETY_LOOK {
+                    if quiet && watch.looked.elapsed() < watch.safety {
                         return Due::Later;
                     }
                 }
+                watch.look_began = Some(Instant::now());
                 Due::Now(&watch.path)
             }
         }
@@ -177,12 +194,21 @@ impl Watches {
         let changes = diff(&watch.path, &watch.seen, &now);
         watch.seen = now;
         watch.looked = Instant::now();
+        if let Some(began) = watch.look_began.take() {
+            watch.safety = safety_after(began.elapsed());
+        }
         changes
     }
 
     pub fn stop(&mut self, id: u64) {
         self.live.remove(&id);
     }
+}
+
+/// The wait before the next safety look, after a look that took `cost`.
+fn safety_after(cost: Duration) -> Duration {
+    cost.saturating_mul(SAFETY_SHARE)
+        .clamp(SAFETY_LOOK, SAFETY_LOOK_MAX)
 }
 
 fn snapshot(entries: Vec<ScanEntry>) -> BTreeMap<String, Seen> {
@@ -338,6 +364,19 @@ mod tests {
 
     /// With the system's change notice, a quiet folder is not walked at
     /// all, and a file written into it makes the next look due.
+    /// K-1373: a look that is slow spaces the safety looks out, so they
+    /// cost at most one part in `SAFETY_SHARE`; a quick one keeps them at
+    /// `SAFETY_LOOK`, and none waits past `SAFETY_LOOK_MAX`.
+    #[test]
+    fn a_slow_look_spaces_the_safety_looks_out() {
+        assert_eq!(safety_after(Duration::from_millis(1)), SAFETY_LOOK);
+        assert_eq!(
+            safety_after(Duration::from_millis(150)),
+            Duration::from_secs(30)
+        );
+        assert_eq!(safety_after(Duration::from_secs(10)), SAFETY_LOOK_MAX);
+    }
+
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn a_quiet_folder_is_not_walked_and_a_change_makes_a_look_due() {

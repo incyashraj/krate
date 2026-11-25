@@ -442,18 +442,27 @@ impl WebUi {
     /// in the size it asked for and the host fits it (as on desktop).
     pub fn canvas_present(&mut self, canvas: u64) -> Result<(), Value> {
         self.fit_unasked(canvas);
-        let (window, widget, image) = {
-            let (window, widget, surface) = self
+        let (window, widget) = {
+            let (window, widget, _) = self
                 .canvas
                 .surfaces
                 .get(&canvas)
                 .ok_or_else(invalid_target)?;
-            let image = surface
-                .to_image()
-                .map_err(|e| json!({ "tag": "platform", "val": e.to_string() }))?;
-            (*window, *widget, image)
+            (*window, *widget)
         };
-        self.publish_image(window, widget, Arc::new(image));
+        // Let go of the picture shown last so the surface rewrites only
+        // what changed, in place, instead of a new copy of the whole canvas
+        // each frame (K-1373). The tab's painter still paints all of it.
+        self.forget_image(window, widget);
+        let (_, _, surface) = self
+            .canvas
+            .surfaces
+            .get_mut(&canvas)
+            .ok_or_else(invalid_target)?;
+        let (image, _) = surface
+            .present_image()
+            .map_err(|e| json!({ "tag": "platform", "val": e.to_string() }))?;
+        self.publish_image(window, widget, image);
         Ok(())
     }
 

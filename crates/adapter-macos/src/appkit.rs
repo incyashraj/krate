@@ -2042,10 +2042,16 @@ mod platform {
                                     let (w, h) = (texture.width().max(1), texture.height().max(1));
                                     presenter.present_texture(&texture, w, h)
                                 }
-                                (None, Some(pixels)) => presenter.present_pixels(
+                                // Only the part the app drew since the
+                                // last frame is uploaded (K-1373).
+                                (None, Some(pixels)) => presenter.present_pixels_changed(
                                     &pixels.rgba,
                                     pixels.width,
                                     pixels.height,
+                                    krate_adapter_common::canvas_damage::take(
+                                        self.id.get(),
+                                        placement.widget().get(),
+                                    ),
                                 ),
                                 // Nothing to show this frame: leave the view
                                 // as it was rather than clearing it, which

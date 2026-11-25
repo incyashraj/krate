@@ -76,6 +76,13 @@ pub(crate) fn describe(ns_window: u64, window: WindowId, elements: &[AccessEleme
     if objc2::MainThreadMarker::new().is_none() {
         return;
     }
+    // Drained here: the runtime pumps its own event loop, so whatever the
+    // calls below autorelease would otherwise wait for a pool that never
+    // drains, one description after another (K-1374).
+    objc2::rc::autoreleasepool(|_| describe_pooled(ns_window, window, elements));
+}
+
+fn describe_pooled(ns_window: u64, window: WindowId, elements: &[AccessElement]) {
     // SAFETY: the NSWindow the adapter made for this app (its pointer is the
     // native handle); its content view's bounds; accessibility elements made
     // and set as that view's children, on the main thread.

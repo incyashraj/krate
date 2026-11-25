@@ -672,6 +672,48 @@ const EPOCH_TICKS_PER_PUMP: u64 = 1;
 /// `KRATE_EPOCH_STATS=1` so the fix can be shown to work rather than assumed.
 pub static EPOCH_PUMPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Epoch callbacks heard from guests running wasm, of every kind of store.
+/// The ticker reads it to know whether anyone is taking its ticks (K-1373).
+static EPOCH_HEARD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Whether the ticker is parked, waiting for a guest to run again.
+static EPOCH_PARKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A store was just made: tick at least once more before parking.
+static EPOCH_FRESH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the parked ticker waits on.
+static EPOCH_WAKE: (std::sync::Mutex<()>, std::sync::Condvar) =
+    (std::sync::Mutex::new(()), std::sync::Condvar::new());
+
+/// Ticks the ticker sends that no guest takes before it parks. A tick only
+/// matters to a guest running wasm, and one that ran since the last tick
+/// has called back; two unanswered ticks mean every guest is parked in the
+/// host (waiting for input) and its deadline has already passed, so the
+/// next time it runs it calls back at once -- which wakes the ticker.
+const EPOCH_IDLE_TICKS: u32 = 2;
+
+/// How long a parked ticker waits before ticking once anyway: a store
+/// that set a deadline without a callback (a test's trap) still ends.
+const EPOCH_PARK_LIMIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// An epoch callback ran: a guest is executing, so tick again (K-1373).
+pub(crate) fn epoch_heard() {
+    use std::sync::atomic::Ordering;
+    EPOCH_HEARD.fetch_add(1, Ordering::SeqCst);
+    if EPOCH_PARKED.load(Ordering::SeqCst) {
+        wake_epoch_ticker();
+    }
+}
+
+fn wake_epoch_ticker() {
+    let _guard = EPOCH_WAKE
+        .0
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    EPOCH_WAKE.1.notify_all();
+}
+
 impl Runtime {
     /// The engine settings, in one place.
     ///
@@ -1459,6 +1501,7 @@ impl Runtime {
                     return Err(wasmtime::Error::msg(ENDED_BY_CTRL_C));
                 }
                 EPOCH_PUMPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                epoch_heard();
                 if let Some(gui) = ctx.data_mut().phase3_gui.as_ref() {
                     gui.pump_native_windows_for_epoch();
                 }
@@ -2062,6 +2105,11 @@ impl wasmtime::CustomCodeMemory for SignedCode {
 ///
 /// The thread holds only weak references, so it keeps no engine alive,
 /// and drops each one once it is gone.
+///
+/// It parks while no guest runs (K-1373): a windowed app waiting for
+/// input took 125 wake-ups a second from this thread alone, for ticks
+/// nothing could act on. A guest that runs again calls back at once
+/// (its deadline passed while it waited) and that wakes it.
 fn start_epoch_ticker(engine: &Engine) {
     static ENGINES: std::sync::Mutex<Vec<wasmtime::EngineWeak>> = std::sync::Mutex::new(Vec::new());
     static STARTED: std::sync::Once = std::sync::Once::new();
@@ -2076,19 +2124,51 @@ fn start_epoch_ticker(engine: &Engine) {
             engines.push(this);
         }
     }
+    // A new store has a deadline one tick away: make sure it comes.
+    EPOCH_FRESH.store(true, std::sync::atomic::Ordering::SeqCst);
+    wake_epoch_ticker();
     STARTED.call_once(|| {
         std::thread::Builder::new()
             .name("krate-epoch".to_string())
-            .spawn(|| loop {
-                std::thread::sleep(EPOCH_TICK_INTERVAL);
-                let mut engines = ENGINES.lock().expect("epoch engines lock");
-                engines.retain(|weak| match weak.upgrade() {
-                    Some(engine) => {
-                        engine.increment_epoch();
-                        true
+            .spawn(|| {
+                use std::sync::atomic::Ordering;
+                let mut heard_at_tick = EPOCH_HEARD.load(Ordering::SeqCst);
+                let mut unanswered = 0u32;
+                loop {
+                    std::thread::sleep(EPOCH_TICK_INTERVAL);
+                    let heard = EPOCH_HEARD.load(Ordering::SeqCst);
+                    let fresh = EPOCH_FRESH.swap(false, Ordering::SeqCst);
+                    if heard != heard_at_tick || fresh {
+                        unanswered = 0;
+                    } else {
+                        unanswered += 1;
                     }
-                    None => false,
-                });
+                    if unanswered >= EPOCH_IDLE_TICKS {
+                        let guard = EPOCH_WAKE
+                            .0
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        EPOCH_PARKED.store(true, Ordering::SeqCst);
+                        // Checked under the lock the waker takes, so a call
+                        // back between the check and the wait is never missed.
+                        if EPOCH_HEARD.load(Ordering::SeqCst) == heard
+                            && !EPOCH_FRESH.load(Ordering::SeqCst)
+                        {
+                            let _ = EPOCH_WAKE.1.wait_timeout(guard, EPOCH_PARK_LIMIT);
+                        }
+                        EPOCH_PARKED.store(false, Ordering::SeqCst);
+                        unanswered = 0;
+                    }
+                    heard_at_tick = EPOCH_HEARD.load(Ordering::SeqCst);
+                    let mut engines = ENGINES.lock().expect("epoch engines lock");
+                    engines.retain(|weak| match weak.upgrade() {
+                        Some(engine) => {
+                            engine.increment_epoch();
+                            true
+                        }
+                        None => false,
+                    });
+                }
             })
             .ok();
     });

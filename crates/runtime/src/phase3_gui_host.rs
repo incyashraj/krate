@@ -234,6 +234,10 @@ pub struct Phase3GuiHost {
     /// that record's type and stop every GUI app already built from
     /// instantiating at all.
     images: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), Arc<ImagePixels>>>,
+    /// Whether the adapter parked in its own event loop the last time a
+    /// wait asked it to: then input wakes a wait at once, and a bounded wait
+    /// need not wake on its own every 10 ms to look (K-1373).
+    adapter_parks: std::cell::Cell<bool>,
     /// Bound 2D canvases, keyed by the id handed to the guest. Each remembers
     /// which widget it publishes to; the pixels land in [`Self::images`] and
     /// travel the image widget's proven path to all three systems.
@@ -715,6 +719,7 @@ impl Phase3GuiHost {
             headless_started: std::cell::Cell::new(None),
             headless_close_told: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            adapter_parks: std::cell::Cell::new(false),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             kept_images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             #[cfg(not(target_arch = "wasm32"))]
@@ -1622,7 +1627,12 @@ impl Phase3GuiHost {
                 .collect();
             let _ = std::fs::write(path, serde_json::Value::Array(dump).to_string());
         }
-        let result = if self.headless {
+        // The same description as last time is not news: an app describes
+        // every frame it draws, and a Mac made a new accessibility element
+        // per line on screen each time -- objects the system kept, frame
+        // after frame, while nothing on screen had changed (K-1374).
+        let unchanged = self.described.borrow().get(&window) == Some(&elements);
+        let result = if self.headless || unchanged {
             Ok(())
         } else {
             self.dispatcher()
@@ -4738,18 +4748,21 @@ impl Phase3GuiHost {
         let stats = std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1");
         let copy_started = std::time::Instant::now();
         let (window, widget, image) = {
-            let canvases = self.canvases.borrow();
-            let Some((window, widget, surface)) = canvases.get(&canvas) else {
+            let mut canvases = self.canvases.borrow_mut();
+            let Some((window, widget, surface)) = canvases.get_mut(&canvas) else {
                 return Err(gfx::types::GfxError::InvalidTarget);
             };
-            let image = surface
-                .to_image()
+            // Let go of the picture shown last, so the surface can rewrite
+            // only what changed in place instead of copying all of it
+            // (K-1373), and tell the screen which part that is.
+            self.images.borrow_mut().remove(&(*window, *widget));
+            let (image, change) = surface
+                .present_image()
                 .map_err(|error| gfx::types::GfxError::Platform(error.to_string()))?;
+            krate_adapter_common::canvas_damage::note(window.get(), widget.get(), change);
             (*window, *widget, image)
         };
-        self.images
-            .borrow_mut()
-            .insert((window, widget), Arc::new(image));
+        self.images.borrow_mut().insert((window, widget), image);
         let copy_ms = copy_started.elapsed().as_secs_f32() * 1000.0;
         let sync_started = std::time::Instant::now();
         let result = self
@@ -6674,10 +6687,16 @@ impl ui::events::Host for Phase3GuiHost {
             // slice must never be the thing that misses the frame.
             // A floating video is painted between the app's own turns, so
             // a wait keeps to short slices while one floats (K-1358).
+            //
+            // A bounded wait parks long too when the adapter parks: waking
+            // every 10 ms for a wait of a second was 100 wake-ups a second
+            // for an app sitting still (K-1373). Only a blind sleep, which
+            // input cannot cut short, keeps to short slices.
+            let parks = self.adapter_parks.get();
             let slice = std::time::Duration::from_millis(match deadline {
-                Some(_) => WAIT_POLL_INTERVAL_MILLIS,
-                None if !self.video_floats.borrow().is_empty() => WAIT_POLL_INTERVAL_MILLIS,
-                None => 250,
+                _ if !self.video_floats.borrow().is_empty() => WAIT_POLL_INTERVAL_MILLIS,
+                Some(_) if !parks => WAIT_POLL_INTERVAL_MILLIS,
+                _ => 250,
             });
             let park = match deadline {
                 Some(deadline) => {
@@ -6704,7 +6723,9 @@ impl ui::events::Host for Phase3GuiHost {
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
             }
-            if !self.dispatcher().park_for_events(park) {
+            let parked = self.dispatcher().park_for_events(park);
+            self.adapter_parks.set(parked);
+            if !parked {
                 std::thread::sleep(park);
             }
         }

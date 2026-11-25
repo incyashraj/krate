@@ -62,6 +62,11 @@ pub struct Gamepads {
     /// which is a state every app already handles. A person whose udev is
     /// unusual should get a keyboard-controlled app, not a crash.
     backend: Option<gilrs::Gilrs>,
+    /// Whether the backend was started. It starts on the first question an
+    /// app asks about a gamepad, not with the app: `gilrs` keeps two
+    /// threads polling the input system, and an app that never asks (a
+    /// notes app) paid their wake-ups for its whole run (K-1373).
+    started: bool,
     /// Buttons currently down, by the portable name.
     held: BTreeMap<String, bool>,
     /// Axis positions, by the portable name.
@@ -89,6 +94,7 @@ impl std::fmt::Debug for Gamepads {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Gamepads")
             .field("backend", &self.backend.is_some())
+            .field("started", &self.started)
             .field("connected", &self.connected)
             .field("held", &self.held)
             .field("axes", &self.axes)
@@ -148,18 +154,9 @@ impl Default for Gamepads {
 #[cfg(not(target_arch = "wasm32"))]
 impl Gamepads {
     pub fn new() -> Self {
-        // A failure here is "no gamepad", not an error worth propagating --
-        // there is nothing an app could usefully do differently, and the
-        // fallback is the keyboard path it already has.
-        let backend = match gilrs::Gilrs::new() {
-            Ok(backend) => Some(backend),
-            Err(error) => {
-                tracing::debug!(%error, "no gamepad support on this machine");
-                None
-            }
-        };
         Self {
-            backend,
+            backend: None,
+            started: false,
             held: BTreeMap::new(),
             axes: BTreeMap::new(),
             connected: false,
@@ -199,6 +196,19 @@ impl Gamepads {
             self.held = held;
             self.axes = axes;
             return;
+        }
+        if !self.started {
+            self.started = true;
+            // A failure here is "no gamepad", not an error worth propagating
+            // -- there is nothing an app could usefully do differently, and
+            // the fallback is the keyboard path it already has.
+            self.backend = match gilrs::Gilrs::new() {
+                Ok(backend) => Some(backend),
+                Err(error) => {
+                    tracing::debug!(%error, "no gamepad support on this machine");
+                    None
+                }
+            };
         }
         let Some(backend) = self.backend.as_mut() else {
             return;
@@ -356,6 +366,16 @@ mod tests {
         for axis in AXES {
             assert_eq!(pads.axis(axis), 0.0, "{axis} must read centred");
         }
+    }
+
+    /// K-1373: making the gamepad state starts nothing; the first
+    /// question does.
+    #[test]
+    fn the_backend_starts_on_the_first_question_not_before() {
+        let mut pads = Gamepads::new();
+        assert!(!pads.started && pads.backend.is_none());
+        let _ = pads.connected();
+        assert!(pads.started);
     }
 
     #[test]

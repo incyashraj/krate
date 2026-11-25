@@ -11,6 +11,7 @@
 
 use std::time::Instant;
 
+use krate_adapter_common::canvas_damage::{self, Change};
 use krate_adapter_common::painter::PaintInteraction;
 use krate_adapter_common::ui::WidgetPlacement;
 use vello::wgpu;
@@ -97,6 +98,9 @@ pub struct WindowPresenter {
     target: Option<(wgpu::TextureView, u32, u32)>,
     /// Persistent upload texture for the full-window-canvas fast path.
     pixel_upload: Option<(wgpu::Texture, u32, u32)>,
+    /// Whether `pixel_upload` holds the last canvas picture whole, so the
+    /// next uploads only the part that changed (K-1373).
+    pixel_whole: bool,
     cache: SceneCache,
     stats: FrameStats,
     /// Set by the device's uncaptured-error handler. wgpu delivers most
@@ -173,6 +177,7 @@ impl WindowPresenter {
             configured: (0, 0),
             target: None,
             pixel_upload: None,
+            pixel_whole: false,
             cache: SceneCache::new(),
             stats: FrameStats::new(),
             device_failed,
@@ -192,6 +197,32 @@ impl WindowPresenter {
         surface_width: u32,
         surface_height: u32,
         overlay_sprite: Option<(&[u8], u32, u32)>,
+    ) -> Result<(), String> {
+        self.present_pixels_into_changed(
+            rgba,
+            width,
+            height,
+            surface_width,
+            surface_height,
+            overlay_sprite,
+            Change::All,
+        )
+    }
+
+    /// `present_pixels_into` for a picture of which only `change` differs
+    /// from the last one presented: only that part is uploaded (K-1373).
+    /// The frame is still presented, since the overlay drawn over it may
+    /// have changed on its own.
+    #[allow(clippy::too_many_arguments)]
+    pub fn present_pixels_into_changed(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        surface_width: u32,
+        surface_height: u32,
+        overlay_sprite: Option<(&[u8], u32, u32)>,
+        change: Change,
     ) -> Result<(), String> {
         let started = Instant::now();
         if width == 0
@@ -244,7 +275,13 @@ impl WindowPresenter {
                 view_formats: &[],
             });
             self.pixel_upload = Some((texture, width, height));
+            self.pixel_whole = false;
         }
+        let change = if self.pixel_whole {
+            change
+        } else {
+            Change::All
+        };
         use wgpu::CurrentSurfaceTexture;
         // A failure recorded DURING configure (an invalid surface, a lost
         // device) must stop us HERE: with panic=abort, one more surface call
@@ -264,32 +301,19 @@ impl WindowPresenter {
             CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
                 frame
             }
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
+                self.pixel_whole = false;
+                return Ok(());
+            }
             _ => {
                 self.configured = (0, 0);
+                self.pixel_whole = false;
                 return Ok(());
             }
         };
         let (texture, ..) = self.pixel_upload.as_ref().expect("upload texture ensured");
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba[..(width as usize * height as usize * 4)],
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
+        write_changed(&self.queue, texture, rgba, width, height, change);
+        self.pixel_whole = true;
         // The full-bleed window controls, composited over the canvas frame's
         // top-right corner. The canvas is one write_texture; the corner block
         // is a second, tiny one -- source pixels re-read, sprite blended,
@@ -515,6 +539,10 @@ pub struct PixelPresenter {
     surface_format: wgpu::TextureFormat,
     configured: (u32, u32),
     upload: Option<(wgpu::Texture, u32, u32)>,
+    /// Whether `upload` holds the last picture whole, so a frame that
+    /// changed a small part uploads only that part (K-1373). False until
+    /// the first upload, and after a frame that was skipped.
+    upload_whole: bool,
     stats: FrameStats,
     device_failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Whether `device` is the process-wide shared one, so a texture from
@@ -603,6 +631,7 @@ impl PixelPresenter {
             surface_format,
             configured: (0, 0),
             upload: None,
+            upload_whole: false,
             stats: FrameStats::new(),
             device_failed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             on_shared_device: false,
@@ -712,6 +741,7 @@ impl PixelPresenter {
             surface_format,
             configured: (0, 0),
             upload: None,
+            upload_whole: false,
             stats: FrameStats::new(),
             device_failed,
             on_shared_device,
@@ -722,6 +752,20 @@ impl PixelPresenter {
     /// Upload one RGBA frame and present it, vsync-paced by the compositor.
     /// `Err` retires this surface; the caller falls back to the CPU path.
     pub fn present_pixels(&mut self, rgba: &[u8], width: u32, height: u32) -> Result<(), String> {
+        self.present_pixels_changed(rgba, width, height, Change::All)
+    }
+
+    /// `present_pixels` for a picture of which only `change` differs from
+    /// the one presented last (K-1373): only that part is uploaded, and a
+    /// picture with nothing new presents nothing -- the window keeps
+    /// showing the last frame, which is this one.
+    pub fn present_pixels_changed(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        change: Change,
+    ) -> Result<(), String> {
         let started = Instant::now();
         let (surface_width, surface_height) = (width, height);
         if width == 0 || height == 0 || rgba.len() < (width as usize * height as usize * 4) {
@@ -782,6 +826,17 @@ impl PixelPresenter {
                 view_formats: &[],
             });
             self.upload = Some((texture, width, height));
+            self.upload_whole = false;
+        }
+        let change = if self.upload_whole {
+            change
+        } else {
+            Change::All
+        };
+        if let Change::Region(d) = change {
+            if canvas_damage::is_empty(d) {
+                return Ok(());
+            }
         }
         use wgpu::CurrentSurfaceTexture;
         // A failure recorded DURING configure (an invalid surface, a lost
@@ -807,35 +862,23 @@ impl PixelPresenter {
                 frame
             }
             // Occluded/minimized: skip quietly -- and cheaply, staging
-            // nothing. The path is fine.
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            // nothing. The path is fine. This frame's change was not
+            // uploaded, so the next one uploads everything.
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
+                self.upload_whole = false;
+                return Ok(());
+            }
             // Outdated/lost: force a reconfigure next frame; a truly dead
             // surface errors there and THAT retires the path.
             _ => {
                 self.configured = (0, 0);
+                self.upload_whole = false;
                 return Ok(());
             }
         };
         let (texture, ..) = self.upload.as_ref().expect("upload texture just ensured");
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba[..(width as usize * height as usize * 4)],
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
+        write_changed(&self.queue, texture, rgba, width, height, change);
+        self.upload_whole = true;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1029,4 +1072,48 @@ impl PixelPresenter {
         self.configured = (width, height);
         self.upload = None;
     }
+}
+
+/// Upload the part of `rgba` that `change` names into `texture`, which
+/// already holds the rest (K-1373): a caret's few rows rather than a whole
+/// Retina window. The rows are read in place from the full picture.
+fn write_changed(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    change: Change,
+) {
+    let (x0, y0, x1, y1) = match change {
+        Change::Region(d) => (
+            d.0.min(width),
+            d.1.min(height),
+            d.2.min(width),
+            d.3.min(height),
+        ),
+        Change::All => (0, 0, width, height),
+    };
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d { x: x0, y: y0, z: 0 },
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba[..(width as usize * height as usize * 4)],
+        wgpu::TexelCopyBufferLayout {
+            offset: (u64::from(y0) * u64::from(width) + u64::from(x0)) * 4,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(y1 - y0),
+        },
+        wgpu::Extent3d {
+            width: x1 - x0,
+            height: y1 - y0,
+            depth_or_array_layers: 1,
+        },
+    );
 }

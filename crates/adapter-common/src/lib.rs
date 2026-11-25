@@ -4,6 +4,7 @@
 //! macOS, Windows, and later mobile hosts.
 
 pub mod appview;
+pub mod canvas_damage;
 pub mod canvas_list;
 pub mod drawtext;
 pub mod kv;
