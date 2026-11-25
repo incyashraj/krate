@@ -40,6 +40,15 @@ krate-http = { path = "../http", optional = true }
 wasmparser.workspace = true
 zip.workspace = true
 
+# SHA-256 on the processor's own instructions on 64-bit ARM (K-1375). sha2
+# picks them by itself on x86_64, but on aarch64 only with `asm`, so every
+# Apple Silicon Mac hashed in software: a third of opening Vault's bundle
+# (its source and SDK are digested on every open), 105 ms to 78 ms with
+# them. Not on Windows on ARM, where sha2-asm's assembly is not MSVC's.
+# Feature unification hands it to every crate hashing on these targets.
+[target.'cfg(all(target_arch = "aarch64", not(target_os = "windows")))'.dependencies]
+sha2 = { version = "0.10.9", features = ["asm"] }
+
 [features]
 default = ["fetch"]
 # Fetching a bundle by URL. Off in the wasm build the hub runs.

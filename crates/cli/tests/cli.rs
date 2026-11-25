@@ -9672,8 +9672,8 @@ fn a_large_bundle_is_unpacked_once_and_reused() {
          entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
     )
     .expect("manifest");
-    // Nine MiB that deflate cannot shrink, so the bundle is over the
-    // cache's 8 MiB floor.
+    // Nine MiB that deflate cannot shrink, so the bundle is well over the
+    // cache's floor.
     let assets = dir.path().join("assets");
     std::fs::create_dir_all(&assets).expect("assets");
     let mut x: u64 = 0x9E37_79B9_7F4A_7C15;

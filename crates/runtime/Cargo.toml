@@ -19,6 +19,17 @@ publish = false
 [target.'cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))'.dependencies]
 rfd.workspace = true
 
+# A first launch starts on code from Winch, wasmtime's fast baseline
+# compiler, while the optimized build is made beside it for the next launch
+# (K-1375): Vault's 4.8 MB component compiled in 77 ms on Winch against
+# 382 ms on Cranelift, on an M4. rayon runs that optimized build on a pool of
+# its own whose threads sit below the app's (it is already in the tree, for
+# wasmtime's parallel compilation). Not on iOS, which cannot make code, nor
+# in a tab, which is handed its code already compiled.
+[target.'cfg(not(any(target_os = "ios", target_arch = "wasm32")))'.dependencies]
+wasmtime = { workspace = true, features = ["winch"] }
+rayon = "1.12.0"
+
 [features]
 # Speech is OPT-IN. It is the only thing in the tree that needs a C++
 # toolchain, bindgen and cmake, and it has blocked three platforms on its own
@@ -247,6 +258,9 @@ windows-sys = { version = "0.61", features = [
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Printing",
     "Win32_Storage_Xps",
+    # SetThreadPriority: a first launch's optimized build runs below the app
+    # (K-1375).
+    "Win32_System_Threading",
 ] }
 # Camera capture through Media Foundation. macOS has its own AVFoundation
 # backend because it needs the platform permission dance; Windows and Linux do

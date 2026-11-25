@@ -71,6 +71,8 @@ mod pictures;
 #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 mod share_fallback;
 mod sign_in;
+#[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+mod tiered;
 mod unlock;
 mod video;
 #[cfg(target_os = "android")]
@@ -637,6 +639,23 @@ pub fn stage_mark(label: &str) {
 
 pub struct Runtime {
     engine: Engine,
+    /// A first launch on quick code, the optimized build kept for the next
+    /// (K-1375). None with no cache folder, on the interpreter, and for a
+    /// native image.
+    #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+    tiered: Option<tiered::Tiered>,
+}
+
+impl Drop for Runtime {
+    /// A run that has ended waits a moment for an optimized build still
+    /// being made, so the next launch gets it (K-1375). Nothing waits when
+    /// there is none -- every launch after the first.
+    fn drop(&mut self) {
+        #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+        if let Some(tiered) = self.tiered.as_ref() {
+            tiered.wait_for_background(tiered::FINISH_LIMIT);
+        }
+    }
 }
 
 /// How often the epoch ticker fires. 8ms is about half a 60Hz frame, so a
@@ -815,7 +834,19 @@ impl Runtime {
         let engine =
             Engine::new(&wt_config).map_err(|err| RuntimeError::EngineInit(err.to_string()))?;
 
-        Ok(Self { engine })
+        // The interpreter compiles nothing worth tiering, and with no cache
+        // folder (KRATE_NO_COMPILE_CACHE) every launch is a full cold one by
+        // request.
+        #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+        let tiered = compile_cache_dir()
+            .filter(|_| !engine.is_pulley())
+            .map(|dir| tiered::Tiered::new(dir.join("optimized"), &wt_config));
+
+        Ok(Self {
+            engine,
+            #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+            tiered,
+        })
     }
 
     pub fn run_file(&self, path: impl AsRef<Path>, config: &Config) -> Result<RunOutcome> {
@@ -1018,7 +1049,11 @@ impl Runtime {
         wt_config.with_custom_code_memory(Some(std::sync::Arc::new(SignedCode)));
         let engine =
             Engine::new(&wt_config).map_err(|err| RuntimeError::EngineInit(err.to_string()))?;
-        Ok(Self { engine })
+        Ok(Self {
+            engine,
+            #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
+            tiered: None,
+        })
     }
 
     /// Load an image made by [`Self::precompile_native_image`], in place.
@@ -1047,7 +1082,14 @@ impl Runtime {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
-        let component = Component::from_binary(&self.engine, bytes)
+        #[cfg(not(target_os = "ios"))]
+        let compiled = match self.tiered.as_ref() {
+            Some(tiered) => tiered.load(&self.engine, bytes),
+            None => Component::from_binary(&self.engine, bytes),
+        };
+        #[cfg(target_os = "ios")]
+        let compiled = Component::from_binary(&self.engine, bytes);
+        let component = compiled
             .map_err(|err| RuntimeError::InvalidComponent(component_error(err.as_ref())))?;
 
         Ok(LoadedComponent { component })
@@ -1256,14 +1298,18 @@ impl Runtime {
     /// component that fits none is refused with every world's reason, the
     /// widest world's first, because that is the one closest to fitting.
     pub fn select_world(&self, component: &LoadedComponent) -> Result<SelectedWorld> {
-        let run = run_export_shape(&self.engine, &component.component)?;
+        let engine = component.engine();
+        let run = run_export_shape(engine, &component.component)?;
         let mut reasons: Vec<String> = Vec::new();
 
         // The legacy world's `run` returns nothing; every current world's
         // returns an exit code. The signature alone settles which family a
         // component belongs to, before any import is looked at.
         match run {
-            RunShape::Unit => match self.phase1_linker()?.instantiate_pre(&component.component) {
+            RunShape::Unit => match self
+                .phase1_linker(engine)?
+                .instantiate_pre(&component.component)
+            {
                 Ok(_) => return Ok(SelectedWorld::Legacy),
                 Err(err) => reasons.push(format!("legacy world: {}", instantiate_error(&err))),
             },
@@ -1276,7 +1322,10 @@ impl Runtime {
         if run == RunShape::ExitCode {
             let probe_started = std::time::Instant::now();
             let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
-            match self.phase2_linker()?.instantiate_pre(&component.component) {
+            match self
+                .phase2_linker(engine)?
+                .instantiate_pre(&component.component)
+            {
                 Ok(_) => return Ok(SelectedWorld::Cli),
                 Err(err) => reasons.push(format!("cli world: {}", instantiate_error(&err))),
             }
@@ -1296,7 +1345,7 @@ impl Runtime {
             }
             let p3_started = std::time::Instant::now();
             let phase3 = match self
-                .phase3_gui_linker()?
+                .phase3_gui_linker(engine)?
                 .instantiate_pre(&component.component)
             {
                 Ok(_) => Some(SelectedWorld::Gui),
@@ -1312,7 +1361,7 @@ impl Runtime {
                 );
             }
             let p4_started = std::time::Instant::now();
-            let p4 = self.phase4_gui_linker()?;
+            let p4 = self.phase4_gui_linker(engine)?;
             if timed {
                 eprintln!(
                     "krate-stage:   phase4 linker BUILD {:.1}ms",
@@ -1345,16 +1394,16 @@ impl Runtime {
         Err(RuntimeError::NoMatchingWorld(reasons.join("; ")))
     }
 
-    fn phase1_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
+    fn phase1_linker(&self, engine: &Engine) -> Result<wasmtime::component::Linker<HostState>> {
+        let mut linker = wasmtime::component::Linker::new(engine);
         App::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
             .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
         Ok(linker)
     }
 
     #[cfg(feature = "phase2-bindings")]
-    fn phase2_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
+    fn phase2_linker(&self, engine: &Engine) -> Result<wasmtime::component::Linker<HostState>> {
+        let mut linker = wasmtime::component::Linker::new(engine);
         phase2_bindings::Cli::add_to_linker::<_, HasSelf<_>>(
             &mut linker,
             |state: &mut HostState| state.phase2(),
@@ -1363,8 +1412,13 @@ impl Runtime {
         Ok(linker)
     }
 
-    fn new_store(&self, config: &Config, output: OutputMode) -> Result<Store<HostState>> {
-        let mut store = Store::new(&self.engine, HostState::new(config, output)?);
+    fn new_store(
+        &self,
+        engine: &Engine,
+        config: &Config,
+        output: OutputMode,
+    ) -> Result<Store<HostState>> {
+        let mut store = Store::new(engine, HostState::new(config, output)?);
         store.limiter(|state| &mut state.limits);
 
         if let Some(fuel) = config.fuel {
@@ -1410,54 +1464,15 @@ impl Runtime {
                 }
                 Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_PUMP))
             });
-            self.start_epoch_ticker();
+            start_epoch_ticker(engine);
         }
 
         Ok(store)
     }
 
-    /// Tick the engine's epoch on a background thread, forever.
-    ///
-    /// One thread for the process, started on first use, ticking every
-    /// engine that asked: a player makes a new runtime -- a new engine --
-    /// for each app it opens, and a ticker tied to the first engine stopped
-    /// when that one was dropped, so on a phone no app after Krate's own
-    /// library was ever ticked, and an app stuck in a loop could not be
-    /// reached at all (IC-934).
-    ///
-    /// The thread holds only weak references, so it keeps no engine alive,
-    /// and drops each one once it is gone.
+    /// Tick this runtime's engine's epoch: see [`start_epoch_ticker`].
     fn start_epoch_ticker(&self) {
-        static ENGINES: std::sync::Mutex<Vec<wasmtime::EngineWeak>> =
-            std::sync::Mutex::new(Vec::new());
-        static STARTED: std::sync::Once = std::sync::Once::new();
-        {
-            let mut engines = ENGINES.lock().expect("epoch engines lock");
-            let this = self.engine.weak();
-            let known = engines
-                .iter()
-                .filter_map(wasmtime::EngineWeak::upgrade)
-                .any(|engine| wasmtime::Engine::same(&engine, &self.engine));
-            if !known {
-                engines.push(this);
-            }
-        }
-        STARTED.call_once(|| {
-            std::thread::Builder::new()
-                .name("krate-epoch".to_string())
-                .spawn(|| loop {
-                    std::thread::sleep(EPOCH_TICK_INTERVAL);
-                    let mut engines = ENGINES.lock().expect("epoch engines lock");
-                    engines.retain(|weak| match weak.upgrade() {
-                        Some(engine) => {
-                            engine.increment_epoch();
-                            true
-                        }
-                        None => false,
-                    });
-                })
-                .ok();
-        });
+        start_epoch_ticker(&self.engine);
     }
 
     fn run_phase1_component(
@@ -1466,8 +1481,8 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        let mut store = self.new_store(config, output)?;
-        let linker = self.phase1_linker()?;
+        let mut store = self.new_store(component.engine(), config, output)?;
+        let linker = self.phase1_linker(component.engine())?;
 
         let bindings = match App::instantiate(&mut store, &component.component, &linker) {
             Ok(bindings) => bindings,
@@ -1498,8 +1513,8 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        let mut store = self.new_store(config, output)?;
-        let linker = self.phase2_linker()?;
+        let mut store = self.new_store(component.engine(), config, output)?;
+        let linker = self.phase2_linker(component.engine())?;
 
         let bindings = phase2_bindings::Cli::instantiate(&mut store, &component.component, &linker)
             .map_err(|err| RuntimeError::Instantiate(instantiate_error(&err)))?;
@@ -1533,7 +1548,7 @@ impl Runtime {
         output: OutputMode,
     ) -> Result<RunOutcome> {
         krate_adapter_common::ui::clear_app_ending();
-        let mut store = self.new_store(config, output)?;
+        let mut store = self.new_store(component.engine(), config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
             UapiGuard::new(config.session_policy.clone()),
             config.phase3_ui_mode,
@@ -1571,7 +1586,7 @@ impl Runtime {
             .set_nobody_to_ask(gui_host.is_headless());
         store.data_mut().phase3_gui = Some(gui_host);
 
-        let linker = self.phase3_gui_linker()?;
+        let linker = self.phase3_gui_linker(component.engine())?;
 
         let bindings =
             phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
@@ -1596,7 +1611,7 @@ impl Runtime {
         krate_adapter_common::ui::clear_app_ending();
         let setup_started = std::time::Instant::now();
         let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
-        let mut store = self.new_store(config, output)?;
+        let mut store = self.new_store(component.engine(), config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
             UapiGuard::new(config.session_policy.clone()),
             config.phase3_ui_mode,
@@ -1623,7 +1638,7 @@ impl Runtime {
         let adapts = component
             .component
             .component_type()
-            .imports(&self.engine)
+            .imports(component.engine())
             .any(|(name, _)| name.starts_with("krate:ui/screen@"));
         gui_host.set_adapts(adapts);
         // A headless run has nobody to pick a serial device (IC-985) or a
@@ -1636,7 +1651,7 @@ impl Runtime {
         // A windowed app's team-data sync never waits on the network.
         store.data().phase2.set_windowed();
 
-        let linker = self.phase4_gui_linker()?;
+        let linker = self.phase4_gui_linker(component.engine())?;
 
         let bindings =
             phase4_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
@@ -1663,11 +1678,11 @@ impl Runtime {
     /// interfaces. Built without a store, so world selection can ask it
     /// whether a component links before anything is instantiated.
     #[cfg(feature = "phase2-bindings")]
-    fn phase3_gui_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+    fn phase3_gui_linker(&self, engine: &Engine) -> Result<wasmtime::component::Linker<HostState>> {
         use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
         use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
 
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        let mut linker = wasmtime::component::Linker::new(engine);
 
         macro_rules! link_phase2 {
             ($module:path) => {{
@@ -1749,12 +1764,12 @@ impl Runtime {
     /// different number of enum cases without colliding. An app built against
     /// either shape finds a linker that matches it (K-403).
     #[cfg(feature = "phase2-bindings")]
-    fn phase4_gui_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+    fn phase4_gui_linker(&self, engine: &Engine) -> Result<wasmtime::component::Linker<HostState>> {
         use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
         use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
         use phase4_gui_bindings::krate::ui as ui4;
 
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        let mut linker = wasmtime::component::Linker::new(engine);
 
         macro_rules! link_phase2 {
             ($module:path) => {{
@@ -2033,8 +2048,63 @@ impl wasmtime::CustomCodeMemory for SignedCode {
     }
 }
 
+/// Tick the engine's epoch on a background thread, forever.
+///
+/// One thread for the process, started on first use, ticking every
+/// engine that asked: a player makes a new runtime -- a new engine --
+/// for each app it opens, and a ticker tied to the first engine stopped
+/// when that one was dropped, so on a phone no app after Krate's own
+/// library was ever ticked, and an app stuck in a loop could not be
+/// reached at all (IC-934).
+///
+/// Every engine an app runs on asks: the optimized one, and the quick
+/// first-launch one ([`tiered`]), which is a separate engine.
+///
+/// The thread holds only weak references, so it keeps no engine alive,
+/// and drops each one once it is gone.
+fn start_epoch_ticker(engine: &Engine) {
+    static ENGINES: std::sync::Mutex<Vec<wasmtime::EngineWeak>> = std::sync::Mutex::new(Vec::new());
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    {
+        let mut engines = ENGINES.lock().expect("epoch engines lock");
+        let this = engine.weak();
+        let known = engines
+            .iter()
+            .filter_map(wasmtime::EngineWeak::upgrade)
+            .any(|known| wasmtime::Engine::same(&known, engine));
+        if !known {
+            engines.push(this);
+        }
+    }
+    STARTED.call_once(|| {
+        std::thread::Builder::new()
+            .name("krate-epoch".to_string())
+            .spawn(|| loop {
+                std::thread::sleep(EPOCH_TICK_INTERVAL);
+                let mut engines = ENGINES.lock().expect("epoch engines lock");
+                engines.retain(|weak| match weak.upgrade() {
+                    Some(engine) => {
+                        engine.increment_epoch();
+                        true
+                    }
+                    None => false,
+                });
+            })
+            .ok();
+    });
+}
+
 pub struct LoadedComponent {
     component: Component,
+}
+
+impl LoadedComponent {
+    /// The engine that compiled this component, which is the one its store
+    /// and linker must be made with: the optimized engine, or on a first
+    /// launch the quick one (K-1375).
+    fn engine(&self) -> &Engine {
+        self.component.engine()
+    }
 }
 
 struct HostState {
@@ -6071,7 +6141,7 @@ mod tests {
         let config = Config::default();
         let runtime = Runtime::new(&config).expect("runtime should initialize");
         let mut store = runtime
-            .new_store(&config, OutputMode::Sink)
+            .new_store(&runtime.engine, &config, OutputMode::Sink)
             .expect("store should initialize");
         let mut linker = wasmtime::component::Linker::new(&runtime.engine);
 

@@ -18131,10 +18131,12 @@ fn resolve_run_target(target: &str, insecure_http: bool) -> Result<RunTarget> {
     }
 
     if krate_bundle::is_bundle_path(&path) {
-        // A large bundle opens from its unpacked cache (IC-944): unpacked
-        // once, reused while its bytes are the same, instead of written out
-        // to the temp folder on every launch (687 MB for Veloren). Small
-        // ones unpack in milliseconds and are not worth a cache entry. Any
+        // A bundle opens from its unpacked cache (IC-944): unpacked once,
+        // reused while its bytes are the same, instead of written out to the
+        // temp folder on every launch (687 MB for Veloren). Only the
+        // smallest are not worth an entry: Vault's 4 MB bundle (source and
+        // SDK included) took 105 ms to open on every launch and 4 ms from
+        // the cache, and a 450 KB one 18 ms against 1 ms (K-1375). Any
         // trouble with the cache falls back to the ordinary open, whose
         // error is the one to show.
         let large = fs::metadata(&path)
@@ -18194,8 +18196,10 @@ fn judge_command(bundle: &Path, tier: &str) -> Result<u8> {
     Ok(if ok { 0 } else { 1 })
 }
 
-/// The smallest bundle worth an unpacked-cache entry (IC-944).
-pub(crate) const OPEN_CACHE_MIN_BYTES: u64 = 8 * 1024 * 1024;
+/// The smallest bundle worth an unpacked-cache entry (IC-944). Below it an
+/// open is a few milliseconds either way (a 230 KB game: 2.9 ms, 0.2 ms from
+/// the cache); was 8 MiB until K-1375 measured what that left on the table.
+pub(crate) const OPEN_CACHE_MIN_BYTES: u64 = 256 * 1024;
 
 /// Where opened bundles are kept unpacked (IC-944): `KRATE_CACHE_DIR`,
 /// else the platform's cache folder, under `opened` -- beside the compiled
