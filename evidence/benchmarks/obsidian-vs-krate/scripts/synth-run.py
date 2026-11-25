@@ -65,7 +65,10 @@ def make(run: Path) -> None:
         raise SystemExit("config.example.env no longer schedules every core leg; update synth-run.py")
     (run / "config.snapshot.env").write_text(cfg)
 
-    machine = ("captured_utc\t2026-11-23T09:00:00Z\nhw_model\tSynthetic1,1\nchip\tSynthetic chip\nmemory_bytes\t17179869184\n"
+    # Stamped now: a fixed date failed the "protocol committed before the run"
+    # check on every protocol commit after that date.
+    started = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    machine = (f"captured_utc\t{started}\n" "hw_model\tSynthetic1,1\nchip\tSynthetic chip\nmemory_bytes\t17179869184\n"
                "host_arch\tarm64\nmacos_version\t27.0\nmacos_build\t26A428\nlow_power_mode\t0\npower_source\tAC Power\n"
                "synthetic\tyes\n")
     for name in ("machine.prepared.tsv", "machine.start.tsv", "machine.end.tsv"):
