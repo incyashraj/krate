@@ -10,7 +10,9 @@ run.
 ## 1. Scope
 
 - **What is compared.** Krate's "Vault" (`apps/krate-vault`, packed as a
-  `.krate`, run by the public Krate release named in `config.env`) against
+  `.krate`, run by the Krate build named in `config.env`: a release-profile
+  build of the `next` branch at a recorded commit, the work that ships as
+  the next release, named as that build in every result) against
   Obsidian 1.15.1 (the official universal DMG, sha256
   `e05c7e3e2262b14c965bb246dcb74a30fc9098bd669e42957c4d9f788d04fdf4`,
   run as arm64), opening byte-identical vaults made by
@@ -59,7 +61,7 @@ failed, beside the ones that hold.
 | Input | Fixed how |
 |---|---|
 | Obsidian 1.15.1 DMG | sha256 above; architecture checked with `lipo -archs` headlessly; installed by `scripts/install-obsidian.sh` into `~/krate-bench/apps/`, never `/Applications` |
-| Krate | the public 0.6.1 release; `krate version` must report the version in `config.env`; binary sha256 recorded |
+| Krate | `cargo build --release -p krate-cli --features speech` (the macOS release build's own command and profile) of the commit in `config.env` (`KRATE_COMMIT`); `krate version` must report the version in `config.env`; binary sha256 recorded; the installer for the size leg is that binary packed as the release packs it (`krate-<version>-aarch64-apple-darwin.tar.gz`) |
 | Vault | one `.krate` file; sha256, size and the manifest inside it recorded, and the file copied into the run |
 | Vaults | `make-bench-vault.py` default seed `0x1C999`: light 100 notes, medium 1,000, heavy 10,000 (each plus `Home.md`), big-50000 and big-200000 single notes; each `tree_sha256` must equal the README table |
 | Target notes | `scripts/note-phrases.py`: the note opened at start is the generated note numbered 00001 (the busiest hub, most backlinks) in light/medium/heavy, and the single note in big-*; switcher and search targets are the last-numbered note |
