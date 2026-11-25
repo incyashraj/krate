@@ -473,9 +473,19 @@ mod tests {
                 }
             }
         });
-        let ended = spin.call(&mut store, ());
-        assert!(ended.is_err(), "the endless loop was interrupted");
-        drop(store);
+        // Run on its own thread with a deadline, so quick code that ignores
+        // the epoch fails this test in seconds instead of hanging the suite.
+        let (said, heard) = std::sync::mpsc::channel();
+        let running = std::thread::spawn(move || {
+            let ended = spin.call(&mut store, ());
+            let _ = said.send(ended.is_err());
+            drop(store);
+        });
+        let interrupted = heard
+            .recv_timeout(Duration::from_secs(10))
+            .expect("quick code ignored the epoch: the endless loop was still running after 10 s");
+        assert!(interrupted, "the endless loop was interrupted");
+        let _ = running.join();
         drop(component);
         drop(quick);
         let _ = ticking.join();
