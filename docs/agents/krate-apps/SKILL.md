@@ -35,7 +35,9 @@ public: {{analysis_url}}
    again.
 
 Other tools on the same server: `search_apps`, `get_app`, `list_featured` read the public
-gallery.
+gallery. In Claude, `get_krate_for_claude_desktop` gives the one file that adds Krate to
+Claude Desktop on a Mac or Windows PC (open it, click Install), so Claude can make an app
+and open it right on that computer.
 
 ## Make an app: with the krate command line (coding agents)
 

@@ -25,4 +25,5 @@ html_handling = "auto-trailing-slash"
 not_found_handling = "none"
 # Page addresses run site.js: markdown for an agent that asks for it, and
 # /page.html served as itself. Everything else is a plain asset.
-run_worker_first = ["/", "/*/", "/*.html"]
+# And the two Claude Desktop downloads, which redirect to the hub (IC-1005).
+run_worker_first = ["/", "/*/", "/*.html", "/claude/*.mcpb"]

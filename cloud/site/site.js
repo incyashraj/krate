@@ -9,7 +9,18 @@
 //    static assets answer it with a redirect to /page, and every page names
 //    its .html address as canonical.
 //
-// Only page addresses reach this code (run_worker_first in wrangler.toml).
+// 3. Krate for Claude Desktop (IC-1005): krate.tech/claude/krate-mac.mcpb
+//    and krate-windows.mcpb redirect to the hub's stable address, which
+//    sends the newest release's file, or says it is coming.
+//
+// Only page addresses and those two reach this code (run_worker_first in
+// wrangler.toml).
+
+/// The hub address a /claude/<file>.mcpb download goes to, or null.
+export function desktopDownload(pathname) {
+  const m = /^\/claude\/(krate-(?:mac|windows)\.mcpb)$/.exec(pathname);
+  return m ? `https://hub.krate.tech/claude/${m[1]}` : null;
+}
 
 /// The markdown file beside a page address, or null when it is not a page.
 export function markdownPath(pathname) {
@@ -43,6 +54,10 @@ function withVary(response) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const download = desktopDownload(url.pathname);
+    if (download) {
+      return new Response(null, { status: 302, headers: { location: download, "cache-control": "public, max-age=300" } });
+    }
     if ((request.method === "GET" || request.method === "HEAD") && wantsMarkdown(request.headers.get("accept"))) {
       const path = markdownPath(url.pathname);
       if (path) {

@@ -1200,10 +1200,65 @@ jobs:
           path: sbom/*.cdx.json
           if-no-files-found: error
 
+  # Krate for Claude Desktop (IC-1005): krate-<v>-mac.mcpb and
+  # krate-<v>-windows.mcpb, made from THIS release's own binaries by
+  # scripts/release-mcpb.sh -- a universal krate and cargo-component (lipo
+  # of the two signed arch builds; cargo-component signed here with the
+  # Developer ID), notarized, and each bundle signed with `mcpb sign` when a
+  # certificate that verifies is available. The hub's stable addresses
+  # (hub.krate.tech/claude/krate-mac.mcpb, -windows.mcpb) serve whatever
+  # the latest release carries, so they start working the moment a
+  # promoted release has these files.
+  #
+  # Its own job on macOS (lipo, codesign and notarytool are Mac tools), with
+  # every variable scoped to it, and allowed to fail: a release is never
+  # held back by its Claude Desktop files, and publish says loudly when they
+  # are missing. This workflow runs only on a tag, so the first real run is
+  # a release; `bash scripts/release-mcpb.sh` dry-runs the same steps on a
+  # Mac against downloaded archives.
+  claude-desktop:
+    name: Krate for Claude Desktop (.mcpb)
+    runs-on: macos-latest
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: krate-{aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc}
+          path: artifacts
+      - name: Build, sign and notarize the Claude Desktop bundles
+        shell: bash
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          MCPB_SIGN_CERT: ${{ secrets.MCPB_SIGN_CERT }}
+          MCPB_SIGN_KEY: ${{ secrets.MCPB_SIGN_KEY }}
+          MCPB_SIGN_INTERMEDIATE: ${{ secrets.MCPB_SIGN_INTERMEDIATE }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: bash scripts/release-mcpb.sh --version "${TAG#v}" --artifacts artifacts --out dist/claude
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: krate-claude-desktop
+          path: dist/claude/*.mcpb
+          if-no-files-found: warn
+
   publish:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, sbom]
+    # claude-desktop is waited for, never required: the `if` below asks only
+    # for the builds.
+    needs: [build, sbom, claude-desktop]
     # Publish whenever the builds succeeded, as before, whether or not the
     # SBOM job did: a release is not held back by a missing bill of
     # materials, it is published with a warning that says so.
@@ -1240,7 +1295,8 @@ jobs:
           # every one of them can be checked the same way.
           find dist -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.dmg' \
             -o -name '*.exe' -o -name '*.AppImage' \
-            -o -name '*.pkg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.cdx.json' \) -print0 \
+            -o -name '*.pkg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.cdx.json' \
+            -o -name '*.mcpb' \) -print0 \
             | sort -z \
             | xargs -0 sha256sum \
             | sed -E 's#(^[0-9a-f]+  ).*/#\1#' > SHA256SUMS
@@ -1273,6 +1329,20 @@ jobs:
             echo "ticket. Check the sign-and-notarize step on the"
             echo "aarch64-apple-darwin job."
           fi
+
+      # Krate for Claude Desktop comes from a job that may fail (IC-1005);
+      # a release without it is published, and says so.
+      - name: Check Krate for Claude Desktop is here
+        shell: bash
+        run: |
+          for os in mac windows; do
+            found="$(find dist -type f -name "krate-*-$os.mcpb" | head -1)"
+            if [ -n "$found" ]; then
+              echo "claude desktop ($os): $found"
+            else
+              echo "::warning::No krate-*-$os.mcpb, so this release publishes without Krate for Claude Desktop on $os and hub.krate.tech/claude/krate-$os.mcpb keeps serving the previous one (or says it is coming). Check the claude-desktop job."
+            fi
+          done
 
       # Say out loud whether the supply-chain files made it, for the same
       # reason as the opener check above: they come from steps that are
@@ -1371,6 +1441,7 @@ jobs:
             dist/**/*.deb
             dist/**/*.rpm
             dist/**/*.cdx.json
+            dist/**/*.mcpb
             krate-*-provenance.sigstore.json
             SHA256SUMS
           body_path: release-notes.md

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Krate in Claude Desktop: make an app and open it here</title>
+<meta name="description" content="Add Krate to Claude Desktop on a Mac or Windows PC. Ask Claude for an app and it opens right on your computer, in its own window. One file, one click to install." />
+<link rel="canonical" href="https://krate.tech/claude/" />
+<meta property="og:title" content="Krate in Claude Desktop: make an app and open it here" />
+<meta property="og:description" content="Add Krate to Claude Desktop on a Mac or Windows PC. Ask Claude for an app and it opens right on your computer, in its own window. One file, one click to install." />
+<meta property="og:url" content="https://krate.tech/claude/" />
+<meta property="og:image" content="https://krate.tech/og-v5.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="/krate-favicon.png" />
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080a" media="(prefers-color-scheme: dark)">
+<script>(() => { const d = document.documentElement; d.classList.add('js'); let t = null; try { t = localStorage.getItem('krate-theme'); } catch (e) {} if (t !== 'light' && t !== 'dark') t = null; d.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); })();</script>
+<link rel="preload" href="/fonts/geist-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/kit/site.css">
+<style>
+[hidden] { display: none !important; }
+.cd-note { margin-top: 14px; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.cd-note a { color: var(--accent); }
+.cd-steps { counter-reset: step; }
+.cd-steps .card { padding-top: 22px; }
+.cd-steps .n { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 16px; border-radius: 99px; font-size: 14px; font-weight: 600; color: var(--accent); background: var(--accent-soft); font-variant-numeric: tabular-nums; }
+.cd-steps .card p b { font-weight: 600; color: var(--ink); }
+.cd-say { margin-top: 12px; padding: 10px 14px; border-radius: 12px; font-size: 14px; color: var(--ink-2); background: var(--soft); }
+.cd-q { margin-top: 28px; }
+.cd-q p { margin-top: 8px; font-size: 15px; line-height: 1.6; color: var(--mute); }
+.cd-q p + h3 { margin-top: 26px; }
+.cd-q a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="hd">
+  <a class="brand" href="/"><img src="/krate-mark-3d-96.png" alt="" width="26" height="26">Krate</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a class="mi" href="/" data-set="product">Product</a>
+    <a class="mi" href="/studio/" data-set="studio">Studio</a>
+    <a class="mi" href="/cloud/" data-set="apps">Apps</a>
+    <a class="mi" href="/docs/" data-set="docs">Docs</a>
+    <a class="mi" href="/download/">Download</a>
+    <div class="drawer" id="drawer" role="menu">
+      <div class="set" data-set="product"><a href="/">Overview</a><a href="/reports/">Measurements</a><a href="/progress/">Progress</a><a href="/faq/">Questions</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog <span class="ext">↗</span></a></div>
+      <div class="set" data-set="studio"><a href="/studio/">Krate Studio</a><a href="/app/">Make an app in your browser</a><a href="/download/">Download Studio</a></div>
+      <div class="set" data-set="apps"><a href="/cloud/">Apps</a><a href="/open/">Received an app?</a><a href="/publish/">Publish an app</a><a href="/docs/organisations.html">For teams</a></div>
+      <div class="set" data-set="docs"><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub <span class="ext">↗</span></a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord <span class="ext">↗</span></a></div>
+    </div>
+  </nav>
+  <div class="hr">
+    <button class="thm" id="thm" aria-label="Switch between light and dark"><svg class="sun" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="3.4"/><path d="M9 1.8v1.6M9 14.6v1.6M1.8 9h1.6M14.6 9h1.6M3.9 3.9l1.1 1.1M13 13l1.1 1.1M3.9 14.1L5 13M13 5l1.1-1.1"/></svg><svg class="moon" width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M15.2 11.2A6.6 6.6 0 0 1 6.8 2.8a6.6 6.6 0 1 0 8.4 8.4z"/></svg></button>
+    <a class="signin" href="/login/">Sign in</a>
+    <a class="cta" href="/app/">Try Krate</a>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6.5h12M3 11.5h12"/></svg></button>
+  </div>
+</header>
+<nav class="mnav" id="mnav" aria-label="Menu">
+  <h6>Krate</h6><a href="/">Overview</a><a href="/studio/">Studio</a><a href="/app/">Make an app in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a>
+  <h6>Help</h6><a href="/docs/">Docs</a><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/login/">Sign in</a>
+</nav>
+
+<main>
+<section class="ph wrap n">
+  <span class="pill"><img src="/krate-mark-3d-96.png" alt="">Claude Desktop</span>
+  <h1>Ask Claude for an app. It opens on your computer.</h1>
+  <p class="lede">Add Krate to Claude Desktop once. Then every app you ask Claude for is built on your computer and opens in its own window, with its own name and icon.</p>
+  <div class="acts">
+    <a class="btn dark" id="cdBest" href="/claude/krate-mac.mcpb" data-os="mac">Add to Claude Desktop for Mac</a>
+    <a class="btn link" id="cdOther" href="/claude/krate-windows.mcpb" data-os="windows">For Windows <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a>
+  </div>
+  <p class="cd-note" id="cdNote">Free. One file for Claude Desktop on a Mac or a Windows PC.</p>
+</section>
+
+<section class="sec t wrap n">
+  <div class="g3 cd-steps">
+    <div class="card rv"><span class="n">1</span><h3>Open the file</h3>
+      <p>Double-click <b id="cdFile">krate-mac.mcpb</b>, or drag it onto Claude Desktop.</p></div>
+    <div class="card rv"><span class="n">2</span><h3>Click Install</h3>
+      <p>Claude Desktop shows Krate with an <b>Install</b> button. That is the whole setup: no terminal and no settings.</p></div>
+    <div class="card rv"><span class="n">3</span><h3>Ask for an app</h3>
+      <p>Claude writes it, Krate builds and checks it on your computer, and it opens.</p>
+      <p class="cd-say">“Make me a habit tracker with a weekly grid.”</p></div>
+  </div>
+</section>
+
+<section class="sec wrap n">
+  <div class="sh rv"><h2>Yours, on your computer</h2><p>Every app Krate makes is a real program you keep.</p></div>
+  <div class="g3" style="margin-top:28px">
+    <div class="card rv"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.5" y="4" width="15" height="12" rx="2"/><path d="M2.5 7.5h15"/></svg></span><h3>Its own window</h3>
+      <p>The app opens right away with its own name and icon. Ask Claude to keep it and it goes in your Applications folder or Start menu.</p></div>
+    <div class="card rv"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 3h7l3 3v11H5z"/><path d="M12 3v3h3"/></svg></span><h3>One file to send</h3>
+      <p>Each app is a single small <code class="k">.krate</code> file in your Krate Apps folder. Send it to anyone and it opens with Krate on their computer.</p></div>
+    <div class="card rv"><span class="ic"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 2.5l6 2.5v4.5c0 3.8-2.6 6.6-6 8-3.4-1.4-6-4.2-6-8V5z"/></svg></span><h3>You say what it may do</h3>
+      <p>An app gets a window and nothing else until you allow more. The first time it opens, Krate asks you, and only you can say yes.</p></div>
+  </div>
+</section>
+
+<section class="sec wrap n">
+  <div class="sh rv"><h2>Good to know</h2></div>
+  <div class="cd-q rv">
+    <h3>Is there anything else to download?</h3>
+    <p>Once. The first app you make sets up Krate's builder, the compiler apps are built with: about 127 MB on a Mac with Apple silicon, 141 MB on an Intel Mac, 226 MB on Windows. Claude tells you while it happens. It goes in Krate's own folder and changes no other software on your computer.</p>
+    <h3>What does it need?</h3>
+    <p>Claude Desktop on macOS or Windows. Krate itself is inside the file you install.</p>
+    <h3>Using Claude in a browser?</h3>
+    <p>Add Krate's connector there instead, and apps open from a link in any browser, phones included: <a href="/docs/pages/make-an-app-with-claude.html">Make an app with Claude</a>.</p>
+  </div>
+</section>
+
+<div class="band rv"><div><h2>Make your first app</h2><p>Add Krate to Claude Desktop, then just ask.</p></div><a class="btn dark" id="cdBand" href="/claude/krate-mac.mcpb" data-os="mac">Add to Claude Desktop <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg></a></div>
+</main>
+
+<footer class="foot">
+  <div class="fm"><img src="/krate-mark-3d-96.png" alt="Krate" width="30" height="30"></div>
+  <div><h5>Krate</h5><a href="/studio/">Studio</a><a href="/app/">Make in your browser</a><a href="/cloud/">Apps</a><a href="/docs/organisations.html">For teams</a><a href="/download/">Download</a><a href="/about/">About</a></div>
+  <div><h5>Developers</h5><a href="/docs/">Docs</a><a href="/docs/quickstart.html">Quickstart</a><a href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">GitHub</a><a href="https://discord.gg/XaEegAxDCb" target="_blank" rel="noopener">Discord</a><a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a></div>
+  <div><h5>Ship an app</h5><a href="/how-to-distribute-a-desktop-app.html">Ship a desktop app</a><a href="/krate-vs-electron.html">Krate vs Electron</a><a href="/krate-vs-tauri.html">Krate vs Tauri</a><a href="/electron-alternatives.html">Electron alternatives</a><a href="/answers/">All answers</a><a href="/facts/">Facts</a></div>
+  <div><h5>Help</h5><a href="/faq/">Questions</a><a href="/open/">Received an app?</a><a href="/contact/">Contact</a><a href="/account/">Account</a></div>
+  <div><h5>Terms &amp; policies</h5><a href="/terms/">Terms</a><a href="/privacy/">Privacy</a><a href="/security/">Security</a><a href="/copyright/">Copyright</a><a href="/reports/">Measurements</a></div>
+  <div class="copy"><span>Krate © 2026 Krate Labs</span><span>Player and .krate format open source, MIT or Apache-2.0 · Studio and hub BSL 1.1</span></div>
+</footer>
+<script src="/kit/site.js"></script>
+<script>
+/* The button for this computer (a Mac or a Windows PC), its size from the
+   latest release, and, before any release carries the file, the plain words
+   that it is coming. The links work without scripts: each address downloads
+   the newest file, or says it is coming. */
+(function () {
+  var ua = navigator.userAgent || "";
+  var os = /Windows/i.test(ua) ? "windows" : "mac";
+  var SYS = {
+    mac: { file: "krate-mac.mcpb", re: /^krate-\d[\w.-]*-mac\.mcpb$/, best: "Add to Claude Desktop for Mac", other: "For Mac" },
+    windows: { file: "krate-windows.mcpb", re: /^krate-\d[\w.-]*-windows\.mcpb$/, best: "Add to Claude Desktop for Windows", other: "For Windows" }
+  };
+  var other = os === "mac" ? "windows" : "mac";
+  var best = document.getElementById("cdBest"), alt = document.getElementById("cdOther");
+  var note = document.getElementById("cdNote"), band = document.getElementById("cdBand");
+  best.textContent = SYS[os].best; best.href = "/claude/" + SYS[os].file; best.dataset.os = os;
+  band.href = best.href; band.dataset.os = os;
+  alt.firstChild.nodeValue = SYS[other].other + " "; alt.href = "/claude/" + SYS[other].file; alt.dataset.os = other;
+  document.getElementById("cdFile").textContent = SYS[os].file;
+  // A phone cannot run Claude Desktop: say where this goes, and keep both buttons.
+  var phone = /iPhone|iPad|Android/i.test(ua);
+  if (phone) note.textContent = "Claude Desktop runs on a Mac or a Windows PC. Open this page there to add Krate.";
+  function mb(b) { return Math.round(b / 1000000) + " MB"; }
+  fetch("https://hub.krate.tech/release/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.assets || phone) return;
+      var hit = null;
+      rel.assets.forEach(function (a) { if (!hit && SYS[os].re.test(a.name)) hit = a; });
+      if (hit) {
+        note.textContent = "Free · " + rel.tag_name + " · " + mb(hit.size) + ", with Krate inside.";
+      } else {
+        note.textContent = "Krate for Claude Desktop arrives with the next Krate release. These buttons download it then.";
+      }
+    }).catch(function () {});
+})();
+</script>
+<script>
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname, ref: document.referrer }), keepalive: true, mode: "cors" }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
+<script>
+// A click on a download, counted like a page view: which page, which
+// system. Nothing about the person (see /privacy/).
+(function () {
+  try {
+    document.addEventListener("click", function (e) {
+      var a = e.target && e.target.closest ? e.target.closest("a[href$='.mcpb']") : null;
+      if (!a) return;
+      fetch("https://hub.krate.tech/view", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: location.pathname, event: "download", os: a.dataset.os || "-" }),
+        keepalive: true, mode: "cors",
+      }).catch(function () {});
+    }, true);
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@
 // streamable HTTP clients that matter never send one.
 
 import { signInNeeded, resourceMetadataUrl, MCP_SCOPE } from "./mcp-oauth.js";
+import { desktopOffer, openHereLine } from "./claude-desktop.js";
 
 /** The protocol versions this server speaks, newest first. */
 export const MCP_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -308,6 +309,47 @@ export const TOOLS = [
     annotations: READ_ONLY,
   },
   {
+    name: "get_krate_for_claude_desktop",
+    title: "Get Krate for Claude Desktop",
+    description:
+      "The download that adds Krate to Claude Desktop on a Mac or a Windows PC, so Claude can make an app and open it " +
+      "right on that computer in its own window. Answers the file's link for the person's computer (both when it is " +
+      "not given), what it does in one line, the two steps to add it (open the file, click Install), and the size of " +
+      "the one-time builder download. No sign-in needed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        os: { type: "string", enum: ["mac", "windows"], description: "The person's computer, when known: mac or windows" },
+      },
+      additionalProperties: false,
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        downloads: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              os: { type: "string" },
+              label: { type: "string" },
+              url: { type: "string", description: "A stable link; it always downloads the newest release's file" },
+              available: { type: "boolean", description: "false until a Krate release carries the file" },
+              size_bytes: { type: ["integer", "null"] },
+              builder_download: { type: "string", description: "The one-time download the first build sets up" },
+            },
+            required: ["os", "label", "url", "available", "builder_download"],
+          },
+        },
+        steps: { type: "array", items: { type: "string" } },
+        page: { type: "string" },
+        message: { type: "string" },
+      },
+      required: ["downloads", "steps", "page"],
+    },
+    annotations: READ_ONLY,
+  },
+  {
     name: "build_app",
     title: "Build and publish a Krate app",
     description:
@@ -382,6 +424,7 @@ const INVOKING = {
   get_krate_guide: ["Reading Krate's guide", "Read Krate's guide"],
   search: ["Searching Krate", "Searched Krate"],
   fetch: ["Opening the Krate result", "Opened the Krate result"],
+  get_krate_for_claude_desktop: ["Finding Krate for Claude Desktop", "Found Krate for Claude Desktop"],
   build_app: ["Sending the files to Krate", "Krate is building it"],
   build_status: ["Asking Krate how the build went", "Krate answered"],
 };
@@ -577,6 +620,8 @@ async function getApp(args, deps) {
         (app.versions.newer_exists ? `; the app's link opens version ${app.versions.current}, which is newer` : ""),
     );
   }
+  const here = await openHereFor(deps);
+  if (here) lines.push("", here);
   return { content: [{ type: "text", text: lines.join("\n") }], structuredContent: { found: true, removed: false, app } };
 }
 
@@ -786,14 +831,43 @@ async function buildApp(args, deps) {
   );
 }
 
-function publishedAnswer(id, rec) {
+async function publishedAnswer(id, rec, deps) {
   const p = rec.published;
+  const here = await openHereFor(deps);
   return answer2(
     { build_id: id, status: "published", name: rec.name, app_id: p.app_id, link: p.link, browser_link: p.browser_link },
     `"${rec.name}" is built, checked and published to your Krate account, unlisted: only people with the link can open it.\n\n` +
       `Open it in a browser on any device, nothing to install: ${p.browser_link}\n` +
-      `Its own link, which also opens it in Krate on a computer and always opens the newest version: ${p.link}`,
+      `Its own link, which also opens it in Krate on a computer and always opens the newest version: ${p.link}` +
+      (here ? `\n\n${here}` : ""),
   );
+}
+
+/**
+ * The one plain line offering "open it on this computer" through Krate for
+ * Claude Desktop (IC-1005), or "". Said only to Claude: this server is the
+ * remote connector, never the local extension (which opens the app itself),
+ * and a Claude Desktop download means nothing in ChatGPT or another client.
+ * Said only once a release carries the file, so it is never a dead end.
+ */
+async function openHereFor(deps) {
+  if (!deps.client || !/claude|anthropic/i.test(deps.client)) return "";
+  if (!deps.release) return "";
+  try {
+    return openHereLine(await deps.release());
+  } catch (_) {
+    return "";
+  }
+}
+
+async function krateForClaudeDesktop(args, deps) {
+  let release = null;
+  try {
+    release = deps.release ? await deps.release() : null;
+  } catch (_) {
+    release = null;
+  }
+  return desktopOffer(args.os || null, release);
 }
 
 async function buildStatus(args, deps) {
@@ -805,7 +879,7 @@ async function buildStatus(args, deps) {
   if (!rec || rec.owner !== who.owner) {
     return answer2({ build_id: id, status: "unknown" }, "No build of this Krate account has that id. Start one with build_app.", true);
   }
-  if (rec.published) return publishedAnswer(id, rec);
+  if (rec.published) return publishedAnswer(id, rec, deps);
   const job = await deps.jobStatus(who.owner, id);
   if (job.status) {
     return answer2(
@@ -854,7 +928,7 @@ async function buildStatus(args, deps) {
     browser_link: `${deps.base}/run/${published.line || published.id}`,
   };
   await deps.writeRecord(id, rec);
-  return publishedAnswer(id, rec);
+  return publishedAnswer(id, rec, deps);
 }
 
 const HANDLERS = {
@@ -864,6 +938,7 @@ const HANDLERS = {
   get_krate_guide: getGuide,
   search,
   fetch: fetchOne,
+  get_krate_for_claude_desktop: krateForClaudeDesktop,
   build_app: buildApp,
   build_status: buildStatus,
 };
@@ -879,7 +954,8 @@ const INSTRUCTIONS =
   "Give people the app's link (opens in Krate) or its browser link (opens in a tab, nothing to install). " +
   "To make a new app: read get_krate_guide, write the files, send them to build_app, and call build_status until it " +
   "answers a link (or Krate's check's words, to fix and build again). Building needs the person to sign in to Krate; " +
-  "Krate compiles and checks what you wrote and runs no AI of its own.";
+  "Krate compiles and checks what you wrote and runs no AI of its own. In Claude, get_krate_for_claude_desktop gives the " +
+  "one file that adds Krate to Claude Desktop on a Mac or Windows PC, so apps open right on that computer.";
 
 function initialize(params) {
   const asked = params && typeof params.protocolVersion === "string" ? params.protocolVersion : null;
@@ -948,6 +1024,7 @@ export function signInResult(base) {
  *   gallery(params)      the /apps payload for ?q= / ?cat= (or the shelves), or null
  *   findApp(ref)         { hash, row, shot } | { hash, takedown } | null
  *   versionInfo(hash)    { n, current, newer, versions } | null
+ *   release()            the /release/latest answer, or null
  */
 export async function mcpRoute(request, deps) {
   if (request.method === "OPTIONS") return mcpPreflight();
@@ -982,7 +1059,8 @@ export async function mcpRoute(request, deps) {
   // server is refused outright, as the spec asks; none means read-only.
   const auth = deps.authenticate ? await deps.authenticate(request) : null;
   if (auth && auth.invalid) return mcpCors(signInNeeded(deps.base, { invalid: true }));
-  deps = { ...deps, who: auth ? auth.who : null };
+  // Which client is asking, for the one line only Claude is offered.
+  deps = { ...deps, who: auth ? auth.who : null, client: request.headers.get("user-agent") || "" };
   const accepted = () => mcpCors(new Response(null, { status: 202 }));
   if (typeof message.method !== "string") {
     // A response to something the server asked -- it asks nothing.

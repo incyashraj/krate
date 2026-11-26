@@ -34,8 +34,8 @@ WORKFLOW = ROOT / ".github/workflows/pages.yml"
 STEPS = ["Build docs", "Assemble site", "Finalize and verify crawl metadata"]
 # What the assemble step reads. Everything else in the repository is left out
 # of the scratch copy.
-COPY = ["docs", "scripts", "studio/ui", "evidence", ".github", "crates", "wit", "cloud",
-        "apps/krate-checklist", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
+COPY = ["docs", "scripts", "studio/ui", "studio/src", "evidence", ".github", "crates", "wit", "cloud",
+        "apps", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
         "CHANNEL", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "STATUS.md"]
 
 

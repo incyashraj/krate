@@ -100,7 +100,7 @@ test("tools/list: every tool is titled, named within 64 characters, with both sc
   const env = hubEnv();
   const r = await rpc(env, "tools/list", {});
   const tools = r.body.result.tools;
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["build_app", "build_status", "fetch", "get_app", "get_krate_guide", "list_featured", "search", "search_apps"]);
+  assert.deepEqual(tools.map((t) => t.name).sort(), ["build_app", "build_status", "fetch", "get_app", "get_krate_for_claude_desktop", "get_krate_guide", "list_featured", "search", "search_apps"]);
   const WRITE = new Set(["build_app", "build_status"]);
   for (const t of tools) {
     assert.ok(t.name.length <= 64 && /^[a-z_]+$/.test(t.name), t.name);

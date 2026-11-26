@@ -34,7 +34,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +49,42 @@ REPO = Path(__file__).resolve().parent.parent
 MCPB_CLI = "@anthropic-ai/mcpb@2.1.2"
 GITHUB_REPO = "incyashraj/krate"
 ICON_SOURCE = REPO / "docs" / "landing" / "krate-app-icon.png"
+
+TOOLCHAIN_SOURCE = REPO / "crates" / "cli" / "src" / "rust_toolchain.rs"
+
+# The Rust hosts `krate setup rust` fetches for, per system Claude Desktop
+# runs on, and the archive kind each takes (rust_toolchain.rs).
+BUILDER_HOSTS = {
+    "darwin": [("aarch64-apple-darwin", "tar.xz"), ("x86_64-apple-darwin", "tar.xz")],
+    "win32": [("x86_64-pc-windows-gnullvm", "tar.gz")],
+}
+
+
+def builder_megabytes(platform: str) -> list[int]:
+    """What the first build downloads on `platform`, in MB rounded up, one
+    figure per host, read from the archives rust_toolchain.rs pins -- the
+    same bytes `krate setup rust` fetches, so the manifest cannot drift."""
+    src = TOOLCHAIN_SOURCE.read_text()
+    version = re.search(r'pub const VERSION: &str = "([^"]+)";', src).group(1)
+    sizes = {name: int(size.replace("_", "")) for name, _, size in re.findall(
+        r'\(\s*"([^"]+)",\s*"([0-9a-f]{64})",\s*([0-9_]+),\s*\)', src)}
+    out = []
+    for host, ext in BUILDER_HOSTS[platform]:
+        names = [f"{part}-{version}-{target}.{ext}" for part, target in (
+            ("rustc", host), ("cargo", host), ("rust-std", host), ("rust-std", "wasm32-wasip1"))]
+        missing = [n for n in names if n not in sizes]
+        if missing:
+            fail(f"rust_toolchain.rs pins no {', '.join(missing)}")
+        out.append(math.ceil(sum(sizes[n] for n in names) / 1_000_000))
+    return out
+
+
+def builder_words(platforms: list[str]) -> str:
+    """'about 127-141 MB' (a Mac), 'about 226 MB' (Windows), or the range of both."""
+    figures = sorted(mb for p in platforms for mb in builder_megabytes(p))
+    low, high = figures[0], figures[-1]
+    return f"about {low} MB" if low == high else f"about {low}-{high} MB"
+
 
 ARCHIVES = {
     "mac-arm64": "krate-{v}-aarch64-apple-darwin.tar.gz",
@@ -177,8 +215,9 @@ def manifest(version: str, tools: list[dict], platforms: list[str]) -> dict:
             "and open them right here, each in its own window with its own name and icon. "
             "Every app is one small .krate file you can send to anyone, and it can only do "
             "what its permissions say: the first time it opens, Krate asks you, never Claude.\n\n"
-            "Apps are built on this computer. The first build sets up Krate's builder once "
-            "(under 150 MB), in Krate's own folder; it never changes any other software."
+            "Apps are built on this computer. The first app sets up Krate's builder, a one-time "
+            f"download of {builder_words(platforms)}, in Krate's own folder; it never changes "
+            "any other software."
         ),
         "author": {"name": "Krate", "url": "https://krate.tech"},
         "homepage": "https://krate.tech",

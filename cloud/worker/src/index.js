@@ -130,6 +130,7 @@ import { accountDeleteRoute, deskDelete, resumeAccountDeletions } from "./accoun
 import { accountSyncRoute, SyncAccount } from "./account-sync.js";
 // Krate as a remote MCP server (IC-989): the public gallery, read-only.
 import { mcpRoute, mcpCors, mcpPreflight } from "./mcp.js";
+import { systemOfPath, downloadResponse } from "./claude-desktop.js";
 // ... and its sign-in and builds (IC-989 phase 2).
 import { oauthRoute, bearerOf, connectorsRoute } from "./mcp-oauth.js";
 import { fetchGuide, buildAllowance, noteBuild, compile as compileOnBuilder, jobStatus, jobFile, readRecord, writeRecord } from "./mcp-build.js";
@@ -687,6 +688,12 @@ export default {
       // hands their address to a third party just by opening a page.
       if (request.method === "GET" && (pathname === "/release/latest" || pathname === "/repo")) {
         return cors(await githubMirror(pathname, request));
+      }
+      // Krate for Claude Desktop (IC-1005): a stable address for the newest
+      // release's .mcpb, or a page that says it is coming -- never a 404.
+      if ((request.method === "GET" || request.method === "HEAD") && systemOfPath(pathname)) {
+        const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+        return downloadResponse(systemOfPath(pathname), await latestRelease(base), htmlPage);
       }
       if (request.method === "GET" && pathname === "/stats") {
         // Public, so kept five minutes: each answer lists KV twice (listBudget).
@@ -3133,7 +3140,15 @@ function mcpDeps(env) {
     readRecord: (id) => readRecord(env, id),
     writeRecord: (id, record) => writeRecord(env, id, record),
     publishBuilt: (who, bytes, name) => publishBuilt(env, who, bytes, name),
+    // Krate for Claude Desktop (IC-1005): whether the latest release carries it.
+    release: () => latestRelease(base),
   };
+}
+
+/// The /release/latest answer (the cached GitHub mirror), or null.
+async function latestRelease(base) {
+  const res = await githubMirror("/release/latest", new Request(`${base || "https://hub.krate.tech"}/release/latest`));
+  return res.status === 200 ? await res.json() : null;
 }
 
 async function meta(ref, env) {
