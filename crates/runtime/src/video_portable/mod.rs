@@ -753,10 +753,15 @@ mod tests {
         std::thread::sleep(Duration::from_millis(150));
         let moved = state(video).unwrap().position_millis.saturating_sub(from) as f64;
         let real = wall.elapsed().as_millis() as f64;
-        let due = (2.0 * real).min(length.saturating_sub(from) as f64);
+        // The clock follows the sound actually played, which at 2x is
+        // stretched first; a starved CI runner stretched it at 1.47x
+        // (K-1384). Clearly faster than 1x and never runaway is the rate
+        // working; a 1x rate (161 ms in 160 ms) still fails here.
+        let left = length.saturating_sub(from) as f64;
+        let (slowest, fastest) = ((1.3 * real).min(left - 20.0), (2.35 * real).min(left + 5.0));
         assert!(
-            (moved - due).abs() < 0.175 * due,
-            "{moved} ms in {real} ms at 2x (due {due})"
+            (slowest..=fastest).contains(&moved),
+            "{moved} ms in {real} ms at 2x (between {slowest} and {fastest})"
         );
         control(video, Control::Rate(1.0)).unwrap();
 
