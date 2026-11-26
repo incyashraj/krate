@@ -3184,6 +3184,11 @@ impl FsAdapter for LocalPhase2Adapter {
             }
         }
         let file = open_path_on_host(path.as_path(), &mut opts).map_err(map_io_error)?;
+        if !matches!(mode, OpenMode::Read) {
+            // Opened to write: a watch over it looks on its next turn rather
+            // than waiting for the system's notice (K-1384).
+            fs_watch::host_wrote(path.as_path());
+        }
         self.insert_resource(LocalResource::File(file))
     }
 
@@ -3222,6 +3227,9 @@ impl FsAdapter for LocalPhase2Adapter {
             }
         }
         let file = open_path_on_host(path, &mut opts).map_err(map_io_error)?;
+        if !matches!(mode, OpenMode::Read) {
+            fs_watch::host_wrote(path);
+        }
         self.insert_resource(LocalResource::File(file))
     }
 
@@ -3455,41 +3463,53 @@ fn read_dir_on_host(path: &Path) -> std::io::Result<std::fs::ReadDir> {
 
 #[cfg(feature = "phase2-bindings")]
 fn remove_file_on_host(path: &Path) -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        host_os_adapter::remove_file(path)
-    }
+    let done = {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            host_os_adapter::remove_file(path)
+        }
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        std::fs::remove_file(path)
-    }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            std::fs::remove_file(path)
+        }
+    };
+    fs_watch::host_wrote(path);
+    done
 }
 
 #[cfg(feature = "phase2-bindings")]
 fn remove_dir_on_host(path: &Path) -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        host_os_adapter::remove_dir(path)
-    }
+    let done = {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            host_os_adapter::remove_dir(path)
+        }
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        std::fs::remove_dir(path)
-    }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            std::fs::remove_dir(path)
+        }
+    };
+    fs_watch::host_wrote(path);
+    done
 }
 
 #[cfg(feature = "phase2-bindings")]
 fn create_dir_on_host(path: &Path) -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        host_os_adapter::create_dir(path)
-    }
+    let done = {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            host_os_adapter::create_dir(path)
+        }
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        std::fs::create_dir(path)
-    }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            std::fs::create_dir(path)
+        }
+    };
+    fs_watch::host_wrote(path);
+    done
 }
 
 /// Move `path` to the computer's Trash (K-1337).
@@ -3499,40 +3519,50 @@ fn create_dir_on_host(path: &Path) -> std::io::Result<()> {
 /// same seam as `KRATE_PRINT_TO`).
 #[cfg(feature = "phase2-bindings")]
 fn trash_on_host(path: &Path) -> std::result::Result<(), AdapterError> {
-    if let Some(dir) = std::env::var_os("KRATE_TRASH_TO") {
-        let dir = PathBuf::from(dir);
-        std::fs::create_dir_all(&dir).map_err(map_io_error)?;
-        let name = path.file_name().map(PathBuf::from).unwrap_or_default();
-        let mut to = dir.join(&name);
-        let mut n = 1;
-        while to.exists() {
-            n += 1;
-            to = dir.join(format!("{} {n}", name.display()));
+    let done = (|| {
+        if let Some(dir) = std::env::var_os("KRATE_TRASH_TO") {
+            let dir = PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).map_err(map_io_error)?;
+            let name = path.file_name().map(PathBuf::from).unwrap_or_default();
+            let mut to = dir.join(&name);
+            let mut n = 1;
+            while to.exists() {
+                n += 1;
+                to = dir.join(format!("{} {n}", name.display()));
+            }
+            return std::fs::rename(path, to).map_err(map_io_error);
         }
-        return std::fs::rename(path, to).map_err(map_io_error);
-    }
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        trash::delete(path).map_err(|err| AdapterError::Io(format!("the Trash refused it: {err}")))
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        let _ = path;
-        Err(AdapterError::Unsupported)
-    }
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            trash::delete(path)
+                .map_err(|err| AdapterError::Io(format!("the Trash refused it: {err}")))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            let _ = path;
+            Err(AdapterError::Unsupported)
+        }
+    })();
+    fs_watch::host_wrote(path);
+    done
 }
 
 #[cfg(feature = "phase2-bindings")]
 fn rename_path_on_host(from: &Path, to: &Path) -> std::io::Result<()> {
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        host_os_adapter::rename_path(from, to)
-    }
+    let done = {
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        {
+            host_os_adapter::rename_path(from, to)
+        }
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        std::fs::rename(from, to)
-    }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            std::fs::rename(from, to)
+        }
+    };
+    fs_watch::host_wrote(from);
+    fs_watch::host_wrote(to);
+    done
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -3665,21 +3695,25 @@ fn read_path_on_host(path: &Path) -> std::io::Result<Vec<u8>> {
 }
 
 fn create_dir_all_on_host(path: &Path) -> std::io::Result<()> {
-    #[cfg(all(
-        feature = "phase2-bindings",
-        any(target_os = "linux", target_os = "macos", target_os = "windows")
-    ))]
-    {
-        host_os_adapter::create_dir_all(path)
-    }
+    let done = {
+        #[cfg(all(
+            feature = "phase2-bindings",
+            any(target_os = "linux", target_os = "macos", target_os = "windows")
+        ))]
+        {
+            host_os_adapter::create_dir_all(path)
+        }
 
-    #[cfg(not(all(
-        feature = "phase2-bindings",
-        any(target_os = "linux", target_os = "macos", target_os = "windows")
-    )))]
-    {
-        std::fs::create_dir_all(path)
-    }
+        #[cfg(not(all(
+            feature = "phase2-bindings",
+            any(target_os = "linux", target_os = "macos", target_os = "windows")
+        )))]
+        {
+            std::fs::create_dir_all(path)
+        }
+    };
+    fs_watch::host_wrote(path);
+    done
 }
 
 #[cfg(feature = "phase2-bindings")]

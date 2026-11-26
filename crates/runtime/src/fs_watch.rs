@@ -59,6 +59,48 @@ pub struct Change {
     pub is_dir: bool,
 }
 
+/// The files this process changed lately (a write, a remove, a rename, a
+/// new folder, a trash), numbered. The system's notice can arrive a beat
+/// after the change -- FSEvents does -- so a look straight after the app's
+/// own write found nothing and reported it one look late (K-1384). A watch
+/// looks now when one of these landed inside its folder since its last look.
+static HOST_WRITES: std::sync::Mutex<(u64, std::collections::VecDeque<(u64, std::path::PathBuf)>)> =
+    std::sync::Mutex::new((0, std::collections::VecDeque::new()));
+
+/// How many recent changes are kept; a watch further behind than this just
+/// looks, which costs one scan and loses nothing.
+const HOST_WRITES_KEPT: usize = 64;
+
+/// Note that this process changed `path`, for the next look of any watch
+/// over it.
+pub(crate) fn host_wrote(path: &std::path::Path) {
+    if let Ok(mut log) = HOST_WRITES.lock() {
+        log.0 += 1;
+        let n = log.0;
+        if log.1.len() == HOST_WRITES_KEPT {
+            log.1.pop_front();
+        }
+        log.1.push_back((n, path.to_path_buf()));
+    }
+}
+
+/// The latest change's number, and whether one after `seen` landed in
+/// `folder` (or the log no longer reaches back that far).
+fn host_wrote_in(folder: Option<&std::path::Path>, seen: u64) -> (u64, bool) {
+    let Ok(log) = HOST_WRITES.lock() else {
+        return (seen, false);
+    };
+    let Some(folder) = folder else {
+        return (log.0, false);
+    };
+    let lost = log.1.front().is_some_and(|(n, _)| *n > seen + 1);
+    let inside = log
+        .1
+        .iter()
+        .any(|(n, path)| *n > seen && path.starts_with(folder));
+    (log.0, lost || inside)
+}
+
 /// What one entry looked like: folder or not, size, modified time.
 type Seen = (bool, u64, u64);
 
@@ -69,6 +111,10 @@ struct Watch {
     /// Raised by the system's change notice; `None` where there is none,
     /// and then every look scans.
     changed: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// The folder on this computer, for this process's own changes.
+    host: Option<std::path::PathBuf>,
+    /// The last of this process's changes the last look came after.
+    writes_seen: u64,
     /// When the look being made now began, to time it.
     look_began: Option<Instant>,
     /// How long a quiet watch goes between safety looks: `SAFETY_LOOK`,
@@ -150,6 +196,8 @@ impl Watches {
                 seen: snapshot(entries),
                 looked: Instant::now(),
                 changed,
+                writes_seen: host_wrote_in(None, 0).0,
+                host: host.map(std::path::Path::to_path_buf),
                 look_began: None,
                 safety: SAFETY_LOOK,
                 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
@@ -167,12 +215,14 @@ impl Watches {
             None => Due::Unknown,
             Some(watch) if watch.looked.elapsed() < MIN_INTERVAL => Due::Later,
             Some(watch) => {
+                let (writes, wrote) = host_wrote_in(watch.host.as_deref(), watch.writes_seen);
                 if let Some(flag) = &watch.changed {
-                    let quiet = !flag.swap(false, std::sync::atomic::Ordering::SeqCst);
-                    if quiet && watch.looked.elapsed() < watch.safety {
+                    let raised = flag.swap(false, std::sync::atomic::Ordering::SeqCst);
+                    if !raised && !wrote && watch.looked.elapsed() < watch.safety {
                         return Due::Later;
                     }
                 }
+                watch.writes_seen = writes;
                 watch.look_began = Some(Instant::now());
                 Due::Now(&watch.path)
             }
@@ -375,6 +425,38 @@ mod tests {
             Duration::from_secs(30)
         );
         assert_eq!(safety_after(Duration::from_secs(10)), SAFETY_LOOK_MAX);
+    }
+
+    /// K-1384: this process's own change inside the folder makes the next
+    /// look due before any system notice comes; one elsewhere does not.
+    #[test]
+    fn the_apps_own_change_makes_a_look_due_at_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let mut watches = Watches::default();
+        let id = watches.start("vault", Vec::new(), Some(dir.path()));
+        // A watch with no system notice scans every look anyway; this is
+        // about the one that has it, waiting on a notice not yet come.
+        if !watches.has_notice(id) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = matches!(watches.due(id), Due::Now(_));
+        std::thread::sleep(MIN_INTERVAL + Duration::from_millis(50));
+        let _ = matches!(watches.due(id), Due::Now(_));
+        std::thread::sleep(MIN_INTERVAL + Duration::from_millis(50));
+        // No file is touched, so no system notice can come: only the note.
+        host_wrote(&elsewhere.path().join("other.md"));
+        assert!(
+            matches!(watches.due(id), Due::Later),
+            "a change outside the folder is not a reason to look"
+        );
+        std::thread::sleep(MIN_INTERVAL + Duration::from_millis(50));
+        host_wrote(&dir.path().join("note.md"));
+        assert!(
+            matches!(watches.due(id), Due::Now(_)),
+            "the app's own change inside the folder is"
+        );
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
