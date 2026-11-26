@@ -15,6 +15,20 @@ Pre-1.0: breaking changes may occur in any minor release.
 
 Contributors: add a line here with your change.
 
+## [0.6.2] - 2026-11-26
+
+- Krate in Claude Desktop: one file to open, one Install click, then Claude makes an app and it opens in its own window on your computer (krate.tech/claude).
+- Apps start faster the first time: a quick build runs at once and the optimized one is kept for the next start.
+- An app left alone uses almost no processor: only what changed is drawn, and Krate rests while it waits.
+- Studio updates itself in place on every system, with no disk image window or wizard.
+- Studio has an inbox under the bell, with replies to the reports you send.
+- Studio's IDE starts from a real starter: a game, a dashboard, a 3D scene or a focus timer.
+- On a phone, Studio's App side works, the box stays above Safari's bar, and Run opens the app.
+- Apps can have real menus, a tray icon, more than one window, the computer's spell checker, and send a file to the Trash.
+- Apps can show PDF pages and their text, draw turned text, and play video and sound from anywhere they can read, faster or slower, at any volume, in a floating window.
+- Wrap an existing web app: `krate port --web` and krate:ui/app-view.
+- Check tasks can right-click, drag, double-click, hold Alt and act on a second window.
+
 ## [0.6.1] - 2026-11-22
 
 - Krate asks when a newer version is ready: install and restart, or later. Later asks again the next day, never sooner.

@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "krate"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "dlmalloc",
  "libm",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "krate-c-runtime"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "krate",
  "wit-bindgen-rt",
