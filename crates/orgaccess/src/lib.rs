@@ -478,7 +478,12 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let staged = path.with_extension(format!("json.{}", std::process::id()));
+    // Unique per write, not per process: two threads of one app can keep the
+    // same file at once (the device key on first open), and a shared staged
+    // name lets the first rename take the second's file away (K-1384).
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let staged = path.with_extension(format!("json.{}.{n}", std::process::id()));
     std::fs::write(&staged, text)?;
     #[cfg(unix)]
     {
@@ -1275,6 +1280,27 @@ pub fn key_standing<D: Device + ?Sized>(device: &D, opened: &Opened) -> KeyStand
 
 #[cfg(test)]
 mod tests {
+    /// K-1384: threads of one app keeping one file at once all succeed.
+    #[test]
+    fn writes_of_one_file_at_once_never_take_each_others_file() {
+        let dir = std::env::temp_dir().join(format!("krate-orgaccess-race-{}", std::process::id()));
+        let path = dir.join("org-key.json");
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    (0..200).all(|_| super::write_private(&path, &format!("{{\"t\":{i}}}")).is_ok())
+                })
+            })
+            .collect();
+        let all = threads.into_iter().all(|t| t.join().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            all,
+            "a write lost its staged file to another thread's rename"
+        );
+    }
+
     use super::*;
 
     #[test]

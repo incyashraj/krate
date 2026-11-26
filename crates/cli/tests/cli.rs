@@ -25161,8 +25161,15 @@ fn org_team_data_is_sealed_shared_by_two_members_and_its_key_travels_device_to_d
     // The key arrived: who() fills on the same sync, and the write made
     // while waiting went up with it.
     assert_eq!(out[2], "who alice owner Acme", "{out:?} {err}");
-    assert_eq!(
-        out[3], "status synced pending=0 reached=true org=Acme",
+    // Nothing waits and the hub was reached. A background round the write
+    // started may still be running on a busy machine, which status reports
+    // truthfully as syncing (K-1384), so either word is right here.
+    assert!(
+        [
+            "status synced pending=0 reached=true org=Acme",
+            "status syncing pending=0 reached=true org=Acme"
+        ]
+        .contains(&out[3].as_str()),
         "{out:?} {err}"
     );
 

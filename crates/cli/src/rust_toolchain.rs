@@ -725,7 +725,13 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name} not set: {vars:?}"))
         };
         // `rust-lld` by name, so rustc passes ld64's flags, not a cc driver's.
-        assert!(get("CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER").ends_with("/rust-lld"));
+        // By file name: the test runs on every OS, and Windows joins with `\`.
+        let linker = get("CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER");
+        assert_eq!(
+            std::path::Path::new(&linker).file_name(),
+            Some(std::ffi::OsStr::new("rust-lld")),
+            "{linker}"
+        );
         assert!(get("SDKROOT").ends_with("sdk"));
         assert!(get("CARGO_HOME").ends_with("cargo-home"));
         assert!(get("RUSTC").contains("bin"));
