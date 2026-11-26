@@ -737,7 +737,11 @@ mod tests {
             (at - wall).abs() < 80,
             "kept to the clock: {at} ms at {wall} ms"
         );
-        assert!(frames >= 8, "frames advance: {frames} in 400 ms at 30 fps");
+        // About 12 are due. A busy machine decodes fewer and shows only the
+        // newest of those due (the test below), which is right; the clock
+        // check above is what holds the pace. A CI runner under the whole
+        // suite showed 4 (K-1383), so this asks only that pictures move on.
+        assert!(frames >= 3, "frames advance: {frames} in 400 ms at 30 fps");
 
         // Twice as fast: the clock moves twice as far (K-1357).
         control(video, Control::Rate(2.0)).unwrap();

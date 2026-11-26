@@ -812,7 +812,7 @@ impl super::Runtime {
                 }
                 Ok(UpdateDeadline::Continue(super::EPOCH_TICKS_PER_PUMP))
             });
-            self.start_epoch_ticker();
+            super::start_epoch_ticker(&self.engine);
         } else {
             quiet_epoch(&mut store);
         }

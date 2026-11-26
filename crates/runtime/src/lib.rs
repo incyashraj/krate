@@ -1513,11 +1513,6 @@ impl Runtime {
         Ok(store)
     }
 
-    /// Tick this runtime's engine's epoch: see [`start_epoch_ticker`].
-    fn start_epoch_ticker(&self) {
-        start_epoch_ticker(&self.engine);
-    }
-
     fn run_phase1_component(
         &self,
         component: &LoadedComponent,
@@ -4479,10 +4474,10 @@ mod tests {
             ..super::Config::default()
         };
         let first = super::Runtime::new(&config).expect("first runtime");
-        first.start_epoch_ticker();
+        super::start_epoch_ticker(&first.engine);
         drop(first);
         let second = super::Runtime::new(&config).expect("second runtime");
-        second.start_epoch_ticker();
+        super::start_epoch_ticker(&second.engine);
         let bytes =
             wat::parse_str(r#"(module (func (export "spin") (loop br 0)))"#).expect("spin module");
         let module = wasmtime::Module::from_binary(&second.engine, &bytes).expect("compile");
