@@ -38,6 +38,7 @@ mod player;
 mod port_oracle;
 mod port_report;
 mod progress;
+mod rust_toolchain;
 mod sdk;
 mod sdk_reference;
 mod speech_model;
@@ -414,20 +415,32 @@ enum Command {
     Version,
     /// Check the local development environment.
     Doctor,
-    /// Fetch a toolchain app builds use into Krate's own folder. `wasi-sdk`
-    /// is the C compiler for apps whose crates compile C (SQLite, ring,
-    /// zstd): the pinned release for this machine, checksum-verified.
+    /// Fetch a toolchain app builds use into Krate's own folder, pinned and
+    /// checksum-verified. `rust` is Rust itself (rustc, cargo and the wasm
+    /// standard library) for a machine with no rustup, so apps build with no
+    /// other install; it never touches your own rustup or ~/.cargo.
+    /// `wasi-sdk` is the C compiler for apps whose crates compile C (SQLite,
+    /// ring, zstd).
     Setup {
-        /// What to set up: `wasi-sdk`.
+        /// What to set up: `rust` or `wasi-sdk`.
         #[arg(value_name = "TOOL")]
         what: String,
-        /// Install from this local copy of the release archive instead of
-        /// downloading it.
-        #[arg(long, value_name = "ARCHIVE")]
+        /// Install from a local copy instead of downloading: the release
+        /// archive for `wasi-sdk`, a folder holding the release archives for
+        /// `rust`.
+        #[arg(long, value_name = "PATH")]
         from: Option<PathBuf>,
-        /// The SHA-256 the archive must have, instead of Krate's pinned one.
+        /// The SHA-256 the archive must have, instead of Krate's pinned one
+        /// (`wasi-sdk` only).
         #[arg(long, value_name = "HEX")]
         sha256: Option<String>,
+        /// Only say whether this machine can already build apps, and what
+        /// setting up would download. Changes nothing.
+        #[arg(long)]
+        status: bool,
+        /// One JSON object (with --status) or one JSON line per step.
+        #[arg(long)]
+        json: bool,
     },
     /// Your Krate account: who is signed in, sign in, sign out. Sign-in is
     /// GitHub's device flow -- a code, a browser page, and the wait ends the
@@ -509,6 +522,22 @@ enum Command {
         /// Print one machine-readable JSON object instead of human lines. The
         /// object names the stage that failed and carries the actionable fix,
         /// so an agent can branch on it. Errors are reported as JSON too.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Package an app folder into a finished .krate: build it if needed,
+    /// refuse anything that imports more than `krate:*`, carry its source and
+    /// assets, and sign it as its maker. What the MCP server's
+    /// `krate_package` runs on a folder `krate_check` passed (IC-1005).
+    #[command(name = "package-app", hide = true)]
+    PackageApp {
+        /// The app directory (Cargo.toml, src/lib.rs, manifest.toml).
+        dir: PathBuf,
+        /// Where to write the .krate. Defaults to `~/Krate Apps/<App Name>.krate`.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// One JSON object instead of a human line.
         #[arg(long)]
         json: bool,
     },
@@ -2623,7 +2652,16 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::Doctor => doctor(),
-        Command::Setup { what, from, sha256 } => setup(&what, from.as_deref(), sha256.as_deref()),
+        Command::Setup {
+            what,
+            from,
+            sha256,
+            status,
+            json,
+        } => match what.as_str() {
+            "rust" => setup_rust(from.as_deref(), status, json),
+            _ => setup(&what, from.as_deref(), sha256.as_deref()),
+        },
         Command::Account { action, json } => account_command(action, json),
         Command::Ai { json } => ai_status(json),
         Command::ApiKey { action, vendor } => api_key_command(&action, vendor.as_deref()),
@@ -2634,6 +2672,7 @@ fn run() -> Result<u8> {
             no_run,
             json,
         } => check_app(&dir, shoot.as_deref(), no_run, json),
+        Command::PackageApp { dir, output, json } => package_app(&dir, output.as_deref(), json),
         Command::Accept {
             bundle,
             reviewer,
@@ -16585,6 +16624,12 @@ fn repoint_app_sdk(app_dir: &Path) {
     let Ok(current) = sdk::ensure_materialized() else {
         return;
     };
+    // An app written in a chat names the SDK by the pack's `<sdk>`
+    // placeholder or the examples' repository paths (IC-1005).
+    let text = match sdk::resolve_sdk_paths(&text, app_dir, &current) {
+        Some(resolved) if std::fs::write(&cargo, &resolved).is_ok() => resolved,
+        _ => text,
+    };
     if let Some((repointed, old)) = sdk::repoint_cached_sdk(&text, &current) {
         if std::fs::write(&cargo, repointed).is_ok() {
             eprintln!(
@@ -16686,6 +16731,25 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         mark_leaf_used(&per_app, app_dir);
         prune_build_cache(&shared, &per_app);
         command.env("CARGO_TARGET_DIR", &per_app);
+    }
+
+    // No Rust of the person's own that can build an app, and Krate's own is
+    // set up: build with Krate's (IC-1005). Theirs, when it works, is never
+    // replaced.
+    if let Some(toolchain) = rust_toolchain::for_builds() {
+        rust_toolchain::apply(&mut command, &toolchain);
+        if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
+            let current = std::env::var_os("PATH").unwrap_or_default();
+            let path = std::env::join_paths(
+                [toolchain.root.join("bin"), dir.to_path_buf()]
+                    .into_iter()
+                    .chain(std::env::split_paths(&current)),
+            );
+            if let Ok(path) = path {
+                command.env("PATH", path);
+            }
+        }
+        return command;
     }
 
     #[cfg(windows)]
@@ -23971,7 +24035,7 @@ fn count_files(dir: &Path) -> usize {
 /// `krate setup wasi-sdk` (IC-941).
 fn setup(what: &str, from: Option<&Path>, sha256: Option<&str>) -> Result<u8> {
     if what != "wasi-sdk" {
-        anyhow::bail!("Krate can set up `wasi-sdk`; `{what}` is not one it knows");
+        anyhow::bail!("Krate can set up `rust` and `wasi-sdk`; `{what}` is not one it knows");
     }
     if from.is_none() {
         if let Some(sdk) = wasi_sdk::find() {
@@ -23988,6 +24052,120 @@ fn setup(what: &str, from: Option<&Path>, sha256: Option<&str>) -> Result<u8> {
         wasi_sdk::VERSION,
         sdk.root.display()
     );
+    Ok(0)
+}
+
+/// Whether this machine can build an app, and what would make it able to.
+///
+/// `ready` is the one answer the MCP server needs before a check or build:
+/// false means a build would fail for want of Rust, and `download_bytes` is
+/// what `krate setup rust` fetches to fix it.
+fn builder_status() -> serde_json::Value {
+    let own = rust_toolchain::find();
+    let person = rust_toolchain::person_rust_ready();
+    let cargo_component = resolve_tool("cargo-component");
+    let rust = if person {
+        "yours"
+    } else if own.is_some() {
+        "krate"
+    } else {
+        "none"
+    };
+    serde_json::json!({
+        "ready": (person || own.is_some()) && cargo_component.is_some(),
+        "rust": rust,
+        "krate_rust": own.map(|t| t.root.display().to_string()),
+        "cargo_component": cargo_component.map(|p| p.display().to_string()),
+        "can_set_up": rust_toolchain::host().is_some(),
+        "download_bytes": rust_toolchain::download_bytes(),
+        "version": rust_toolchain::VERSION,
+    })
+}
+
+/// `krate setup rust`: Krate's own Rust for app builds (IC-1005).
+fn setup_rust(from: Option<&Path>, status_only: bool, json: bool) -> Result<u8> {
+    let status = builder_status();
+    if status_only {
+        if json {
+            println!("{status}");
+        } else {
+            match status["rust"].as_str() {
+                Some("yours") => println!("Apps build with your own Rust (rustup)."),
+                Some("krate") => println!(
+                    "Apps build with Krate's own Rust {} ({}).",
+                    rust_toolchain::VERSION,
+                    status["krate_rust"].as_str().unwrap_or("")
+                ),
+                _ => println!(
+                    "No Rust that can build an app. `krate setup rust` fetches Krate's own, about {} MB, once.",
+                    status["download_bytes"].as_u64().unwrap_or(0) / 1_000_000
+                ),
+            }
+            if status["cargo_component"].is_null() {
+                println!(
+                    "cargo-component is missing: it ships beside krate in every release; reinstall Krate."
+                );
+            }
+        }
+        return Ok(0);
+    }
+    if from.is_none() {
+        if let Some(toolchain) = rust_toolchain::find() {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({"step": "done", "root": toolchain.root.display().to_string(), "already": true})
+                );
+            } else {
+                println!(
+                    "Krate's Rust {} is already here: {}",
+                    rust_toolchain::VERSION,
+                    toolchain.root.display()
+                );
+            }
+            return Ok(0);
+        }
+    }
+    if !json {
+        println!(
+            "Setting up Krate's builder, one time: Rust {} for this computer, about {} MB.",
+            rust_toolchain::VERSION,
+            rust_toolchain::download_bytes().unwrap_or(0) / 1_000_000
+        );
+    }
+    let mut report = |step: rust_toolchain::Step| match step {
+        rust_toolchain::Step::Download { part, done, total } => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({"step": "download", "part": part, "done": done, "total": total})
+                );
+            } else if done == 0 {
+                println!("  downloading {part} ({} MB)", total / 1_000_000);
+            }
+        }
+        rust_toolchain::Step::Unpack { part } => {
+            if json {
+                println!("{}", serde_json::json!({"step": "unpack", "part": part}));
+            } else {
+                println!("  checked and unpacking {part}");
+            }
+        }
+        rust_toolchain::Step::Done => {}
+    };
+    let toolchain = rust_toolchain::install(from, &mut report)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({"step": "done", "root": toolchain.root.display().to_string(), "already": false})
+        );
+    } else {
+        println!(
+            "Krate's Rust {} is set up at {}. Apps now build on this computer.",
+            rust_toolchain::VERSION,
+            toolchain.root.display()
+        );
+    }
     Ok(0)
 }
 
@@ -24008,6 +24186,7 @@ fn doctor() -> Result<u8> {
     print_jco_status();
     println!();
     print_rust_toolchain_status();
+    println!("{}", rust_toolchain::doctor_line());
     println!();
     println!("C for apps");
     println!("{}", wasi_sdk::doctor_line());
@@ -25076,6 +25255,116 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
             Ok(failure.stage.exit_code())
         }
     }
+}
+
+/// `krate package-app`: an app folder to a finished, signed `.krate`.
+fn package_app(dir: &Path, output: Option<&Path>, json: bool) -> Result<u8> {
+    let outcome = package_app_dir(dir, output);
+    match (&outcome, json) {
+        (Ok(done), true) => println!("{done}"),
+        (Ok(done), false) => println!(
+            "packaged {} ({} bytes)",
+            done["path"].as_str().unwrap_or(""),
+            done["bytes"]
+        ),
+        (Err(err), true) => {
+            println!(
+                "{}",
+                serde_json::json!({"ok": false, "error": format!("{err:#}")})
+            );
+            return Ok(1);
+        }
+        (Err(_), false) => {}
+    }
+    outcome.map(|_| 0)
+}
+
+fn package_app_dir(dir: &Path, output: Option<&Path>) -> Result<serde_json::Value> {
+    if !dir.join("manifest.toml").is_file() || !dir.join("Cargo.toml").is_file() {
+        bail!(
+            "{} is not an app folder: it needs Cargo.toml, src/lib.rs and manifest.toml",
+            dir.display()
+        );
+    }
+    let manifest_src = dir.join("manifest.toml");
+    let manifest = krate_manifest::Manifest::parse_file(&manifest_src)
+        .with_context(|| format!("read {}", manifest_src.display()))?;
+    let destination = match output {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let home = home_dir().context("no home directory")?;
+            let folder = home.join("Krate Apps");
+            fs::create_dir_all(&folder).with_context(|| format!("create {}", folder.display()))?;
+            let stem: String = manifest
+                .app
+                .name
+                .trim()
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == ' ' || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect();
+            let stem = stem.trim().trim_matches('-');
+            folder.join(format!(
+                "{}.krate",
+                if stem.is_empty() { "app" } else { stem }
+            ))
+        }
+    };
+    // Built quietly: the compiler's words go to stderr, never into the JSON.
+    let wasm = build_component_captured(dir).map_err(|why| anyhow::anyhow!(why))?;
+    let wasm_bytes = fs::read(&wasm).with_context(|| format!("read {}", wasm.display()))?;
+    let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes)
+        .map_err(|err| anyhow::anyhow!(err))?;
+    if !bad.is_empty() {
+        bail!(
+            "the app imports host APIs that are not Krate's, so it cannot run under Krate: {}. \
+             Run check-app on it for the fix.",
+            bad.join(", ")
+        );
+    }
+    let pack_dir = tempfile::tempdir().context("pack dir")?;
+    let code = pack_dir.path().join("code.wasm");
+    fs::copy(&wasm, &code)?;
+    let packed_manifest = pack_dir.path().join("manifest.toml");
+    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
+    let assets = dir.join("assets");
+    let mut staged = StagedOutput::beside(&destination)?;
+    let size = krate_bundle::pack_with_lineage(
+        &packed_manifest,
+        &code,
+        assets.is_dir().then_some(assets.as_path()),
+        Some(dir),
+        None,
+        None,
+        staged.path(),
+    )
+    .with_context(|| format!("pack {}", destination.display()))?;
+    sign_as_maker(staged.path(), &mut Vec::new(), true);
+    staged.promote()?;
+    let requests: Vec<serde_json::Value> = manifest
+        .capabilities
+        .iter()
+        .map(|request| {
+            serde_json::json!({
+                "capability": request.cap,
+                "rationale": request.rationale,
+                "required": request.required,
+            })
+        })
+        .collect();
+    let bytes = fs::metadata(&destination).map(|m| m.len()).unwrap_or(size);
+    Ok(serde_json::json!({
+        "ok": true,
+        "path": destination.display().to_string(),
+        "bytes": bytes,
+        "name": manifest.app.name,
+        "requested_permissions": requests,
+    }))
 }
 
 /// What a passing `check-app` recorded, for the OK summary.
@@ -27327,6 +27616,12 @@ fn working_windows_toolchain() -> Option<String> {
 
 fn missing_create_tools() -> Vec<MissingTool> {
     let mut missing = Vec::new();
+
+    // Krate's own Rust builds the app when the person has none (IC-1005);
+    // with it and cargo-component beside krate, nothing is missing.
+    if rust_toolchain::find().is_some() && resolve_tool("cargo-component").is_some() {
+        return missing;
+    }
 
     let have_cargo = has_tool("cargo", &["--version"]);
     if !have_cargo {

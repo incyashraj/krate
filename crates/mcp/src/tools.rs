@@ -19,6 +19,7 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
+use crate::builder::Builder;
 use crate::examples;
 use crate::jobs::{Author, BuildSpec, JobStore, Phase};
 use crate::protocol::ToolSet;
@@ -43,11 +44,14 @@ pub struct KrateTools {
     /// Generates the authoring pack. Injected so this crate does not depend on
     /// the CLI (which depends on the runtime, wasmtime, and everything else).
     schema: fn(&Path) -> String,
+    /// Sets up Krate's own Rust the first time a build needs it (IC-1005).
+    builder: Builder,
 }
 
 impl KrateTools {
     pub fn new(krate_bin: PathBuf, root: PathBuf, schema: fn(&Path) -> String) -> Self {
         Self {
+            builder: Builder::new(krate_bin.clone()),
             krate_bin,
             root,
             jobs: JobStore::new(),
@@ -110,7 +114,14 @@ is ready before status says `succeeded`.
 The one hard rule an app must obey: it may import only `krate:*` interfaces. \
 Reaching the operating system through `std` pulls in `wasi:*` imports and the \
 app is rejected. `krate_check` is the oracle that tells you, for code you wrote, \
-whether it builds, imports only `krate:*`, runs, and paints a frame.";
+whether it builds, imports only `krate:*`, runs, and paints a frame.
+
+In a chat (Claude Desktop and the like) you are the author: write the three files \
+yourself, pass them to `krate_check` in `files` until it reports ok, look at the \
+frame `krate_run` renders, then `krate_package` with the checked `dir` and \
+`krate_open` with the path it returns. The very first check on a computer may \
+answer `setting_up` while Krate fetches its builder, once: say so to the person \
+and call the same tool again.";
 
 /// Every tool definition, in the order a model should meet them.
 fn tool_definitions() -> Vec<Value> {
@@ -238,20 +249,23 @@ fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "krate_package",
             "title": "Get the finished .krate",
-            "description": "The finished `.krate` from a successful build: its path on this \
-                machine, its size, what permissions it asks for, and -- for small bundles -- the \
-                file itself as base64 for clients that cannot reach the filesystem. Tell the \
-                person the local path; that is the file they send to someone else.",
+            "description": "The finished `.krate`: its path on this machine, its size, what \
+                permissions it asks for, and -- for small bundles -- the file itself as base64 \
+                for clients that cannot reach the filesystem. Pass `dir` (the `checked_dir` a \
+                passing krate_check reported) to package code you wrote; it lands in the \
+                person's Krate Apps folder. Or pass `job_id` for a krate_start_build build. \
+                Then call krate_open with the returned `path` so the person sees the app. Tell \
+                the person the local path; that is the file they send to someone else.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "dir": { "type": "string", "description": "An app folder krate_check passed (its `checked_dir`)." },
                     "job_id": { "type": "string", "description": "The id of a build that succeeded." },
                     "include_base64": {
                         "type": "boolean",
                         "description": "Include the bundle bytes inline as base64. Defaults to false; only useful when you cannot reach the local filesystem.",
                     },
                 },
-                "required": ["job_id"],
                 "additionalProperties": false,
             },
         }),
@@ -442,6 +456,10 @@ impl KrateTools {
             );
         }
 
+        if let Err(answer) = self.builder.ensure() {
+            return Ok(answer);
+        }
+
         let id = self.jobs.start(BuildSpec {
             krate_bin: self.krate_bin.clone(),
             description: description.to_string(),
@@ -533,6 +551,13 @@ impl KrateTools {
     }
 
     fn check(&self, arguments: &Value) -> Result<Value, String> {
+        // The first build on a computer with no Rust sets Krate's up instead
+        // of failing on cargo's error (IC-1005). Asked before anything is
+        // written, so a call that only reports setup leaves no scratch copy.
+        if let Err(answer) = self.builder.ensure() {
+            return Ok(answer);
+        }
+
         // Three ways to name what to check, in order of directness.
         let (dir, _scratch) = if let Some(dir) = arguments.get("dir").and_then(Value::as_str) {
             (PathBuf::from(dir), None)
@@ -618,11 +643,16 @@ impl KrateTools {
     }
 
     fn package(&self, arguments: &Value) -> Result<Value, String> {
+        if let Some(dir) = arguments.get("dir").and_then(Value::as_str) {
+            return self.package_dir(Path::new(dir), arguments);
+        }
         let id = arguments
             .get("job_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                "krate_package needs `job_id`, the id of a build that succeeded".to_string()
+                "krate_package needs `dir` (an app folder krate_check passed) or `job_id` (a \
+                 build that succeeded)"
+                    .to_string()
             })?;
         let job = self.jobs.get(id).ok_or_else(|| self.no_such_job(id))?;
 
@@ -692,6 +722,75 @@ impl KrateTools {
         Ok(result)
     }
 
+    /// Package an app folder the model wrote and krate_check passed, through
+    /// `krate package-app`: built if needed, `krate:*` imports only, source
+    /// and assets carried, signed as its maker, into the person's Krate Apps
+    /// folder.
+    fn package_dir(&self, dir: &Path, arguments: &Value) -> Result<Value, String> {
+        if !dir.is_dir() {
+            return Err(format!(
+                "{} is not a directory. Pass the `checked_dir` a passing krate_check reported.",
+                dir.display()
+            ));
+        }
+        if let Err(answer) = self.builder.ensure() {
+            return Ok(answer);
+        }
+        let mut command = Command::new(&self.krate_bin);
+        command.arg("package-app").arg(dir).arg("--json");
+        let output = run_with_timeout(command, CHECK_TIMEOUT)?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let parsed: Option<Value> = text
+            .lines()
+            .rev()
+            .find(|line| line.trim_start().starts_with('{'))
+            .and_then(|line| serde_json::from_str(line).ok());
+        let Some(mut result) = parsed else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "packaging did not finish. Krate said:\n{}",
+                if stderr.trim().is_empty() {
+                    text.trim()
+                } else {
+                    stderr.trim()
+                }
+            ));
+        };
+        if result.get("ok").and_then(Value::as_bool) != Some(true) {
+            return Err(format!(
+                "Could not package {}: {}. Run krate_check on it and fix what it names.",
+                dir.display(),
+                result["error"].as_str().unwrap_or("unknown")
+            ));
+        }
+        let path = result["path"].as_str().unwrap_or_default().to_string();
+        result["next"] = json!(format!(
+            "The app is the single file at {path}. Call krate_open with this path so the person \
+             sees it now. Anyone can double-click the file to run it -- they need Krate, nothing \
+             else, and the app can only do what its permissions say."
+        ));
+        if arguments
+            .get("include_base64")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            match std::fs::read(&path) {
+                Ok(bytes) if bytes.len() as u64 <= MAX_INLINE_BYTES => {
+                    result["base64"] = json!(base64_encode(&bytes));
+                }
+                Ok(bytes) => {
+                    result["base64_omitted"] = json!(format!(
+                        "The bundle is {} bytes, over the {MAX_INLINE_BYTES}-byte inline limit. \
+                         Use the local path instead.",
+                        bytes.len()
+                    ));
+                }
+                Err(err) => return Err(format!("could not read {path}: {err}")),
+            }
+        }
+        Ok(result)
+    }
+
     fn run(&self, arguments: &Value) -> Result<Value, String> {
         let dir = if let Some(dir) = arguments.get("dir").and_then(Value::as_str) {
             PathBuf::from(dir)
@@ -710,6 +809,10 @@ impl KrateTools {
                 "{} is not a directory, so there is nothing to render.",
                 dir.display()
             ));
+        }
+
+        if let Err(answer) = self.builder.ensure() {
+            return Ok(answer);
         }
 
         let png = self.root.join("shots").join(format!(
@@ -1235,6 +1338,80 @@ mod tests {
         assert!(
             err.contains("still running") || err.contains("failed"),
             "unclear refusal: {err}"
+        );
+    }
+
+    #[test]
+    fn package_names_both_things_it_can_package() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tools = tools(dir.path());
+        let err = tools
+            .call("krate_package", &json!({}))
+            .expect_err("must fail");
+        assert!(err.contains("`dir`") && err.contains("`job_id`"), "{err}");
+        let err = tools
+            .call("krate_package", &json!({ "dir": "/no/such/app" }))
+            .expect_err("must fail");
+        assert!(err.contains("not a directory"), "{err}");
+    }
+
+    /// A folder the model wrote is packaged by `krate package-app`, and
+    /// what it printed comes back with the step after it: open the app.
+    #[cfg(unix)]
+    #[test]
+    fn package_of_a_dir_runs_package_app_and_points_at_krate_open() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let app = dir.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let bin = dir.path().join("krate");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\n[ \"$1\" = setup ] && { echo '{\"ready\":true}'; exit 0; }\n\
+             [ \"$1\" = package-app ] && [ \"$3\" = --json ] && \
+             { echo '{\"ok\":true,\"path\":\"/k/Krate Apps/Tally.krate\",\"bytes\":9}'; exit 0; }\n\
+             exit 9\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let tools = KrateTools::new(bin, dir.path().to_path_buf(), |_| String::new());
+        let done = tools
+            .call("krate_package", &json!({ "dir": app.to_str().unwrap() }))
+            .expect("packaged");
+        assert_eq!(done["path"], "/k/Krate Apps/Tally.krate");
+        assert!(done["next"].as_str().unwrap().contains("krate_open"));
+    }
+
+    /// On a computer with no Rust the first check answers that Krate is
+    /// setting its builder up -- never cargo's error, never a pass -- and
+    /// writes nothing yet (IC-1005).
+    #[cfg(unix)]
+    #[test]
+    fn a_first_check_with_no_rust_sets_up_the_builder_instead_of_failing() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bin = dir.path().join("krate");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\n[ \"$3\" = --status ] && \
+             { echo '{\"ready\":false,\"cargo_component\":\"/x\",\"can_set_up\":true,\"download_bytes\":126451384}'; exit 0; }\n\
+             sleep 5\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let tools = KrateTools::new(bin, dir.path().to_path_buf(), |_| String::new());
+        let answer = tools
+            .call(
+                "krate_check",
+                &json!({ "files": { "src/lib.rs": "// x", "Cargo.toml": "[package]" } }),
+            )
+            .expect("an answer, not an error");
+        assert_eq!(answer["status"], "setting_up");
+        assert_eq!(answer["ok"], false, "never read as a pass");
+        assert!(answer["detail"].as_str().unwrap().contains("one time"));
+        assert!(
+            !dir.path().join("checks").exists(),
+            "nothing is written while the builder is being set up"
         );
     }
 

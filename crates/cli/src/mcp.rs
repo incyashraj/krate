@@ -39,11 +39,14 @@ pub fn serve() -> Result<()> {
     // exactly how a "fixed" bug appeared to come back.
     let krate_bin = std::env::current_exe().context("locate the krate binary")?;
     let authoring = KrateTools::new(
-        krate_bin,
+        krate_bin.clone(),
         krate_mcp::mcp_root()?,
         authoring_context::generate,
     );
-    let tools = KrateServer { authoring };
+    let tools = KrateServer {
+        authoring,
+        krate_bin,
+    };
 
     // Say what this is when a person runs it by hand.
     //
@@ -80,6 +83,10 @@ pub fn serve() -> Result<()> {
 /// The whole server: the authoring tools plus the execution tools.
 struct KrateServer {
     authoring: KrateTools,
+    /// This binary, which `krate_open` and `krate_install` run as
+    /// `krate launch` / `krate install` so they open an app exactly the way
+    /// a double-click does.
+    krate_bin: PathBuf,
 }
 
 impl ToolSet for KrateServer {
@@ -96,7 +103,10 @@ impl ToolSet for KrateServer {
         // model knows both halves exist before it starts.
         self.authoring.instructions().map(|text| {
             format!(
-                "{text}\n\nThis server can also run components directly: `inspect_bundle` shows \
+                "{text}\n\nWhen the app passes, `krate_package` with its `dir` makes the .krate, \
+                 and `krate_open` opens it in a real window on this computer so the person sees \
+                 it straight away; `krate_install` keeps it in their apps when they ask.\n\n\
+                 This server can also run components directly: `inspect_bundle` shows \
                  what a .krate asks for without executing it, and `run_component` runs one with \
                  exactly the permissions you name and nothing else."
             )
@@ -117,6 +127,10 @@ impl ToolSet for KrateServer {
             // (a missing file, a bad URL) is an error.
             "run_component" => run_component_tool(arguments).map_err(|err| format!("{err:#}")),
             "inspect_bundle" => inspect_bundle_tool(arguments).map_err(|err| format!("{err:#}")),
+            "krate_open" => open_tool(&self.krate_bin, arguments).map_err(|err| format!("{err:#}")),
+            "krate_install" => {
+                install_tool(&self.krate_bin, arguments).map_err(|err| format!("{err:#}"))
+            }
             other => self.authoring.call(other, arguments),
         }
     }
@@ -124,6 +138,46 @@ impl ToolSet for KrateServer {
 
 fn execution_tools() -> Vec<Value> {
     vec![
+        json!({
+            "name": "krate_open",
+            "title": "Open an app on this computer",
+            "description": "Open a .krate in its own window on this computer, with its own name \
+                and icon, exactly as double-clicking it does. Pass the `path` krate_package \
+                returned, any .krate on this computer, or a krate.tech / hub app link. The first \
+                time an app opens, Krate shows its own permission card in that window and the \
+                person chooses there -- you cannot grant anything for them, so tell them to look \
+                at the window. Use this after packaging so the person sees their app right away.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "description": "A path to a .krate, or an https link to one (a krate.tech or hub app link)."
+                    }
+                },
+                "required": ["app"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "krate_install",
+            "title": "Keep an app on this computer",
+            "description": "Install a .krate so it stays on this computer like any other app: in \
+                Applications and Launchpad on a Mac, in the Start menu on Windows, in the app \
+                menu on Linux. The .krate file keeps working as the thing to send someone. Only \
+                when the person asks to keep or install the app; opening it does not need this.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The .krate file on this computer, e.g. the path krate_package returned."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }
+        }),
         json!({
             "name": "run_component",
             "description": "Run a Krate WebAssembly component inside the capability sandbox. \
@@ -191,6 +245,142 @@ fn execution_tools() -> Vec<Value> {
             }
         }),
     ]
+}
+
+/// How long opening may take: a link is downloaded first.
+const OPEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// `krate_open`: the app in a real window, through `krate launch`.
+///
+/// `krate launch` is the double-click path: on a Mac it wraps the app with
+/// its own name and icon and opens it through LaunchServices (a bare child
+/// process gets no window, K-110); elsewhere it starts a detached windowed
+/// run. Both show Krate's permission card on first open. Nothing here
+/// grants anything: the person answers in the app's window (IC-341).
+fn open_tool(krate_bin: &Path, arguments: &Value) -> Result<Value> {
+    let target = arguments
+        .get("app")
+        .or_else(|| arguments.get("path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .context(
+            "krate_open needs `app`: the .krate path krate_package returned, or an app link",
+        )?;
+    let name = local_app_name(target)?;
+    run_door(krate_bin, &["launch", target], OPEN_TIMEOUT)?;
+    let shown = name.as_deref().unwrap_or("The app");
+    Ok(json!({
+        "opened": true,
+        "app": target,
+        "name": name,
+        "next": format!(
+            "{shown} is open in its own window on this computer. The first time, Krate asks \
+             there what it may use; the person chooses in that window, not here. Tell them it \
+             is open, and that the .krate file is what they send to someone else."
+        ),
+    }))
+}
+
+/// `krate_install`: the app kept on this computer, through `krate install`.
+fn install_tool(krate_bin: &Path, arguments: &Value) -> Result<Value> {
+    let target = arguments
+        .get("path")
+        .or_else(|| arguments.get("app"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .context("krate_install needs `path`: a .krate file on this computer")?;
+    if krate_bundle::is_url(target) {
+        anyhow::bail!(
+            "krate_install takes a .krate file on this computer. Open the link with krate_open \
+             first, or package the app and pass its path."
+        );
+    }
+    let name = local_app_name(target)?;
+    let said = run_door(krate_bin, &["install", target], OPEN_TIMEOUT)?;
+    Ok(json!({
+        "installed": true,
+        "name": name,
+        "said": said.trim(),
+        "next": "It is installed: the person can open it from Launchpad / Applications on a Mac \
+                 or the Start menu on Windows, like any other app.",
+    }))
+}
+
+/// The app's name for a local .krate, and a plain refusal for a path that
+/// is not one. Links are named by the app once it opens.
+fn local_app_name(target: &str) -> Result<Option<String>> {
+    if krate_bundle::is_url(target) {
+        return Ok(None);
+    }
+    let path = Path::new(target);
+    if !path.exists() {
+        anyhow::bail!("no file at {target}");
+    }
+    if path.is_dir() {
+        anyhow::bail!(
+            "{target} is a folder. Package it with krate_package (pass `dir`) and open the .krate it returns."
+        );
+    }
+    let opened = krate_bundle::open(path)
+        .with_context(|| format!("{target} is not a .krate Krate can open"))?;
+    Ok(Some(opened.manifest().app.name.clone()))
+}
+
+/// Run one of this binary's own doors (`launch`, `install`) and return what
+/// it said, or what went wrong in its own words.
+fn run_door(krate_bin: &Path, args: &[&str], timeout: std::time::Duration) -> Result<String> {
+    use std::process::Stdio;
+    let mut child = std::process::Command::new(krate_bin)
+        .args(args)
+        // The MCP client owns this process's stdin and stdout; a child must
+        // never read the one or write into the other.
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not run {}", krate_bin.display()))?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let read = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_string(&mut text);
+            }
+            text
+        })
+    };
+    let out = read(stdout.map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
+    let err = read(stderr.map(|p| Box::new(p) as Box<dyn std::io::Read + Send>));
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if started.elapsed() > timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!(
+                "krate {} did not finish within {} seconds",
+                args[0],
+                timeout.as_secs()
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let said = out.join().unwrap_or_default();
+    let complaint = err.join().unwrap_or_default();
+    if !status.success() {
+        let words = if complaint.trim().is_empty() {
+            said.trim()
+        } else {
+            complaint.trim()
+        };
+        anyhow::bail!("{}", words.trim_start_matches("Error: "));
+    }
+    Ok(said)
 }
 
 /// Report what a bundle is and what it wants, without running it.
@@ -655,6 +845,7 @@ mod tests {
                 root.to_path_buf(),
                 authoring_context::generate,
             ),
+            krate_bin: root.join("krate"),
         }
     }
 
@@ -701,7 +892,10 @@ mod tests {
         // Execution: then run what you built, or inspect someone else's.
         assert!(names.contains(&"run_component"));
         assert!(names.contains(&"inspect_bundle"));
-        assert_eq!(names.len(), 9);
+        // On this computer: open what was built, keep it (IC-1005).
+        assert!(names.contains(&"krate_open"));
+        assert!(names.contains(&"krate_install"));
+        assert_eq!(names.len(), 11);
     }
 
     #[test]
@@ -779,7 +973,13 @@ required = true
     fn the_execution_tools_are_valid_mcp_tool_definitions() {
         for tool in execution_tools() {
             let name = tool["name"].as_str().expect("tool name");
-            assert!(["run_component", "inspect_bundle"].contains(&name));
+            assert!([
+                "run_component",
+                "inspect_bundle",
+                "krate_open",
+                "krate_install"
+            ]
+            .contains(&name));
             // inputSchema MUST be a JSON Schema object, never null, or a strict
             // client rejects the whole tool list.
             assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
@@ -848,6 +1048,62 @@ required = true
                 "a reason must name a capability that was actually refused: {entry}"
             );
         }
+    }
+
+    #[test]
+    fn open_says_what_is_wrong_with_a_path_in_plain_words() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bin = dir.path().join("krate");
+        let missing = dir.path().join("nope.krate");
+        let err = open_tool(&bin, &json!({ "app": missing.to_str().unwrap() }))
+            .expect_err("a missing file is refused");
+        assert!(err.to_string().contains("no file at"), "{err}");
+        let err = open_tool(&bin, &json!({ "app": dir.path().to_str().unwrap() }))
+            .expect_err("a folder is refused");
+        assert!(err.to_string().contains("krate_package"), "{err}");
+        let err = open_tool(&bin, &json!({})).expect_err("no app named");
+        assert!(err.to_string().contains("`app`"), "{err}");
+        let err = install_tool(&bin, &json!({ "path": "https://krate.tech/a/x" }))
+            .expect_err("install takes a file");
+        assert!(err.to_string().contains("krate_open"), "{err}");
+    }
+
+    /// `krate_open` is `krate launch` -- the double-click path, with its
+    /// permission card -- run by this very binary, and its refusal comes
+    /// back in its own words.
+    #[cfg(unix)]
+    #[test]
+    fn open_runs_the_launch_door_of_this_binary() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let bundle = packed_bundle(dir.path());
+        let log = dir.path().join("argv.txt");
+        let bin = dir.path().join("fake-krate");
+        std::fs::write(
+            &bin,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n[ \"$1\" = launch ] && exit 0\necho 'Error: macOS refused' >&2\nexit 1\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let opened = open_tool(&bin, &json!({ "app": bundle.to_str().unwrap() })).expect("open");
+        assert_eq!(opened["opened"], true);
+        assert_eq!(opened["name"], "Agent Demo");
+        assert!(
+            opened["next"].as_str().unwrap().contains("permission")
+                || opened["next"].as_str().unwrap().contains("chooses")
+        );
+        let argv = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(argv, format!("launch\n{}\n", bundle.display()));
+
+        let refused = install_tool(&bin, &json!({ "path": bundle.to_str().unwrap() }))
+            .expect_err("the fake refuses install");
+        assert_eq!(refused.to_string(), "macOS refused");
+        let argv = std::fs::read_to_string(&log).unwrap();
+        assert!(argv.starts_with("install\n"), "{argv}");
     }
 
     #[test]

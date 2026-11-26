@@ -31,6 +31,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+pub mod builder;
 pub mod examples;
 pub mod jobs;
 pub mod protocol;

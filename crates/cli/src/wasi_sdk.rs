@@ -375,7 +375,7 @@ fn fetch(url: &str, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn sha256_of(path: &Path) -> Result<String> {
+pub(crate) fn sha256_of(path: &Path) -> Result<String> {
     let mut file = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];

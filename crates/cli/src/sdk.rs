@@ -134,6 +134,59 @@ pub fn repoint_cached_sdk(text: &str, current: &Path) -> Option<(String, Vec<Str
     (!replaced.is_empty()).then_some((out, replaced))
 }
 
+/// Point an app's SDK paths that cannot resolve where the app sits at
+/// `current`, this binary's SDK copy (IC-1005).
+///
+/// Two spellings reach a build from an app written in a chat: the authoring
+/// pack's `<sdk>/crates/bindings-rust` placeholder, copied literally, and
+/// the shipped examples' repository paths (`../../crates/bindings-rust`,
+/// `../../wit/krate/...`), which resolve inside the Krate checkout and
+/// nowhere else. A model in Claude Desktop writes the files and never sees
+/// the cache path, so without this every first check failed on cargo's
+/// "failed to read .../crates/bindings-rust/Cargo.toml". A relative path
+/// that does resolve from `app_dir` (an app inside the checkout) is left as
+/// it is.
+pub fn resolve_sdk_paths(text: &str, app_dir: &Path, current: &Path) -> Option<String> {
+    let sdk = current.to_string_lossy().replace('\\', "/");
+    let mut out = String::with_capacity(text.len());
+    let mut changed = false;
+    let mut rest = text;
+    while let Some(at) = rest.find("path = \"") {
+        let value_start = at + "path = \"".len();
+        out.push_str(&rest[..value_start]);
+        let tail = &rest[value_start..];
+        let Some(end) = tail.find('"') else {
+            out.push_str(tail);
+            rest = "";
+            break;
+        };
+        let value = &tail[..end];
+        let replaced = if let Some(inner) = value.strip_prefix("<sdk>/") {
+            Some(format!("{sdk}/{inner}"))
+        } else {
+            let mut inner = value;
+            let mut ups = 0;
+            while let Some(next) = inner.strip_prefix("../") {
+                inner = next;
+                ups += 1;
+            }
+            let into_sdk =
+                inner.starts_with("crates/bindings-rust") || inner.starts_with("wit/krate");
+            (ups > 0 && into_sdk && !app_dir.join(value).exists()).then(|| format!("{sdk}/{inner}"))
+        };
+        match replaced {
+            Some(path) => {
+                out.push_str(&path);
+                changed = true;
+            }
+            None => out.push_str(value),
+        }
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    changed.then_some(out)
+}
+
 fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
@@ -143,8 +196,47 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod repoint_tests {
-    use super::repoint_cached_sdk;
+    use super::{repoint_cached_sdk, resolve_sdk_paths};
     use std::path::Path;
+
+    /// An app a model wrote in a chat names the SDK by the pack's
+    /// placeholder or by the examples' repository paths; both build against
+    /// this binary's copy (IC-1005). A relative path that resolves is kept.
+    #[test]
+    fn a_chat_written_app_finds_the_sdk_it_was_never_told_the_path_of() {
+        let dir = tempfile::tempdir().unwrap();
+        let sdk = Path::new("/home/a/.cache/krate/sdk/abc");
+        let text = "krate = { path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }\n\
+                    [package.metadata.component.target]\n\
+                    path = \"../../wit/krate/phase4\"\n\
+                    \"krate:io\" = { path = \"../../wit/krate/phase4/deps/io\" }\n\
+                    other = { path = \"../mine\" }\n";
+        let out = resolve_sdk_paths(text, dir.path(), sdk).expect("rewritten");
+        assert!(
+            out.contains("path = \"/home/a/.cache/krate/sdk/abc/crates/bindings-rust\""),
+            "{out}"
+        );
+        assert!(
+            out.contains("path = \"/home/a/.cache/krate/sdk/abc/wit/krate/phase4\""),
+            "{out}"
+        );
+        assert!(
+            out.contains("/home/a/.cache/krate/sdk/abc/wit/krate/phase4/deps/io\""),
+            "{out}"
+        );
+        assert!(
+            out.contains("path = \"../mine\""),
+            "an unrelated path is kept: {out}"
+        );
+        assert!(!out.contains("<sdk>"));
+
+        // Inside a checkout the relative path resolves, and is left alone.
+        let app = dir.path().join("apps/x");
+        std::fs::create_dir_all(dir.path().join("crates/bindings-rust")).unwrap();
+        std::fs::create_dir_all(&app).unwrap();
+        let checkout = "krate = { path = \"../../crates/bindings-rust\" }\n";
+        assert!(resolve_sdk_paths(checkout, &app, sdk).is_none());
+    }
 
     const OLD: &str = r#"[dependencies]
 krate = { path = "/home/a/.cache/krate/sdk/22e4ac2beb5f1dbd/crates/bindings-rust", features = ["gui"] }
