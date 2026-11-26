@@ -272,12 +272,14 @@ fn quick(canvas: u64, source: &str) -> i32 {
             if first.is_some_and(|f| s.position_millis > f + 1000) { "yes" } else { "no" },
             if volume { "ok" } else { "no" },
             // At 2x the video's clock moves about twice as far as real
-            // time; anything over 1.5x is the rate working.
+            // time. At 1x it never runs ahead of real time, so clearly more
+            // -- over 1.2x -- is the rate working; a starved CI runner
+            // stretches the sound slower than 2x (K-1384).
             match (fast, fast_last) {
-                (Some((at, from)), Some((to, until))) if rate_ok && until > from + 150_000_000 => {
+                (Some((at, from)), Some((to, until))) if rate_ok && until > from + 300_000_000 => {
                     let real = (until - from) / 1_000_000;
                     let moved = to.saturating_sub(at);
-                    if moved * 2 > real * 3 { "ok" } else { "slow" }
+                    if moved * 10 > real * 12 { "ok" } else { "slow" }
                 }
                 _ => "no",
             },
