@@ -616,10 +616,16 @@ fn play(shared: &Shared, source: &Source, output: Output) {
             } else {
                 now.max(0.0)
             };
-            inner.state.position_millis = position.round() as u64;
             inner.state.duration_millis = player.duration.round() as u64;
-            inner.state.playing = player.clock.running();
-            inner.state.ended = player.ended;
+            // A command that came while this turn ran has already set what
+            // the app reads (`control`); this turn's view is older, so it
+            // must not undo a pause or a seek the app just made (K-1385).
+            // The next turn applies the command and publishes from there.
+            if inner.commands.is_empty() {
+                inner.state.position_millis = position.round() as u64;
+                inner.state.playing = player.clock.running();
+                inner.state.ended = player.ended;
+            }
             if let Some(frame) = fresh.take() {
                 inner.state.width = frame.width;
                 inner.state.height = frame.height;
