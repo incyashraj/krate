@@ -14,6 +14,7 @@ extern crate alloc;
 
 use alloc::format;
 use alloc::string::String;
+use krate::bindings::krate::time::clock;
 use krate::gfx::{canvas2d, types as gfx, video};
 use krate::layout::{Rect, Said, Screen};
 use krate::{
@@ -215,10 +216,11 @@ fn quick(canvas: u64, source: &str) -> i32 {
     let _ = video::play(v);
     let mut frames = 0u32;
     let mut first = None;
-    let mut fast: Option<(u64, u32)> = None;
+    // (position, clock) pairs: the rate is judged against real time, not
+    // the loop's turns, which run long on a busy machine.
+    let mut fast: Option<(u64, u64)> = None;
     let mut rate_ok = false;
-    let mut fast_last: Option<(u64, u32)> = None;
-    let mut step = 0u32;
+    let mut fast_last: Option<(u64, u64)> = None;
     let mut last = video::state(v);
     // About three seconds, drawing as an app would. Nothing is presented
     // until the video plays, so `--shoot` captures a real frame of it.
@@ -239,15 +241,14 @@ fn quick(canvas: u64, source: &str) -> i32 {
             // K-1357: from the first second on, twice as fast.
             if s.position_millis >= 1000 && fast.is_none() {
                 rate_ok = video::set_rate(v, 2.0).is_ok() && video::set_rate(v, f32::NAN).is_err();
-                fast = Some((s.position_millis, step));
+                fast = Some((s.position_millis, clock::monotonic_nanos()));
             }
             // The last moment it was still playing: a short clip ends at
             // 2x, and the clock stands still after that.
             if fast.is_some() && s.playing && !s.ended {
-                fast_last = Some((s.position_millis, step));
+                fast_last = Some((s.position_millis, clock::monotonic_nanos()));
             }
         }
-        step += 1;
         let _ = events::wait(Some(33));
     }
     // ... and comes back.
@@ -270,11 +271,11 @@ fn quick(canvas: u64, source: &str) -> i32 {
             s.height,
             if first.is_some_and(|f| s.position_millis > f + 1000) { "yes" } else { "no" },
             if volume { "ok" } else { "no" },
-            // At 2x the clock moves about twice the 33 ms a turn the loop
-            // waits; anything over 1.5x is the rate working.
+            // At 2x the video's clock moves about twice as far as real
+            // time; anything over 1.5x is the rate working.
             match (fast, fast_last) {
-                (Some((at, from)), Some((to, until))) if rate_ok && until > from + 5 => {
-                    let real = u64::from(until - from) * 33;
+                (Some((at, from)), Some((to, until))) if rate_ok && until > from + 150_000_000 => {
+                    let real = (until - from) / 1_000_000;
                     let moved = to.saturating_sub(at);
                     if moved * 2 > real * 3 { "ok" } else { "slow" }
                 }
