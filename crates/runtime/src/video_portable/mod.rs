@@ -743,16 +743,20 @@ mod tests {
         // suite showed 4 (K-1383), so this asks only that pictures move on.
         assert!(frames >= 3, "frames advance: {frames} in 400 ms at 30 fps");
 
-        // Twice as fast: the clock moves twice as far (K-1357).
+        // Twice as fast: the clock moves twice as far (K-1357). From the
+        // start, so the 1 s clip has room; a slow machine's sleep can run
+        // long, and the clock stops at the end, so never more than is left.
+        control(video, Control::Seek(0)).unwrap();
         control(video, Control::Rate(2.0)).unwrap();
         std::thread::sleep(Duration::from_millis(30));
         let (from, wall) = (state(video).unwrap().position_millis, Instant::now());
         std::thread::sleep(Duration::from_millis(150));
         let moved = state(video).unwrap().position_millis.saturating_sub(from) as f64;
         let real = wall.elapsed().as_millis() as f64;
+        let due = (2.0 * real).min(length.saturating_sub(from) as f64);
         assert!(
-            (moved / real - 2.0).abs() < 0.35,
-            "{moved} ms in {real} ms at 2x"
+            (moved - due).abs() < 0.175 * due,
+            "{moved} ms in {real} ms at 2x (due {due})"
         );
         control(video, Control::Rate(1.0)).unwrap();
 
