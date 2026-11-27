@@ -17,7 +17,10 @@
 #                    SHA256SUMS lines, checks every line again, and attests
 #                    the two new files (gh attestation verify <file>)
 #
-# A file already signed is left alone, so running it twice changes nothing.
+# A Developer ID certificate is trusted by a Mac and not by Windows, so it
+# signs the Mac file only; the Windows file is signed when MCPB_SIGN_* holds
+# a certificate from a CA Windows trusts. Once the Mac file verifies,
+# running this again changes nothing.
 name: Sign the Claude Desktop files of a release
 
 on:
@@ -62,14 +65,13 @@ jobs:
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir claude \
             -p "krate-$v-mac.mcpb" -p "krate-$v-windows.mcpb"
           ls -la claude
-          already=yes
-          for f in claude/*.mcpb; do
-            if python3 scripts/verify-mcpb.py "$f"; then
-              echo "$(basename "$f"): already signed"
-            else
-              already=no
-            fi
-          done
+          # The Mac file is the one a Developer ID certificate signs; once it
+          # verifies there is nothing to do.
+          already=no
+          if python3 scripts/verify-mcpb.py "claude/krate-$v-mac.mcpb"; then
+            echo "krate-$v-mac.mcpb: already signed"
+            already=yes
+          fi
           echo "already=$already" >> "$GITHUB_OUTPUT"
       - name: Sign with the Developer ID certificate
         if: steps.fetch.outputs.already != 'yes'
@@ -102,13 +104,18 @@ jobs:
         with:
           name: signed-mcpb
           path: claude
-      - name: The signature, against Windows' trusted roots
+      - name: A signed Windows file, against Windows' trusted roots
         shell: bash
         run: |
           set -euo pipefail
-          for f in claude/*.mcpb; do
-            "$(command -v python3 || command -v python)" scripts/verify-mcpb.py "$f" \
-              || { echo "::error::$(basename "$f") does not verify on Windows"; exit 1; }
+          py="$(command -v python3 || command -v python)"
+          for f in claude/*windows*.mcpb; do
+            if "$py" scripts/verify-mcpb.py "$f" --allow-untrusted > /dev/null; then
+              "$py" scripts/verify-mcpb.py "$f" \
+                || { echo "::error::$(basename "$f") is signed and does not verify on Windows"; exit 1; }
+            else
+              echo "$(basename "$f"): not signed (a Developer ID certificate signs Mac files only)"
+            fi
           done
 
   publish:

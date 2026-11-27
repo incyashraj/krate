@@ -12,7 +12,8 @@
 #   MCPB_SIGN_CERT, MCPB_SIGN_KEY, MCPB_SIGN_INTERMEDIATE   PEM, any public CA
 #   CERT_P12, CERT_PASSWORD   the release's Developer ID Application p12
 #                             (base64), with Apple's Developer ID intermediate;
-#                             it chains to Apple Root CA
+#                             it chains to Apple Root CA, which a Mac trusts
+#                             and Windows does not: Mac files only
 #
 # Apple's p12 exports use RC2-40, which OpenSSL 3 reads only with -legacy:
 # without it the 0.6.2 release could not read the key, said nothing, and
@@ -45,7 +46,7 @@ p12() {
   return 1
 }
 
-cert="" key="" chain=""
+cert="" key="" chain="" devid=0
 if [ -n "${MCPB_SIGN_CERT:-}" ] && [ -n "${MCPB_SIGN_KEY:-}" ]; then
   printf '%s\n' "$MCPB_SIGN_CERT" > "$work/cert.pem"
   printf '%s\n' "$MCPB_SIGN_KEY" > "$work/key.pem"
@@ -103,7 +104,7 @@ open(sys.argv[2], "w").write(pem)
 open(sys.argv[3], "w").write(key[0][1])
 PY
     then
-      cert="$work/cert.pem" key="$work/key.pem"
+      cert="$work/cert.pem" key="$work/key.pem" devid=1
     fi
     rm -f "$work/all.pem"
   else
@@ -134,6 +135,15 @@ extra=()
 [ -n "$chain" ] && extra=(-i "$chain")
 failed=0
 for f in "$@"; do
+  # Windows does not trust Apple's Developer ID chain for code signing
+  # ("PartialChain: A certificate chain could not be built to a trusted
+  # root authority", the v0.6.2 re-sign run), so with that certificate only
+  # the Mac file is signed; the Windows one needs MCPB_SIGN_* from a CA
+  # Windows trusts.
+  if [ "$devid" = 1 ] && case "$(basename "$f")" in *windows*) true ;; *) false ;; esac; then
+    echo "left unsigned: $(basename "$f") (Windows does not trust a Developer ID certificate)"
+    continue
+  fi
   cp "$f" "$work/unsigned.mcpb"
   "${MCPB[@]}" sign "$f" -c "$cert" -k "$key" ${extra[@]+"${extra[@]}"}
   # Not `mcpb verify`: it cannot say yes to any file (scripts/verify-mcpb.py).
