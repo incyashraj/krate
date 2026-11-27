@@ -47,7 +47,6 @@ mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"; [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" 2>/dev/null || true' EXIT
-MCPB=(npx --yes @anthropic-ai/mcpb@2.1.2)
 
 find_one() {
   local name="$1" hit
@@ -147,57 +146,8 @@ else
 fi
 
 # --------------------------------------------------------- mcpb signatures
-# Claude Desktop shows a .mcpb as signed only when its certificate chains to
-# a root the computer trusts (mcpb verify asks the OS trust store, and
-# reports a self-signed certificate as unsigned). Named MCPB_SIGN_* secrets
-# win; otherwise the release's Developer ID certificate is tried, with
-# Apple's Developer ID intermediate, since it already chains to Apple's
-# root. A bundle whose signature does not verify ships unsigned, never with
-# a signature that reads as broken.
-mcpb_cert="" mcpb_key="" mcpb_chain=""
-if [ -n "${MCPB_SIGN_CERT:-}" ] && [ -n "${MCPB_SIGN_KEY:-}" ]; then
-  printf '%s\n' "$MCPB_SIGN_CERT" > "$work/mcpb-cert.pem"
-  printf '%s\n' "$MCPB_SIGN_KEY" > "$work/mcpb-key.pem"
-  mcpb_cert="$work/mcpb-cert.pem" mcpb_key="$work/mcpb-key.pem"
-  if [ -n "${MCPB_SIGN_INTERMEDIATE:-}" ]; then
-    printf '%s\n' "$MCPB_SIGN_INTERMEDIATE" > "$work/mcpb-chain.pem"
-    mcpb_chain="$work/mcpb-chain.pem"
-  fi
-elif [ -n "${CERT_P12:-}" ]; then
-  printf '%s' "$CERT_P12" | base64 --decode > "$work/id.p12"
-  openssl pkcs12 -in "$work/id.p12" -passin env:CERT_PASSWORD -nokeys -clcerts -out "$work/mcpb-cert.pem" 2>/dev/null \
-    && openssl pkcs12 -in "$work/id.p12" -passin env:CERT_PASSWORD -nocerts -nodes -out "$work/mcpb-key.pem" 2>/dev/null \
-    && mcpb_cert="$work/mcpb-cert.pem" mcpb_key="$work/mcpb-key.pem"
-  rm -f "$work/id.p12"
-  if [ -n "$mcpb_cert" ]; then
-    issuer="$(openssl x509 -in "$mcpb_cert" -noout -issuer 2>/dev/null || true)"
-    for ca in DeveloperIDG2CA DeveloperIDCA; do
-      if curl -fsSL "https://www.apple.com/certificateauthority/${ca}.cer" -o "$work/$ca.cer" \
-        && openssl x509 -inform der -in "$work/$ca.cer" -out "$work/$ca.pem" 2>/dev/null; then
-        subject="$(openssl x509 -in "$work/$ca.pem" -noout -subject | sed 's/^subject=//')"
-        case "$issuer" in *"${subject#*CN=}"*) mcpb_chain="$work/$ca.pem" ;; esac
-      fi
-    done
-  fi
-fi
-if [ -n "$mcpb_cert" ] && [ -n "$mcpb_key" ]; then
-  chmod 600 "$mcpb_key"
-  extra=()
-  [ -n "$mcpb_chain" ] && extra=(-i "$mcpb_chain")
-  for f in "$mac_out" "$win_out"; do
-    cp "$f" "$work/unsigned.mcpb"
-    "${MCPB[@]}" sign "$f" -c "$mcpb_cert" -k "$mcpb_key" ${extra[@]+"${extra[@]}"}
-    if "${MCPB[@]}" verify "$f" 2>&1 | tee "$work/verify.txt" | grep -qx "Signature is valid"; then
-      echo "signed: $(basename "$f")"
-    else
-      cat "$work/verify.txt"
-      echo "::warning::$(basename "$f"): the signature does not verify against this computer's trusted roots, so it ships unsigned."
-      cp "$work/unsigned.mcpb" "$f"
-    fi
-  done
-  rm -f "$mcpb_key"
-else
-  echo "::warning::release-mcpb: no certificate to sign the .mcpb files with (MCPB_SIGN_CERT / MCPB_SIGN_KEY, or the Developer ID p12); Claude Desktop installs them and shows them as unsigned."
-fi
+# scripts/sign-mcpb.sh: MCPB_SIGN_* if set, else the Developer ID p12, and
+# a file whose signature does not verify ships unsigned.
+bash "$here/scripts/sign-mcpb.sh" "$mac_out" "$win_out"
 
 ls -la "$mac_out" "$win_out"

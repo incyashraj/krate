@@ -1,0 +1,167 @@
+# Sign a published release's Krate for Claude Desktop files (IC-1005).
+#
+# The v0.6.2 release could not read its Developer ID p12 (OpenSSL 3 needs
+# -legacy for Apple's RC2-40 export, K-1387) and published both .mcpb files
+# unsigned. Rebuilding the whole release to sign two files would replace
+# every download, so this signs just those two, in place:
+#
+#   gh workflow run mcpb-resign.yml -f tag=v0.6.2
+#
+# sign (macOS)       downloads the two files, signs them with the Developer
+#                    ID certificate, and fails unless `mcpb verify` passes
+#                    against the Mac's trusted roots
+# windows            the same check against Windows' own roots, where
+#                    Claude Desktop on a PC will look
+# publish            only when both pass: replaces the two files and their
+#                    SHA256SUMS lines, checks every line again, and attests
+#                    the two new files (gh attestation verify <file>)
+#
+# A file already signed is left alone, so running it twice changes nothing.
+name: Sign the Claude Desktop files of a release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag, e.g. v0.6.2"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcpb-resign-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    name: Sign on macOS
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    outputs:
+      already: ${{ steps.fetch.outputs.already }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - name: Download the release's two files
+        id: fetch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          mkdir -p claude
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir claude \
+            -p "krate-$v-mac.mcpb" -p "krate-$v-windows.mcpb"
+          ls -la claude
+          already=yes
+          for f in claude/*.mcpb; do
+            if npx --yes @anthropic-ai/mcpb@2.1.2 verify "$f" 2>&1 | grep -qx "Signature is valid"; then
+              echo "$(basename "$f"): already signed"
+            else
+              already=no
+            fi
+          done
+          echo "already=$already" >> "$GITHUB_OUTPUT"
+      - name: Sign with the Developer ID certificate
+        if: steps.fetch.outputs.already != 'yes'
+        shell: bash
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          MCPB_SIGN_CERT: ${{ secrets.MCPB_SIGN_CERT }}
+          MCPB_SIGN_KEY: ${{ secrets.MCPB_SIGN_KEY }}
+          MCPB_SIGN_INTERMEDIATE: ${{ secrets.MCPB_SIGN_INTERMEDIATE }}
+        run: bash scripts/sign-mcpb.sh --require claude/*.mcpb
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-mcpb
+          path: claude/*.mcpb
+          if-no-files-found: error
+
+  windows:
+    name: Check on Windows
+    needs: sign
+    if: needs.sign.outputs.already != 'yes'
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-mcpb
+          path: claude
+      - name: mcpb verify against Windows' trusted roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in claude/*.mcpb; do
+            out="$(npx --yes @anthropic-ai/mcpb@2.1.2 verify "$f" 2>&1 || true)"
+            printf '%s\n' "$out"
+            printf '%s\n' "$out" | grep -qx "Signature is valid" \
+              || { echo "::error::$(basename "$f") does not verify on Windows"; exit 1; }
+          done
+
+  publish:
+    name: Replace the two files on the release
+    needs: [sign, windows]
+    if: needs.sign.outputs.already != 'yes'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-mcpb
+          path: claude
+      - name: New SHA256SUMS lines, checked
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS --dir old
+          (cd claude && sha256sum -- *.mcpb) > new-lines
+          grep -v -E '  krate-[^ ]+-(mac|windows)\.mcpb$' old/SHA256SUMS > SHA256SUMS
+          cat new-lines >> SHA256SUMS
+          [ "$(wc -l < SHA256SUMS)" = "$(wc -l < old/SHA256SUMS)" ] \
+            || { echo "::error::SHA256SUMS changed length: the two .mcpb lines were not both there"; exit 1; }
+          diff old/SHA256SUMS SHA256SUMS || true
+          (cd claude && grep -E '\.mcpb$' ../SHA256SUMS | sha256sum -c -)
+      - name: Replace the files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber claude/*.mcpb SHA256SUMS
+      - name: Check what the release now serves
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          v="${TAG#v}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir served \
+            -p "krate-$v-mac.mcpb" -p "krate-$v-windows.mcpb" -p SHA256SUMS
+          (cd served && grep -E '\.mcpb$' SHA256SUMS | sha256sum -c -)
+      - name: Provenance for the two signed files
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: claude/*.mcpb
