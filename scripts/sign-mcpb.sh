@@ -58,9 +58,53 @@ elif [ -n "${CERT_P12:-}" ]; then
   printf '%s' "$CERT_P12" | base64 --decode > "$work/id.p12"
   : "${CERT_PASSWORD:=}"
   export CERT_PASSWORD
-  if p12 -in "$work/id.p12" -passin env:CERT_PASSWORD -nokeys -clcerts -out "$work/cert.pem" \
-    && p12 -in "$work/id.p12" -passin env:CERT_PASSWORD -nocerts -nodes -out "$work/key.pem"; then
-    cert="$work/cert.pem" key="$work/key.pem"
+  # The p12 can hold several identities (the release's held an Apple
+  # Development one first, which no computer trusts for this): take the
+  # Developer ID Application certificate and the key whose localKeyID it
+  # shares.
+  if p12 -in "$work/id.p12" -passin env:CERT_PASSWORD -nodes -out "$work/all.pem"; then
+    if python3 - "$work/all.pem" "$work/cert.pem" "$work/key.pem" <<'PY'
+import re, subprocess, sys
+# `openssl pkcs12 -nodes` prints each bag as "Bag Attributes" lines (its
+# localKeyID), maybe subject=/issuer= lines, then the PEM block.
+certs, keys = [], []
+kid, pem, kind = None, None, None
+for line in open(sys.argv[1]):
+    if line.startswith("Bag Attributes"):
+        kid = None
+    m = re.match(r"\s*localKeyID: ([0-9A-Fa-f ]+)", line)
+    if m:
+        kid = m.group(1).strip().upper()
+    m = re.match(r"-----BEGIN ([A-Z ]+)-----", line)
+    if m:
+        kind, pem = m.group(1), ""
+    if pem is not None:
+        pem += line
+    if kind and line.startswith(f"-----END {kind}-----"):
+        if kind == "CERTIFICATE":
+            subject = subprocess.run(["openssl", "x509", "-noout", "-subject"],
+                                     input=pem, capture_output=True, text=True).stdout
+            certs.append((kid, subject, pem))
+        elif "PRIVATE KEY" in kind:
+            keys.append((kid, pem))
+        kind, pem = None, None
+pick = [c for c in certs if "Developer ID Application" in c[1] and c[0]]
+if not pick:
+    print("sign-mcpb: no Developer ID Application certificate in the p12; it holds: "
+          + "; ".join(c[1].strip() for c in certs), file=sys.stderr)
+    sys.exit(1)
+kid, _, pem = pick[0]
+key = [k for k in keys if k[0] == kid]
+if not key:
+    print("sign-mcpb: the Developer ID Application certificate has no key in the p12", file=sys.stderr)
+    sys.exit(1)
+open(sys.argv[2], "w").write(pem)
+open(sys.argv[3], "w").write(key[0][1])
+PY
+    then
+      cert="$work/cert.pem" key="$work/key.pem"
+    fi
+    rm -f "$work/all.pem"
   else
     echo "::warning::sign-mcpb: no OpenSSL here could read the Developer ID p12 (CERT_P12 / CERT_PASSWORD)"
   fi
