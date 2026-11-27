@@ -687,13 +687,13 @@ export default {
       // cached, so a visitor's browser talks to krate.tech only and never
       // hands their address to a third party just by opening a page.
       if (request.method === "GET" && (pathname === "/release/latest" || pathname === "/repo")) {
-        return cors(await githubMirror(pathname, request));
+        return cors(await githubMirror(pathname, request, env));
       }
       // Krate for Claude Desktop (IC-1005): a stable address for the newest
       // release's .mcpb, or a page that says it is coming -- never a 404.
       if ((request.method === "GET" || request.method === "HEAD") && systemOfPath(pathname)) {
         const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-        return downloadResponse(systemOfPath(pathname), await latestRelease(base), htmlPage);
+        return downloadResponse(systemOfPath(pathname), await latestRelease(base, env), htmlPage);
       }
       if (request.method === "GET" && pathname === "/stats") {
         // Public, so kept five minutes: each answer lists KV twice (listBudget).
@@ -3141,13 +3141,13 @@ function mcpDeps(env) {
     writeRecord: (id, record) => writeRecord(env, id, record),
     publishBuilt: (who, bytes, name) => publishBuilt(env, who, bytes, name),
     // Krate for Claude Desktop (IC-1005): whether the latest release carries it.
-    release: () => latestRelease(base),
+    release: () => latestRelease(base, env),
   };
 }
 
 /// The /release/latest answer (the cached GitHub mirror), or null.
-async function latestRelease(base) {
-  const res = await githubMirror("/release/latest", new Request(`${base || "https://hub.krate.tech"}/release/latest`));
+async function latestRelease(base, env) {
+  const res = await githubMirror("/release/latest", new Request(`${base || "https://hub.krate.tech"}/release/latest`), env);
   return res.status === 200 ? await res.json() : null;
 }
 
@@ -3508,18 +3508,43 @@ async function sharePut(request, code, env) {
 }
 
 /// A trimmed, cached copy of the two GitHub answers the website reads. The
-/// Cache API holds it for ten minutes (no KV, no budget spent), which keeps
-/// the hub far inside GitHub's unauthenticated limit.
-async function githubMirror(pathname, request) {
+/// Cache API holds it for ten minutes (no KV, no budget spent).
+///
+/// GitHub limits anonymous asks per address, and a Worker shares its
+/// address with everyone on Cloudflare's network, so anonymous asks were
+/// refused and every download link said "could not be looked up" (K-1386).
+/// The hub's own OAuth app now signs the ask (5,000 an hour, the app's own),
+/// and the last good answer is kept for a month: when GitHub does not
+/// answer, the site reads that instead of an error.
+async function githubMirror(pathname, request, env) {
   const cache = caches.default;
   const key = new Request(new URL(pathname, request.url).toString(), { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return hit;
+  const lastGood = new Request(new URL(`/__last-good${pathname}`, request.url).toString(), { method: "GET" });
   const upstream = pathname === "/repo"
     ? "https://api.github.com/repos/incyashraj/krate"
     : "https://api.github.com/repos/incyashraj/krate/releases/latest";
-  const r = await fetch(upstream, { headers: { accept: "application/vnd.github+json", "user-agent": "krate-hub" } });
-  if (!r.ok) return text("GitHub did not answer", 502);
+  const headers = { accept: "application/vnd.github+json", "user-agent": "krate-hub" };
+  if (env && env.GITHUB_CLIENT_SECRET) {
+    headers.authorization = `Basic ${btoa(`${GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}`;
+  }
+  let r = null;
+  try {
+    r = await fetch(upstream, { headers });
+    // A secret GitHub no longer takes is refused outright: ask as anyone.
+    if (r.status === 401 && headers.authorization) {
+      delete headers.authorization;
+      r = await fetch(upstream, { headers });
+    }
+  } catch {
+    r = null;
+  }
+  if (!r || !r.ok) {
+    const kept = await cache.match(lastGood);
+    if (kept) return kept;
+    return text("GitHub did not answer", 502);
+  }
   const d = await r.json();
   const body = pathname === "/repo"
     ? { stargazers_count: d.stargazers_count || 0 }
@@ -3531,6 +3556,12 @@ async function githubMirror(pathname, request) {
     headers: { "content-type": "application/json", "cache-control": "public, max-age=600" },
   });
   await cache.put(key, res.clone());
+  await cache.put(
+    lastGood,
+    new Response(JSON.stringify(body), {
+      headers: { "content-type": "application/json", "cache-control": "public, max-age=2592000" },
+    }),
+  );
   return res;
 }
 

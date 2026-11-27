@@ -174,3 +174,60 @@ test("the builder sizes said are the archives krate setup rust really fetches", 
   assert.equal(DESKTOP_SYSTEMS.mac.builder, `about ${mb("aarch64-apple-darwin", "tar.xz")}-${mb("x86_64-apple-darwin", "tar.xz")} MB`);
   assert.equal(DESKTOP_SYSTEMS.windows.builder, `about ${mb("x86_64-pc-windows-gnullvm", "tar.gz")} MB`);
 });
+
+// K-1386: anonymous asks from a Worker share Cloudflare's addresses and
+// GitHub refused them, so every download link said "could not be looked
+// up". The hub signs the ask with its OAuth app, asks as anyone if that is
+// refused, and serves the last good answer when GitHub does not answer.
+test("the release lookup is signed, falls back, and keeps the last good answer", async () => {
+  const store = new Map();
+  globalThis.caches = {
+    default: {
+      match: async (req) => {
+        const hit = store.get(String(req.url));
+        return hit ? hit.clone() : undefined;
+      },
+      put: async (req, res) => {
+        store.set(String(req.url), res.clone());
+      },
+    },
+  };
+  const asks = [];
+  globalThis.fetch = async (input, init) => {
+    const url = String((input && input.url) || input);
+    if (url === "https://api.github.com/repos/incyashraj/krate/releases/latest") {
+      const auth = (init && init.headers && init.headers.authorization) || "";
+      asks.push(auth);
+      if (githubDown) return new Response("down", { status: 403 });
+      if (auth && auth.includes(btoa("Ov23liV2n8Dxi0okyv0F:wrong"))) {
+        return new Response("bad credentials", { status: 401 });
+      }
+      return new Response(JSON.stringify(WITH), { headers: { "content-type": "application/json" } });
+    }
+    return realFetch(input, init);
+  };
+
+  const env = hubEnv();
+  env.GITHUB_CLIENT_SECRET = "right";
+  latest = WITH;
+  let r = await call(env, null, "GET", "/claude/krate-mac.mcpb");
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get("location"), MAC);
+  assert.ok(asks[0].startsWith("Basic "), "the ask is signed with the hub's app");
+
+  // GitHub refuses now; the ten-minute copy is gone, the month-long one is not.
+  for (const k of [...store.keys()]) if (!k.includes("/__last-good")) store.delete(k);
+  githubDown = true;
+  r = await call(env, null, "GET", "/claude/krate-windows.mcpb");
+  assert.equal(r.status, 302, "the last good answer serves while GitHub is down");
+  assert.equal(r.headers.get("location"), WIN);
+
+  // A secret GitHub no longer takes: the hub asks again as anyone.
+  store.clear();
+  githubDown = false;
+  asks.length = 0;
+  env.GITHUB_CLIENT_SECRET = "wrong";
+  r = await call(env, null, "GET", "/claude/krate-mac.mcpb");
+  assert.equal(r.status, 302);
+  assert.deepEqual(asks.map((a) => (a ? "signed" : "anyone")), ["signed", "anyone"]);
+});
