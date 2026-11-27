@@ -32,6 +32,7 @@ fi
 [ $# -gt 0 ] || { echo "usage: sign-mcpb.sh [--require] FILE.mcpb..." >&2; exit 2; }
 
 MCPB=(npx --yes @anthropic-ai/mcpb@2.1.2)
+here="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -135,7 +136,8 @@ failed=0
 for f in "$@"; do
   cp "$f" "$work/unsigned.mcpb"
   "${MCPB[@]}" sign "$f" -c "$cert" -k "$key" ${extra[@]+"${extra[@]}"}
-  if "${MCPB[@]}" verify "$f" 2>&1 | tee "$work/verify.txt" | grep -qx "Signature is valid"; then
+  # Not `mcpb verify`: it cannot say yes to any file (scripts/verify-mcpb.py).
+  if python3 "$here/scripts/verify-mcpb.py" "$f" > "$work/verify.txt" 2>&1; then
     echo "signed: $(basename "$f")"
   else
     cat "$work/verify.txt"
